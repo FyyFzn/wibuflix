@@ -1,5 +1,5 @@
 const { fetchPage, kembalikanKePool } = require('../puppeteer/pool');
-const { searchAnime } = require('../api/jikan');
+
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam (super cepat)
 
@@ -91,38 +91,9 @@ async function getKatalog(pageParams, searchParam) {
         if (result.list.length === 0) {
             console.log('[DEBUG] list is empty! HTML preview:', result.html);
         } else {
-            // ── Enrich dengan MAL cover (concurrent, timeout 15 detik) ──
-            const MAL_ENRICH_TIMEOUT = 15000;
-            console.log(`[MAL] Enriching ${result.list.length} items dari katalog...`);
-
-            const enrichStart = Date.now();
-            const enrichPromise = Promise.allSettled(
-                result.list.map(async item => {
-                    try {
-                        const mal = await searchAnime(item.judul);
-                        if (mal) {
-                            if (mal.cover) item.gambar = mal.cover;
-                            item.skor   = mal.malScore || item.skor;
-                            if (mal.status === 'Finished Airing') item.status = 'Completed';
-                            else if (mal.status === 'Currently Airing') item.status = 'Ongoing';
-                        }
-                    } catch (e) {
-                        // tetap pakai gambarScraper sebagai fallback
-                    }
-                })
-            );
-
-            let timerId;
-            const timeoutPromise = new Promise(resolve =>
-                timerId = setTimeout(() => {
-                    console.warn(`[MAL] Enrich timeout (${MAL_ENRICH_TIMEOUT}ms), pakai gambar scraper untuk sisanya`);
-                    resolve();
-                }, MAL_ENRICH_TIMEOUT)
-            );
-
-            await Promise.race([enrichPromise, timeoutPromise]);
-            clearTimeout(timerId);
-            console.log(`[MAL] Enrich selesai dalam ${Date.now() - enrichStart}ms`);
+            // MAL enrichment ditiadakan di katalog untuk menghindari rate-limit Jikan API
+            // dan mempercepat pemuatan awal (hanya memakan waktu 3-5 detik via Puppeteer).
+            // Gambar dan Skor akan murni menggunakan data yang didapat dari scraper.
         }
 
         if (result.list.length > 0) {
