@@ -1,0 +1,6 @@
+# For development, don't ignore FYYStreamApp
+node_modules
+.git
+*.log
+FYYStreamApp/node_modules
+FYYStreamApp/.expo
