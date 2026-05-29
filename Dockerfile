@@ -1,8 +1,8 @@
-# ── WibuFlix Backend — Docker Image ──────────────────────
+# ── FYYStream Backend — Docker Image ──────────────────────
 # Node.js + Puppeteer (Chromium) for scraping
 #
-# Build:  docker build -t wibuflix-api .
-# Run:    docker run -d -p 3000:3000 --name wibuflix-api wibuflix-api
+# Build:  docker build -t fyystream-api .
+# Run:    docker run -d -p 3000:3000 --name fyystream-api fyystream-api
 # ──────────────────────────────────────────────────────────
 
 FROM node:20-slim
@@ -46,6 +46,7 @@ RUN npm ci --omit=dev
 # Copy source code
 COPY src/ ./src/
 COPY index.js ./
+COPY server-prod.js ./
 COPY css/ ./css/
 COPY js/ ./js/
 COPY index.html ./
@@ -59,4 +60,3 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # Start server in production mode
 CMD ["npm", "run", "start:prod"]
-
