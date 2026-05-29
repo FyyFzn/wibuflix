@@ -82,7 +82,14 @@ async function getKatalog(pageParams, searchParam) {
                 }
             });
 
-            if (!hasNext && list.length >= 9) hasNext = true;
+            // Better pagination detection:
+            // If we got items, assume there's a next page unless we're sure there isn't
+            if (list.length > 0 && !hasNext) {
+                // Only set hasNext to false if pagination explicitly says so
+                // Otherwise assume there might be more content
+                hasNext = true; // Default to true unless pagination proves otherwise
+            }
+            
             return { list, hasNext, html: list.length === 0 ? document.body.innerHTML.substring(0, 1000) : null };
         }, url);
 
@@ -90,6 +97,7 @@ async function getKatalog(pageParams, searchParam) {
 
         if (result.list.length === 0) {
             console.log('[DEBUG] list is empty! HTML preview:', result.html);
+            result.hasNext = false; // If no items, definitely no next
         } else {
             // MAL enrichment ditiadakan di katalog untuk menghindari rate-limit Jikan API
             // dan mempercepat pemuatan awal (hanya memakan waktu 3-5 detik via Puppeteer).
