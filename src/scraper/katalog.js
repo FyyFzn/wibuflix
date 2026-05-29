@@ -1,7 +1,7 @@
 const { fetchPage, kembalikanKePool } = require('../puppeteer/pool');
 const { searchAnime } = require('../api/jikan');
 const NodeCache = require('node-cache');
-const cache = new NodeCache({ stdTTL: 600 }); // Cache 10 menit
+const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam (super cepat)
 
 async function getKatalog(pageParams, searchParam) {
     const isSearch = searchParam.trim() !== '';
@@ -91,8 +91,8 @@ async function getKatalog(pageParams, searchParam) {
         if (result.list.length === 0) {
             console.log('[DEBUG] list is empty! HTML preview:', result.html);
         } else {
-            // ── Enrich dengan MAL cover (concurrent, timeout 30 detik) ──
-            const MAL_ENRICH_TIMEOUT = 30000;
+            // ── Enrich dengan MAL cover (concurrent, timeout 15 detik) ──
+            const MAL_ENRICH_TIMEOUT = 15000;
             console.log(`[MAL] Enriching ${result.list.length} items dari katalog...`);
 
             const enrichStart = Date.now();

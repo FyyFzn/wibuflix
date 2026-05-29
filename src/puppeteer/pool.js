@@ -4,7 +4,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 let browserInstance = null;
-const PAGE_POOL_SIZE = 2;
+const PAGE_POOL_SIZE = 4;
 const pagePool = [];
 let poolReady = false;
 

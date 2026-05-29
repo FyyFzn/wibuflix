@@ -12,8 +12,8 @@ const inFlight = new Map();
 // ── Concurrent Rate Limiter dengan Global 429 Pause ─────────
 // Jikan v4: 3 req/detik. Kita pakai 2 concurrent + 350ms delay
 // = ~2.8 req/detik. Jika dapat 429, seluruh queue dipause.
-const MAX_CONCURRENT = 1;
-const DELAY_MS       = 1050;
+const MAX_CONCURRENT = 2;
+const DELAY_MS       = 670;
 
 const requestQueue = [];
 let activeCount  = 0;

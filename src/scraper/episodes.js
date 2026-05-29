@@ -1,7 +1,7 @@
 const { fetchPage, kembalikanKePool } = require('../puppeteer/pool');
 const { searchAnime, getAnimeEpisodes } = require('../api/jikan');
 const NodeCache = require('node-cache');
-const cache = new NodeCache({ stdTTL: 600 }); // Cache 10 menit
+const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam (super cepat)
 
 async function getEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
