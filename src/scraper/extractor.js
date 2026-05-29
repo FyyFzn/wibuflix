@@ -279,27 +279,11 @@ async function scrapeVideoServers(targetUrl) {
         console.log(`  Judul  : ${pageData.judul}`);
         console.log(`  Server : ${pageData.servers.length} ditemukan`);
 
-        const resolvePromises = pageData.servers.map(async (srv) => {
-            if (srv.aktif && pageData.iframeAktif) {
-                srv.iframeUrl = pageData.iframeAktif;
-                srv.namaHost = namaServer(pageData.iframeAktif);
-            } else {
-                try {
-                    const iframeUrl = await resolveServerIframe(page, {
-                        post: srv.post,
-                        nume: srv.nume,
-                        type: srv.type,
-                        episodeUrl: targetUrl
-                    });
-                    if (iframeUrl) {
-                        srv.namaHost = namaServer(iframeUrl);
-                    }
-                } catch (e) {
-                    console.error('Failed to pre-resolve server:', srv.nume);
-                }
-            }
-        });
-        await Promise.all(resolvePromises);
+        const activeServer = pageData.servers.find(srv => srv.aktif);
+        if (activeServer && pageData.iframeAktif) {
+            activeServer.iframeUrl = pageData.iframeAktif;
+            activeServer.namaHost = namaServer(pageData.iframeAktif);
+        }
 
         return pageData;
     } catch (err) {
