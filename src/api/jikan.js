@@ -99,6 +99,63 @@ function normalizeTitle(title) {
         .trim();
 }
 
+// ── findBestMatch ───────────────
+function findBestMatch(results, query) {
+    if (!results || results.length === 0) return null;
+    const qLower = query.toLowerCase();
+    
+    for (const anime of results) {
+        const tMain = (anime.title || '').toLowerCase();
+        const tEng = (anime.title_english || '').toLowerCase();
+        const syns = (anime.title_synonyms || []).map(s => s.toLowerCase());
+        const allTitles = [tMain, tEng, ...syns];
+        if (allTitles.includes(qLower)) return anime;
+    }
+
+    const seasonMatch = qLower.match(/season\s*(\d+)/) || qLower.match(/s(\d+)/) || qLower.match(/(\d+)nd season/) || qLower.match(/(\d+)rd season/);
+    const targetSeason = seasonMatch ? seasonMatch[1] : null;
+    const isPart2 = qLower.includes('part 2') || qLower.includes('cour 2');
+
+    if (!targetSeason && !isPart2) {
+        return results[0];
+    }
+
+    for (const anime of results) {
+        const tMain = (anime.title || '').toLowerCase();
+        const tEng = (anime.title_english || '').toLowerCase();
+        const syns = (anime.title_synonyms || []).map(s => s.toLowerCase());
+        const allTitles = [tMain, tEng, ...syns];
+        const fullText = allTitles.join(' ');
+
+        let matchesSeason = true;
+        if (targetSeason) {
+            matchesSeason = allTitles.some(t => 
+                t.match(new RegExp(`season\\s*${targetSeason}`)) || 
+                t.match(new RegExp(`${targetSeason}nd season`)) ||
+                t.match(new RegExp(`${targetSeason}rd season`)) ||
+                t.match(new RegExp(`${targetSeason}th season`)) ||
+                (targetSeason === '2' && (t.includes(' ii') || t.match(/\bii\b/))) ||
+                (targetSeason === '3' && (t.includes(' iii') || t.match(/\biii\b/))) ||
+                (targetSeason === '4' && (t.includes(' iv') || t.match(/\biv\b/))) ||
+                t.match(new RegExp(`\\s${targetSeason}$`))
+            );
+        }
+
+        let matchesPart = true;
+        if (isPart2) {
+            matchesPart = fullText.includes('part 2') || fullText.includes('cour 2');
+        } else {
+            matchesPart = !(fullText.includes('part 2') || fullText.includes('cour 2'));
+        }
+
+        if (matchesSeason && matchesPart) {
+            return anime;
+        }
+    }
+
+    return results[0];
+}
+
 // ── searchAnime ──────────────────────────────────────────────
 async function searchAnime(title) {
     if (!title) return null;
@@ -113,10 +170,11 @@ async function searchAnime(title) {
 
     const promise = enqueue(async () => {
         const json = await httpGetWithRetry(
-            `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(normalized)}&limit=1&sfw=true`
+            `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(normalized)}&limit=5&sfw=true`
         );
         if (!json || !json.data || json.data.length === 0) return null;
-        const a = json.data[0];
+        
+        const a = findBestMatch(json.data, normalized);
         return {
             malId:    a.mal_id,
             malUrl:   a.url,

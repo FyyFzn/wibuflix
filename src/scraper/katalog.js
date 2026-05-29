@@ -82,11 +82,11 @@ async function getKatalog(pageParams, searchParam) {
                 }
             });
 
-            if (!hasNext && list.length >= 10) hasNext = true;
+            if (!hasNext && list.length >= 9) hasNext = true;
             return { list, hasNext, html: list.length === 0 ? document.body.innerHTML.substring(0, 1000) : null };
         }, url);
 
-        result.list = result.list.slice(0, 10); // Batasi maksimal 10 anime per page
+        result.list = result.list.slice(0, 9); // Batasi maksimal 9 anime per page
 
         if (result.list.length === 0) {
             console.log('[DEBUG] list is empty! HTML preview:', result.html);
@@ -100,9 +100,11 @@ async function getKatalog(pageParams, searchParam) {
                 result.list.map(async item => {
                     try {
                         const mal = await searchAnime(item.judul);
-                        if (mal && mal.cover) {
-                            item.gambar = mal.cover;
+                        if (mal) {
+                            if (mal.cover) item.gambar = mal.cover;
                             item.skor   = mal.malScore || item.skor;
+                            if (mal.status === 'Finished Airing') item.status = 'Completed';
+                            else if (mal.status === 'Currently Airing') item.status = 'Ongoing';
                         }
                     } catch (e) {
                         // tetap pakai gambarScraper sebagai fallback
