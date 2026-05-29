@@ -5,9 +5,9 @@
 const originalLog = console.log;
 
 // Mematikan log standar
-console.log = function() {};
-console.debug = function() {};
-console.info = function() {};
+console.log = function () { };
+console.debug = function () { };
+console.info = function () { };
 
 // Catatan: console.error dan console.warn sengaja TIDAK dimatikan 
 // agar jika terjadi error kritis di server, Anda tetap bisa melihat log-nya.
