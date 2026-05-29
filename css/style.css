@@ -937,69 +937,73 @@ main {
     gap: 8px;
 }
 
-.server-wrapper {
-    position: relative;
-    display: inline-block;
+.server-group {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
-.btn-server {
-    background: var(--surface2);
+.server-group-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.server-res-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.btn-res {
+    background: var(--surface);
     color: var(--text-dim);
-    border: 1px solid var(--border2);
-    padding: 8px 16px;
-    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 6px;
     cursor: pointer;
     font-family: inherit;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 600;
     transition: all var(--transition);
 }
 
-.btn-server:hover {
+.btn-res:hover:not(:disabled) {
     border-color: var(--accent);
     color: var(--accent);
     background: var(--accent-dim);
 }
 
-.btn-server.active {
-    background: var(--accent-dim);
-    color: var(--accent);
+.btn-res.active {
+    background: var(--accent);
+    color: #fff;
     border-color: var(--accent);
-    box-shadow: 0 0 12px var(--accent-glow);
+    box-shadow: 0 0 10px var(--accent-glow);
 }
 
-.server-dropdown {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    background: rgba(17,24,39,0.98);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--border2);
-    border-radius: var(--radius);
-    min-width: 150px;
-    z-index: 999;
-    overflow: hidden;
-    box-shadow: 0 8px 28px rgba(0,0,0,0.5);
-    animation: fadeSlideDown 0.15s ease;
+.btn-res:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
-.server-dropdown.hidden { display: none; }
-
-.dropdown-item {
-    padding: 10px 16px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: background var(--transition);
+.btn-res.loading {
+    animation: pulse 1.5s infinite;
 }
 
-.dropdown-item:hover {
-    background: var(--accent-dim);
-    color: var(--accent);
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.5; }
 }
-
-.dropdown-item + .dropdown-item { border-top: 1px solid var(--border); }
 
 /* ── NAVIGASI EPISODE ───────────────────────────────────── */
 .player-nav {

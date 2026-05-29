@@ -434,84 +434,62 @@ const savedState = loadState();
 
         Object.entries(grup).forEach(([kunci, g]) => {
             const wrapper = document.createElement('div');
-            wrapper.className = 'server-wrapper';
+            wrapper.className = 'server-group';
 
-            const btnMaster = document.createElement('button');
-            btnMaster.className = 'btn-server';
-            btnMaster.textContent = g.label;
+            const title = document.createElement('div');
+            title.className = 'server-group-title';
+            title.textContent = g.label;
+            wrapper.appendChild(title);
 
-            const dropdown = document.createElement('div');
-            dropdown.className = 'server-dropdown hidden';
+            const resList = document.createElement('div');
+            resList.className = 'server-res-list';
 
-            function renderItemDropdown() {
-                dropdown.innerHTML = '';
+            function renderResolusi() {
+                resList.innerHTML = '';
                 g.items.forEach((srv) => {
-                    const item = document.createElement('div');
-                    item.className = 'dropdown-item';
+                    const item = document.createElement('button');
+                    item.className = 'btn-res';
                     const resolusi = (srv.nama || '').replace(/·.*$/, '').trim() || srv.namaHost || 'Default';
 
                     if (!srv.iframeUrl) {
                         item.textContent = '⏳ ' + resolusi;
-                        item.style.opacity = '0.5';
-                        item.style.pointerEvents = 'none';
+                        item.disabled = true;
+                        item.classList.add('loading');
                     } else {
                         item.textContent = resolusi;
                         item.addEventListener('click', () => {
                             State.lastUsedServer = (srv.namaHost || srv.nama || '').toLowerCase().trim();
                             muatIframe(srv.iframeUrl, srv.namaHost || srv.nama, episodeUrl);
-                            document.querySelectorAll('.btn-server').forEach(b => b.classList.remove('active'));
-                            btnMaster.classList.add('active');
-                            dropdown.classList.add('hidden');
+                            document.querySelectorAll('.btn-res').forEach(b => b.classList.remove('active'));
+                            item.classList.add('active');
                         });
                     }
-                    dropdown.appendChild(item);
+                    resList.appendChild(item);
                 });
             }
 
-            renderItemDropdown();
-
-            btnMaster.addEventListener('click', async () => {
-                document.querySelectorAll('.server-dropdown').forEach(d => {
-                    if (d !== dropdown) d.classList.add('hidden');
-                });
-                dropdown.classList.toggle('hidden');
-
-                const belumResolve = g.items.filter(srv => !srv.iframeUrl);
-                if (belumResolve.length > 0) {
-                    belumResolve.forEach(async (srv) => {
-                        try {
-                            const res = await resolveServer(episodeUrl, srv.nume);
-                            if (res.data && res.data.iframeUrl) {
-                                srv.iframeUrl = res.data.iframeUrl;
-                                srv.namaHost = res.data.namaHost || srv.namaHost;
-                                if (!g.label || g.label === kunci) {
-                                    g.label = srv.namaHost;
-                                    btnMaster.textContent = g.label;
-                                }
-                                renderItemDropdown();
-                            }
-                        } catch (e) {}
-                    });
-                }
-
-                if (g.items.length === 1 && g.items[0].iframeUrl) {
-                    State.lastUsedServer = (g.items[0].namaHost || g.items[0].nama || '').toLowerCase().trim();
-                    muatIframe(g.items[0].iframeUrl, g.items[0].namaHost || g.items[0].nama, episodeUrl);
-                    document.querySelectorAll('.btn-server').forEach(b => b.classList.remove('active'));
-                    btnMaster.classList.add('active');
-                    dropdown.classList.add('hidden');
-                }
-            });
-            wrapper.appendChild(btnMaster);
-            wrapper.appendChild(dropdown);
+            renderResolusi();
+            wrapper.appendChild(resList);
             UI.serverListContainer.appendChild(wrapper);
-        });
 
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.server-wrapper')) {
-                document.querySelectorAll('.server-dropdown').forEach(d => d.classList.add('hidden'));
+            const belumResolve = g.items.filter(srv => !srv.iframeUrl);
+            if (belumResolve.length > 0) {
+                belumResolve.forEach(async (srv) => {
+                    try {
+                        const res = await resolveServer(episodeUrl, srv.nume);
+                        if (res.data && res.data.iframeUrl) {
+                            srv.iframeUrl = res.data.iframeUrl;
+                            srv.namaHost = res.data.namaHost || srv.namaHost;
+                            if (!g.label || g.label === kunci) {
+                                g.label = srv.namaHost;
+                                title.textContent = g.label;
+                            }
+                            renderResolusi();
+                        }
+                    } catch (e) {}
+                });
             }
-        }, { once: false });
+        });
     }
 
     // ── History Logic ─────────────────────────────────────────────
