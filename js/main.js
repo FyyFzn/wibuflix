@@ -21,6 +21,20 @@ const savedState = loadState();
     }
     renderHistoryDropdown();
 
+    // ── History API (Kembali dengan Tombol Back HP/Browser) ───────
+    window.addEventListener('popstate', (e) => {
+        if (e.state && e.state.layarId) {
+            const layar = document.getElementById(e.state.layarId);
+            if (layar) {
+                if (layar === UI.layarKatalog) stopVideo();
+                UI.tampilkan(layar, false);
+            }
+        } else {
+            stopVideo();
+            UI.tampilkan(UI.layarKatalog, false);
+        }
+    });
+
     // ── Event Listener: Katalog ───────────────────────────────────
     UI.btnSearch.addEventListener('click', () => {
         State.currentSearch = UI.inputSearch.value.trim();

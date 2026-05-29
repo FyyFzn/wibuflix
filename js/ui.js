@@ -43,12 +43,16 @@ export const btnHistoryNext = document.getElementById('btnHistoryNext');
 export const historyPageInfo = document.getElementById('historyPageInfo');
 export const historyPaginationArea = document.getElementById('historyPaginationArea');
 
-export function tampilkan(layar) {
+export function tampilkan(layar, pushHistory = true) {
     [layarKatalog, layarDaftarEpisode, layarPlayer, layarHistory].forEach(l => l.classList.add('hidden'));
     loading.classList.add('hidden');
     layar.classList.remove('hidden');
 
     saveState(layar.id);
+    
+    if (pushHistory) {
+        window.history.pushState({ layarId: layar.id }, "", "");
+    }
 }
 
 export function setLoading(teks = 'Memuat data...') {
