@@ -104,12 +104,22 @@ app.get('/api/extract-video', async (req, res) => {
 
     try {
         const data = await extractVideoUrl(embedUrl, req);
+        
+        // Guard: jika semua strategy gagal, extractVideoUrl return null
+        if (!data || !data.url) {
+            console.log(`[Extract-Video] Gagal mengekstrak URL dari: ${embedUrl}`);
+            return res.status(500).json({ success: false, message: 'Gagal mengekstrak URL video dari server ini' });
+        }
+        
         let finalUrl = data.url;
         
         // Gunakan proxy untuk Krakenfiles karena CDN mengunci IP (IP lock)
         if (data.headers && data.headers.token && data.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
+        } else if (embedUrl.includes('filedon')) {
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
         
         res.json({ 
@@ -120,6 +130,50 @@ app.get('/api/extract-video', async (req, res) => {
     } catch (err) {
         console.error('[Extractor Error]', err.message);
         res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ============================================================
+// RUTE 5B: GET /api/proxy/filedon
+// ============================================================
+app.get('/api/proxy/filedon', async (req, res) => {
+    const videoUrl = req.query.url;
+    if (!videoUrl) return res.status(400).send('URL required');
+    
+    const https = require('https');
+    try {
+        const headers = { ...req.headers };
+        delete headers.host;
+        delete headers.referer;
+        
+        const proxyReq = https.get(videoUrl, { headers }, (proxyRes) => {
+            if (proxyRes.statusCode >= 400) {
+                res.status(proxyRes.statusCode).send('Proxy upstream error');
+                return;
+            }
+            
+            Object.keys(proxyRes.headers).forEach(key => {
+                if (key.toLowerCase() !== 'content-disposition' && key.toLowerCase() !== 'content-type') {
+                    res.setHeader(key, proxyRes.headers[key]);
+                }
+            });
+            res.setHeader('Content-Type', 'video/mp4'); // Force as video/mp4 stream
+            
+            res.status(proxyRes.statusCode);
+            proxyRes.pipe(res);
+        });
+
+        proxyReq.on('error', (err) => {
+            console.error('[Filedon Proxy Error]', err.message);
+            if (!res.headersSent) res.status(500).send('Proxy error');
+        });
+
+        req.on('close', () => {
+            proxyReq.destroy();
+        });
+    } catch (err) {
+        console.error('[Filedon Proxy Error]', err.message);
+        if (!res.headersSent) res.status(500).send('Proxy error');
     }
 });
 

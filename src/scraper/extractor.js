@@ -19,6 +19,7 @@ function namaServer(url) {
         if (host.includes('mp4upload')) return 'mp4upload';
         if (host.includes('gdrive') || host.includes('google')) return 'gdrive';
         if (host.includes('vidhide')) return 'vidhide';
+        if (host.includes('filemoon') || host.includes('filelions') || host.includes('moonplayer') || host.includes('filedon')) return 'pucuk';
         
         return host.replace('www.', '').split('.')[0];
     } catch {
@@ -441,16 +442,127 @@ async function extractVideoUrl(embedUrl, req) {
         }
     }
 
+    // ── Handler Filedon.co / Pucuk (Inertia.js SPA Extractor) ──────────────
+    // Filedon.co menggunakan Laravel + Inertia.js (React SPA).
+    // HTML statis TIDAK mengandung URL video — perlu hit Inertia API atau download API.
+    const isFilemoonLike = embedUrl.includes('filemoon') || embedUrl.includes('filelions') ||
+                           embedUrl.includes('moonplayer') || embedUrl.includes('filedon') ||
+                           embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
+    if (isFilemoonLike) {
+        const axios = require('axios');
+        try {
+            const originUrl = new URL(embedUrl);
+            const baseUrl = `${originUrl.protocol}//${originUrl.hostname}`;
+            const slug = originUrl.pathname.split('/').filter(Boolean).pop();
+            console.log(`[Filedon/Pucuk] Extracting slug="${slug}" from: ${embedUrl}`);
+
+            // ── Strategi 1: Inertia.js JSON API (X-Inertia header) ──
+            try {
+                const inertiaRes = await axios.get(embedUrl, {
+                    timeout: 10000,
+                    headers: {
+                        'X-Inertia': 'true',
+                        'X-Inertia-Version': '1',
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Referer': 'https://v2.samehadaku.how/',
+                    }
+                });
+                const props = inertiaRes.data?.props || inertiaRes.data;
+                const propsStr = JSON.stringify(props);
+                // Cari URL video dalam props JSON
+                const videoMatch = propsStr.match(/"(https?:\/\/[^"]+\.(?:m3u8|mp4)[^"]*)"/i) ||
+                                   propsStr.match(/"stream_url"\s*:\s*"([^"]+)"/i) ||
+                                   propsStr.match(/"url"\s*:\s*"(https?:\/\/[^"]+\.(?:m3u8|mp4)[^"]*)"/i);
+                if (videoMatch && videoMatch[1]) {
+                    const videoUrl = videoMatch[1].replace(/\\/g, '');
+                    console.log(`[Filedon/Pucuk] Inertia: Found URL!`);
+                    return {
+                        url: videoUrl,
+                        headers: {
+                            'Referer': `${baseUrl}/`,
+                            'Origin': baseUrl,
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    };
+                }
+                console.log('[Filedon/Pucuk] Inertia response tidak mengandung URL video');
+            } catch (e) {
+                console.log(`[Filedon/Pucuk] Inertia request gagal: ${e.message}`);
+            }
+
+            // ── Strategi 2: POST /embed/{slug}/download/start ──
+            try {
+                // Pertama ambil CSRF token
+                const csrfRes = await axios.get(`${baseUrl}/sanctum/csrf-cookie`, {
+                    timeout: 8000,
+                    headers: { 'Referer': embedUrl, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                    withCredentials: true
+                });
+                const cookies = csrfRes.headers['set-cookie'] || [];
+                const xsrfToken = cookies.find(c => c.startsWith('XSRF-TOKEN='))?.split('=')[1]?.split(';')[0];
+                const cookieStr = cookies.map(c => c.split(';')[0]).join('; ');
+
+                const downloadRes = await axios.post(`${baseUrl}/embed/${slug}/download/start`, {}, {
+                    timeout: 10000,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-XSRF-TOKEN': xsrfToken ? decodeURIComponent(xsrfToken) : '',
+                        'Referer': embedUrl,
+                        'Origin': baseUrl,
+                        'Cookie': cookieStr,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    }
+                });
+                const downloadData = downloadRes.data;
+                console.log(`[Filedon/Pucuk] Download API response:`, JSON.stringify(downloadData).substring(0, 200));
+                const dlStr = JSON.stringify(downloadData);
+                const dlMatch = dlStr.match(/"(https?:\/\/[^"]+\.(?:m3u8|mp4)[^"]*)"/i) ||
+                                dlStr.match(/"url"\s*:\s*"([^"]+)"/i) ||
+                                dlStr.match(/"download_url"\s*:\s*"([^"]+)"/i);
+                if (dlMatch && dlMatch[1]) {
+                    const videoUrl = dlMatch[1].replace(/\\/g, '');
+                    console.log(`[Filedon/Pucuk] Download API: Found URL!`);
+                    return {
+                        url: videoUrl,
+                        headers: {
+                            'Referer': `${baseUrl}/`,
+                            'Origin': baseUrl,
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    };
+                }
+            } catch (e) {
+                console.log(`[Filedon/Pucuk] Download API gagal: ${e.message}`);
+            }
+
+            console.log('[Filedon/Pucuk] Semua Axios strategy gagal, fallback ke Puppeteer');
+        } catch (e) {
+            console.log(`[Filedon/Pucuk] Error: ${e.message}, falling back to Puppeteer`);
+        }
+    }
+
     let slot;
     let tempPage;
+    let isTempSpaPage = false;
     try {
-        slot = await ambilDariExtractorPool();
-        tempPage = slot.page;
+        const isSPA = embedUrl.includes('filedon') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer') || embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
 
-        await tempPage.setExtraHTTPHeaders({
-            'Referer': 'https://v2.samehadaku.how/',
-            'Origin': 'https://v2.samehadaku.how'
-        });
+        if (isSPA) {
+            const { getBrowser } = require('../puppeteer/pool');
+            const browser = await getBrowser();
+            tempPage = await browser.newPage();
+            isTempSpaPage = true;
+            await tempPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        } else {
+            slot = await ambilDariExtractorPool();
+            tempPage = slot.page;
+            await tempPage.setExtraHTTPHeaders({
+                'Referer': 'https://v2.samehadaku.how/',
+                'Origin': 'https://v2.samehadaku.how'
+            });
+        }
         
         let videoUrl = null;
 
@@ -458,20 +570,14 @@ async function extractVideoUrl(embedUrl, req) {
             if (videoUrl) return;
             const url = response.url();
             const type = response.headers()['content-type'] || '';
-            const status = response.status();
             
-            try {
-                const urlObj = new URL(embedUrl);
-                if (url.includes(urlObj.pathname) && status >= 400) {
-                    videoUrl = 'ERROR';
-                    return;
-                }
-            } catch(e) {}
+            if (url.includes('filedon')) console.log(`[Ext-Network] URL: ${url} | Type: ${type}`);
 
             if (
                 url.includes('.m3u8') || url.includes('.mp4') || 
                 type.includes('video') || type.includes('mpegurl') || type.includes('octet-stream')
             ) {
+                console.log(`[Ext-Network] FOUND VIDEO URL: ${url}`);
                 videoUrl = url;
                 return;
             }
@@ -509,40 +615,85 @@ async function extractVideoUrl(embedUrl, req) {
             setTimeout(() => { 
                 clearInterval(checkInterval); 
                 resolve(null); 
-            }, 6000);
+            }, 25000); // Diperpanjang ke 25s untuk SPA lambat seperti Filedon
         });
 
-        await tempPage.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(e => {});
-        await tempPage.setContent('<html style="height:100%;"><body style="height:100%; margin:0; background:#000;"></body></html>');
-        await tempPage.evaluate((url) => {
-            const iframe = document.createElement('iframe');
-            iframe.src = url;
-            iframe.style.width = '100%';
-            iframe.style.height = '100%';
-            iframe.setAttribute('allow', 'autoplay; fullscreen');
-            document.body.appendChild(iframe);
-        }, embedUrl);
 
-        setTimeout(async () => {
+        if (isSPA) {
+            await tempPage.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(e => {});
+        } else {
+            await tempPage.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(e => {});
+            await tempPage.setContent('<html style="height:100%;"><body style="height:100%; margin:0; background:#000;"></body></html>');
+            await tempPage.evaluate((url) => {
+                const iframe = document.createElement('iframe');
+                iframe.src = url;
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.setAttribute('allow', 'autoplay; fullscreen');
+                document.body.appendChild(iframe);
+            }, embedUrl);
+        }
+
+        // Klik agresif berulang setiap 1.5 detik untuk menangani popup/ad dan waktu render yang bervariasi
+        let clickInterval = setInterval(async () => {
+            if (videoUrl) {
+                clearInterval(clickInterval);
+                return;
+            }
             try {
                 const viewport = tempPage.viewport() || { width: 800, height: 600 };
-                // Fast triple click to bypass popup ads and trigger play
-                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2);
+                // Klik tengah layar dua kali (biasanya 1 klik untuk ads, 1 untuk play)
+                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2).catch(() => {});
                 await new Promise(r => setTimeout(r, 200));
-                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2);
-                await new Promise(r => setTimeout(r, 200));
-                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2);
+                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2).catch(() => {});
+                
+                // Coba lewat JS juga
+                await tempPage.evaluate(() => {
+                    try {
+                        document.querySelectorAll('iframe').forEach(f => {
+                            try {
+                                const doc = f.contentDocument || f.contentWindow?.document;
+                                if (!doc) return;
+                                const btn = doc.querySelector('.play-btn, [class*="play"], button, [role="button"]');
+                                if (btn) btn.click();
+                                const v = doc.querySelector('video');
+                                if (v) v.play().catch(() => {});
+                            } catch(e) {}
+                        });
+                        const btn = document.querySelector('.play-btn, [class*="play"], button, [role="button"]');
+                        if (btn) btn.click();
+                        const v = document.querySelector('video');
+                        if (v) v.play().catch(() => {});
+                    } catch(e) {}
+                }).catch(() => {});
             } catch (e) {}
-        }, 500); // reduced from 2s to 500ms
+        }, 1500);
 
         const finalUrl = await extractPromise;
         tempPage.off('response', responseHandler);
-        return finalUrl && finalUrl !== 'ERROR' ? { url: finalUrl } : null;
+        
+        if (finalUrl && finalUrl !== 'ERROR') {
+            const baseUrl = new URL(embedUrl).origin;
+            return { 
+                url: finalUrl,
+                headers: {
+                    'Referer': `${baseUrl}/`,
+                    'Origin': baseUrl,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                }
+            };
+        }
+        return null;
     } catch (error) {
         console.error('[Extractor] Error:', error.message);
         return null;
     } finally {
-        if (slot) kembalikanKePool(slot);
+        try { if (typeof clickInterval !== 'undefined') clearInterval(clickInterval); } catch (e) {}
+        if (isTempSpaPage && tempPage) {
+            tempPage.close().catch(() => {});
+        } else if (slot) {
+            kembalikanKePool(slot);
+        }
     }
 }
 

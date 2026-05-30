@@ -22,7 +22,7 @@ async function getBrowser() {
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
-            headless: true,
+            headless: "new",
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
@@ -56,8 +56,8 @@ async function buatPageExtractor(browser) {
     page.on('request', req => {
         const type = req.resourceType();
         const url = req.url();
-        // MENGIZINKAN MEDIA (VIDEO)
-        if (['image', 'font', 'stylesheet'].includes(type)) return req.abort();
+        // MENGIZINKAN MEDIA (VIDEO) DAN STYLESHEET (AGAR SPA TIDAK CRASH)
+        if (['image', 'font'].includes(type)) return req.abort();
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
             url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
         req.continue();
