@@ -487,7 +487,7 @@ async function extractVideoUrl(embedUrl, req) {
                     const parsed = JSON.parse(decoded);
                     
                     if (parsed.props && parsed.props.url) {
-                        const videoUrl = parsed.props.url.replace(/\\/g, '');
+                        const videoUrl = parsed.props.url.replace(/\\/g, '').replace(/&amp;/g, '&');
                         console.log(`[Filedon/Pucuk] Fast HTML Parse: Found URL!`);
                         return {
                             url: videoUrl,
