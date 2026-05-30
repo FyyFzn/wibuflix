@@ -1,5 +1,6 @@
-const { fetchPage, kembalikanKePool } = require('../puppeteer/pool');
+const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 const { searchAnime, getAnimeEpisodes } = require('../api/jikan');
+const cheerio = require('cheerio');
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam (super cepat)
 
@@ -13,36 +14,46 @@ async function getEpisodes(targetUrl) {
         return cachedData;
     }
 
-    console.log(`\n[Episodes Fetch] ${targetUrl}`);
+    console.log(`\n[Episodes Fast Fetch] ${targetUrl}`);
 
     let slot;
     try {
-        slot = await fetchPage(targetUrl);
+        slot = await ambilDariPool();
         const page = slot.page;
 
-        const result = await page.evaluate(() => {
-            const rawTitle = document.title.replace(/[-–|].*$/, '').trim();
-            const daftar_episode = [];
+        const html = await page.evaluate(async (url) => {
+            try {
+                const res = await fetch(url);
+                return await res.text();
+            } catch(e) {
+                return '';
+            }
+        }, targetUrl);
 
-            const coverImg =
-                document.querySelector('meta[property="og:image"]')?.content ||
-                document.querySelector('.thumb img, .thumbook img')?.src ||
-                '';
+        if (!html) throw new Error("Gagal mengambil HTML dari target");
 
-            document.querySelectorAll('.lstepsiode ul li, .episodelist ul li').forEach(el => {
-                const epLink = el.querySelector('.epsleft a, a');
-                const epDate = el.querySelector('.epsright, .date');
-                if (epLink && epLink.href) {
-                    daftar_episode.push({
-                        judul:   epLink.innerText.trim(),
-                        url:     epLink.href,
-                        tanggal: epDate ? epDate.innerText.trim() : '',
-                    });
-                }
-            });
+        const $ = cheerio.load(html);
+        
+        const rawTitle = ($('title').text() || '').replace(/[-–|].*$/, '').trim();
+        const daftar_episode = [];
 
-            return { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
+        const coverImg = 
+            $('meta[property="og:image"]').attr('content') ||
+            $('.thumb img, .thumbook img').attr('src') || '';
+
+        $('.lstepsiode ul li, .episodelist ul li').each((_, el) => {
+            const epLink = $(el).find('.epsleft a, a').first();
+            const epDate = $(el).find('.epsright, .date').first();
+            if (epLink.length && epLink.attr('href')) {
+                daftar_episode.push({
+                    judul: epLink.text().trim(),
+                    url: epLink.attr('href'),
+                    tanggal: epDate.length ? epDate.text().trim() : '',
+                });
+            }
         });
+
+        const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
 
         // ── MAL: ambil info anime + judul episode secara paralel ──
         let mal = null;
@@ -64,9 +75,6 @@ async function getEpisodes(targetUrl) {
         }
 
         // ── Inject judul MAL ke tiap episode ──
-        // Ekstrak nomor episode dari judul scraper, misal:
-        //   "One Piece Episode 1100" → "1100"
-        //   "Episode 5" → "5"
         if (Object.keys(malEpisodeMap).length > 0) {
             result.daftar_episode.forEach(ep => {
                 const match = ep.judul.match(/episode\s+(\d+)/i) || ep.judul.match(/(\d+)$/);
