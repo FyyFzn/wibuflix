@@ -343,6 +343,18 @@ async function extractVideoUrl(embedUrl, req) {
 
     const browser = await getBrowser();
 
+    // ── Bypass untuk link langsung (seperti Wibufile .mp4) ──
+    if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i) || embedUrl.includes('wibufile.com')) {
+        console.log(`[Direct] URL sudah merupakan file video langsung: ${embedUrl}`);
+        return { 
+            url: embedUrl,
+            headers: {
+                'Referer': 'https://v2.samehadaku.how/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        };
+    }
+
     // ── Handler khusus Blogger / Google Video ────────────────
     if (embedUrl.includes('blogger.com/video') || embedUrl.includes('blogger.com/video.g')) {
         const videoUrl = await extractBloggerVideo(embedUrl, browser, req);
