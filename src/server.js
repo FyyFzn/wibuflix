@@ -92,11 +92,11 @@ app.get('/api/extract-video', async (req, res) => {
         const data = await extractVideoUrl(embedUrl, req);
         let finalUrl = data.url;
         
-        // Gunakan proxy untuk Krakenfiles agar token dan range request bisa dihandle server
-        if (data.headers && data.headers.token && data.url) {
-            const baseUrl = `${req.protocol}://${req.get('host')}`;
-            finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        }
+        // Disable proxy untuk Krakenfiles agar langsung dari CDN (mengatasi buffering parah)
+        // if (data.headers && data.headers.token && data.url) {
+        //     const baseUrl = `${req.protocol}://${req.get('host')}`;
+        //     finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
+        // }
         
         res.json({ 
             success: true, 
