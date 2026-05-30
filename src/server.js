@@ -128,7 +128,7 @@ app.get('/api/extract-video', async (req, res) => {
             headers: data.headers || undefined
         });
     } catch (err) {
-        console.error('[Extractor Error]', err.message);
+        console.error(`[Extractor Error] URL: ${embedUrl} | STACK:`, err.stack);
         res.status(500).json({ success: false, message: err.message });
     }
 });
