@@ -1,4 +1,5 @@
-const { fetchPage, kembalikanKePool, getBrowser } = require('../puppeteer/pool');
+const { fetchPage, kembalikanKePool, getBrowser, ambilDariPool } = require('../puppeteer/pool');
+const cheerio = require('cheerio');
 
 function extractIframeSrc(html) {
     const match = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
@@ -222,70 +223,76 @@ async function resolveServerIframe(page, { post, nume, type, episodeUrl }, req) 
 
 async function scrapeVideoServers(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
-    console.log(`\n[Scrape] ${targetUrl}`);
+    console.log(`\n[Scrape Fast] ${targetUrl}`);
 
     let slot;
     try {
-        slot = await fetchPage(targetUrl);
+        slot = await ambilDariPool();
         const page = slot.page;
 
-        const pageData = await page.evaluate(() => {
-            const judul = (
-                document.querySelector('h1[itemprop="name"], h1.entry-title')?.innerText ||
-                document.title.replace(/[-–|].*$/, '')
-            ).trim();
+        // Fetch HTML text directly via Puppeteer's fetch to bypass CF quickly
+        const html = await page.evaluate(async (url) => {
+            const res = await fetch(url);
+            return await res.text();
+        }, targetUrl);
 
-            let nav_prev = null, nav_next = null;
-            document.querySelectorAll('a[data-wpel-link="internal"]').forEach(a => {
-                const icon = a.querySelector('i');
-                if (!icon) return;
-                const cls = icon.className || '';
-                if (cls.includes('chevron-left')) nav_prev = a.href;
-                if (cls.includes('chevron-right')) nav_next = a.href;
-            });
+        const $ = cheerio.load(html);
 
-            const rawServers = [...document.querySelectorAll('.east_player_option')].map(el => ({
-                nama: el.querySelector('span')?.innerText?.trim() || el.innerText?.trim() || 'Server',
-                post: el.dataset.post || '',
-                nume: el.dataset.nume || '',
-                type: el.dataset.type || 'schtml',
-                aktif: el.classList.contains('on')
-            }));
+        const judul = ($('h1[itemprop="name"]').text() || $('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
 
-            const seen = new Set();
-            const servers = [];
-            for (const s of rawServers) {
-                const key = `${s.post}-${s.nume}`;
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    servers.push(s);
-                }
-            }
-
-            const BLACKLIST = ['facebook', 'dtscout', 'crwdcntrl', 'doubleclick', 'googlesyndication'];
-            const iframeAktif = Array.from(document.querySelectorAll('iframe'))
-                .map(f => f.src)
-                .find(src => src && src.startsWith('http') && !BLACKLIST.some(b => src.includes(b))) || null;
-
-            const gambar = (
-                document.querySelector('meta[property="og:image"]')?.content ||
-                document.querySelector('.thumbook img, .thumb img, img[itemprop="image"]')?.src ||
-                ''
-            );
-
-            return { judul, gambar, nav_prev, nav_next, servers, iframeAktif };
+        let nav_prev = null, nav_next = null;
+        $('a[data-wpel-link="internal"]').each((_, el) => {
+            const cls = $(el).find('i').attr('class') || '';
+            if (cls.includes('chevron-left')) nav_prev = $(el).attr('href');
+            if (cls.includes('chevron-right')) nav_next = $(el).attr('href');
         });
 
-        console.log(`  Judul  : ${pageData.judul}`);
-        console.log(`  Server : ${pageData.servers.length} ditemukan`);
+        const rawServers = [];
+        $('.east_player_option').each((_, el) => {
+            rawServers.push({
+                nama: $(el).find('span').text().trim() || $(el).text().trim() || 'Server',
+                post: $(el).attr('data-post') || '',
+                nume: $(el).attr('data-nume') || '',
+                type: $(el).attr('data-type') || 'schtml',
+                aktif: $(el).hasClass('on')
+            });
+        });
 
-        const activeServer = pageData.servers.find(srv => srv.aktif);
-        if (activeServer && pageData.iframeAktif) {
-            activeServer.iframeUrl = pageData.iframeAktif;
-            activeServer.namaHost = namaServer(pageData.iframeAktif);
+        const seen = new Set();
+        const servers = [];
+        for (const s of rawServers) {
+            const key = `${s.post}-${s.nume}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                servers.push(s);
+            }
         }
 
-        return pageData;
+        const BLACKLIST = ['facebook', 'dtscout', 'crwdcntrl', 'doubleclick', 'googlesyndication'];
+        let iframeAktif = null;
+        $('iframe').each((_, el) => {
+            const src = $(el).attr('src');
+            if (src && src.startsWith('http') && !BLACKLIST.some(b => src.includes(b))) {
+                iframeAktif = src;
+                return false; // break loop
+            }
+        });
+
+        const gambar = $('meta[property="og:image"]').attr('content') ||
+                       $('.thumbook img').attr('src') ||
+                       $('.thumb img').attr('src') ||
+                       $('img[itemprop="image"]').attr('src') || '';
+
+        console.log(`  Judul  : ${judul}`);
+        console.log(`  Server : ${servers.length} ditemukan`);
+
+        const activeServer = servers.find(srv => srv.aktif);
+        if (activeServer && iframeAktif) {
+            activeServer.iframeUrl = iframeAktif;
+            activeServer.namaHost = namaServer(iframeAktif);
+        }
+
+        return { judul, gambar, nav_prev, nav_next, servers, iframeAktif };
     } catch (err) {
         throw err;
     } finally {
@@ -295,17 +302,21 @@ async function scrapeVideoServers(targetUrl) {
 
 async function resolveSingleServer(targetUrl, nume, req) {
     if (!targetUrl || !nume) throw new Error("Parameter 'url' dan 'nume' wajib diisi!");
-    console.log(`\n[Resolve] ${targetUrl} [nume=${nume}]`);
+    console.log(`\n[Resolve Fast] ${targetUrl} [nume=${nume}]`);
 
     let slot;
     try {
-        slot = await fetchPage(targetUrl);
+        slot = await ambilDariPool();
         const page = slot.page;
-        
-        const post = await page.evaluate(() => {
-            const btn = document.querySelector('.east_player_option');
-            return btn ? btn.dataset.post : '';
-        });
+
+        // Fast fetch to get the post ID
+        const html = await page.evaluate(async (url) => {
+            const res = await fetch(url);
+            return await res.text();
+        }, targetUrl);
+
+        const $ = cheerio.load(html);
+        const post = $('.east_player_option').first().attr('data-post') || '';
 
         if (!post) throw new Error("Tidak menemukan ID Post (data-post)");
 
@@ -486,14 +497,13 @@ async function extractVideoUrl(embedUrl, req) {
                     }
                 } catch (e) {}
             }, 500);
-
             setTimeout(() => { 
                 clearInterval(checkInterval); 
                 resolve(null); 
-            }, 15000);
+            }, 8000); // reduced from 15s to 8s
         });
 
-        await tempPage.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(e => {});
+        await tempPage.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(e => {});
         await tempPage.evaluate((url) => {
             const iframe = document.createElement('iframe');
             iframe.src = url;
@@ -506,14 +516,14 @@ async function extractVideoUrl(embedUrl, req) {
         setTimeout(async () => {
             try {
                 const viewport = tempPage.viewport() || { width: 800, height: 600 };
-                // Triple click to bypass popup ads and trigger play
+                // Fast triple click to bypass popup ads and trigger play
                 await tempPage.mouse.click(viewport.width / 2, viewport.height / 2);
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 200));
                 await tempPage.mouse.click(viewport.width / 2, viewport.height / 2);
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 200));
                 await tempPage.mouse.click(viewport.width / 2, viewport.height / 2);
             } catch (e) {}
-        }, 2000);
+        }, 500); // reduced from 2s to 500ms
 
         const finalUrl = await extractPromise;
         await tempPage.close().catch(() => {});

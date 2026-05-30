@@ -86,8 +86,8 @@ async function ambilDariPool() {
 
 function kembalikanKePool(slot) {
     if (slot.temp) { slot.page.close().catch(() => { }); return; }
-    // Navigasi ke about:blank untuk membebaskan memory DOM dari page sebelumnya
-    slot.page.goto('about:blank').catch(() => {});
+    // Jangan navigasi ke about:blank agar page tetap berada di domain samehadaku 
+    // dan bisa digunakan untuk fetch() berulang kali dengan cepat tanpa race condition.
     slot.busy = false;
 }
 
@@ -106,6 +106,7 @@ async function fetchPage(url) {
 module.exports = {
     initPagePool,
     fetchPage,
+    ambilDariPool,
     kembalikanKePool,
     getBrowser
 };
