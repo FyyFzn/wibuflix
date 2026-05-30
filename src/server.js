@@ -6,7 +6,8 @@ const { getEpisodes } = require('./scraper/episodes');
 const { scrapeVideoServers, resolveSingleServer, extractVideoUrl } = require('./scraper/extractor');
 
 const app = express();
-const PORT = 3000;
+app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure (di belakang proxy)
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.set('json spaces', 2);
