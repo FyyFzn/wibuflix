@@ -1,4 +1,4 @@
-const { fetchPage, kembalikanKePool, getBrowser, ambilDariPool } = require('../puppeteer/pool');
+const { fetchPage, kembalikanKePool, getBrowser, ambilDariPool, ambilDariExtractorPool } = require('../puppeteer/pool');
 const cheerio = require('cheerio');
 
 function extractIframeSrc(html) {
@@ -42,15 +42,17 @@ async function extractBloggerVideo(embedUrl, browser, req) {
 
         let videoUrl = null;
 
-        page.on('request', req => {
-            const url = req.url();
-            // Tangkap redirect ke googlevideo / videoplayback
+        page.on('request', request => {
+            const rt = request.resourceType();
+            const url = request.url();
             if (url.includes('googlevideo.com') || url.includes('videoplayback')) {
                 videoUrl = url;
-                req.abort();
-            } else {
-                req.continue();
+                return request.abort();
             }
+            if (['image', 'font', 'stylesheet'].includes(rt)) {
+                return request.abort();
+            }
+            request.continue();
         });
 
         page.on('response', async res => {
@@ -61,49 +63,44 @@ async function extractBloggerVideo(embedUrl, browser, req) {
             }
         });
 
-        // Navigasi ke embed blogger
-        await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        const extractPromise = new Promise(resolve => {
+            const checkInterval = setInterval(() => {
+                if (videoUrl) {
+                    clearInterval(checkInterval);
+                    return resolve(videoUrl);
+                }
+            }, 100);
+            setTimeout(() => { 
+                clearInterval(checkInterval); 
+                resolve(null); 
+            }, 6000);
+        });
 
-        // Tunggu sampai video element muncul, lalu ambil src-nya
-        const srcFromDom = await page.evaluate(() => {
-            const v = document.querySelector('video source, video');
-            return v ? (v.src || v.getAttribute('src') || '') : '';
-        }).catch(() => '');
+        await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 6000 }).catch(() => {});
 
-        if (srcFromDom && srcFromDom.startsWith('http')) {
-            videoUrl = srcFromDom;
-        }
-
-        // Klik play untuk trigger network request jika belum dapat URL
         if (!videoUrl) {
             await page.evaluate(() => {
-                const playBtn = document.querySelector('.ytp-large-play-button, .play-button, button');
+                const playBtn = document.querySelector('.ppVepb, .iLXc1d, .ytp-large-play-button, .play-button, button, [role="button"]');
                 if (playBtn) playBtn.click();
                 const v = document.querySelector('video');
                 if (v) v.play().catch(() => {});
             }).catch(() => {});
 
-            // Fallback click center
             try {
                 const viewport = page.viewport() || { width: 800, height: 600 };
                 await page.mouse.click(viewport.width / 2, viewport.height / 2);
+                await new Promise(r => setTimeout(r, 200));
+                await page.mouse.click(viewport.width / 2, viewport.height / 2);
             } catch (e) {}
-
-            // Tunggu maks 8 detik
-            await new Promise(resolve => {
-                const t = setTimeout(() => resolve(), 8000);
-                const check = setInterval(() => {
-                    if (videoUrl) { clearInterval(check); clearTimeout(t); resolve(); }
-                }, 300);
-            });
         }
 
-        await page.close().catch(() => {});
-        return videoUrl || null;
+        const finalUrl = await extractPromise;
+        return finalUrl || null;
     } catch (err) {
         console.error('[Blogger] Error:', err.message);
-        if (page) await page.close().catch(() => {});
         return null;
+    } finally {
+        if (page && !page.isClosed()) await page.close().catch(() => {});
     }
 }
 
@@ -134,10 +131,18 @@ async function extractKrakenVideo(embedUrl, req) {
         const token = $("#dl-token").val();
         
         let src;
-        if ($("video").html()) {
+        if ($("video source").length > 0) {
             src = $("video source").attr("src");
-        } else {
+        } else if ($("video").attr("src")) {
+            src = $("video").attr("src");
+        } else if ($(".lightgallery a").length > 0) {
             src = $(".lightgallery a").attr("href");
+        } else if ($("a[data-type='video']").length > 0) {
+            src = $("a[data-type='video']").attr("href");
+        } else {
+            // Regex match as last resort
+            const m = data.match(/(https?:\/\/[^\s"'<>]+\.(?:mp4|mkv))/i);
+            if (m) src = m[1];
         }
         
         if (src) {
@@ -355,6 +360,21 @@ async function extractVideoUrl(embedUrl, req) {
         };
     }
 
+    // ── Handler API Pixeldrain (Ekstraksi Instan Tanpa Puppeteer) ──
+    if (embedUrl.includes('pixeldrain.com/u/')) {
+        const idMatch = embedUrl.match(/pixeldrain\.com\/u\/([a-zA-Z0-9]+)/);
+        if (idMatch && idMatch[1]) {
+            const directUrl = `https://pixeldrain.com/api/file/${idMatch[1]}`;
+            console.log(`[Pixeldrain] Fast API URL: ${directUrl}`);
+            return {
+                url: directUrl,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                }
+            };
+        }
+    }
+
     // ── Handler khusus Blogger / Google Video ────────────────
     if (embedUrl.includes('blogger.com/video') || embedUrl.includes('blogger.com/video.g')) {
         const videoUrl = await extractBloggerVideo(embedUrl, browser, req);
@@ -421,44 +441,20 @@ async function extractVideoUrl(embedUrl, req) {
         }
     }
 
-    // ──────────────── General extractor (iframe embed) ────────────────
+    let slot;
     let tempPage;
     try {
-        tempPage = await browser.newPage();
-        if (req) {
-            req.on('close', () => {
-                if (tempPage && !tempPage.isClosed()) tempPage.close().catch(()=>{});
-            });
-        }
+        slot = await ambilDariExtractorPool();
+        tempPage = slot.page;
+
         await tempPage.setExtraHTTPHeaders({
             'Referer': 'https://v2.samehadaku.how/',
             'Origin': 'https://v2.samehadaku.how'
         });
-        await tempPage.setRequestInterception(true);
         
         let videoUrl = null;
 
-        tempPage.on('request', (request) => {
-            const rt = request.resourceType();
-            const reqUrl = request.url();
-            
-            if (reqUrl === 'https://v2.samehadaku.how/' && rt === 'document') {
-                return request.respond({
-                    status: 200,
-                    contentType: 'text/html',
-                    body: '<html style="height:100%;"><body style="height:100%; margin:0; background:#000;"></body></html>'
-                });
-            }
-
-            if (rt === 'media' || reqUrl.includes('.mp4') || reqUrl.includes('.m3u8') || reqUrl.includes('.mkv')) {
-                videoUrl = reqUrl;
-                return request.abort(); 
-            } else {
-                return request.continue();
-            }
-        });
-
-        tempPage.on('response', async (response) => {
+        const responseHandler = async (response) => {
             if (videoUrl) return;
             const url = response.url();
             const type = response.headers()['content-type'] || '';
@@ -489,7 +485,8 @@ async function extractVideoUrl(embedUrl, req) {
                     }
                 } catch (e) {}
             }
-        });
+        };
+        tempPage.on('response', responseHandler);
 
         const extractPromise = new Promise(resolve => {
             const checkInterval = setInterval(async () => {
@@ -508,14 +505,15 @@ async function extractVideoUrl(embedUrl, req) {
                         }
                     }
                 } catch (e) {}
-            }, 500);
+            }, 100);
             setTimeout(() => { 
                 clearInterval(checkInterval); 
                 resolve(null); 
-            }, 8000); // reduced from 15s to 8s
+            }, 6000);
         });
 
-        await tempPage.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(e => {});
+        await tempPage.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(e => {});
+        await tempPage.setContent('<html style="height:100%;"><body style="height:100%; margin:0; background:#000;"></body></html>');
         await tempPage.evaluate((url) => {
             const iframe = document.createElement('iframe');
             iframe.src = url;
@@ -538,16 +536,13 @@ async function extractVideoUrl(embedUrl, req) {
         }, 500); // reduced from 2s to 500ms
 
         const finalUrl = await extractPromise;
-        await tempPage.close().catch(() => {});
-
-        if (finalUrl && finalUrl !== 'ERROR') {
-            return { url: finalUrl };
-        } else {
-            throw new Error('Gagal mengekstrak video atau server down (404)');
-        }
+        tempPage.off('response', responseHandler);
+        return finalUrl && finalUrl !== 'ERROR' ? { url: finalUrl } : null;
     } catch (error) {
-        if (tempPage) await tempPage.close().catch(e => {});
-        throw error;
+        console.error('[Extractor] Error:', error.message);
+        return null;
+    } finally {
+        if (slot) kembalikanKePool(slot);
     }
 }
 
