@@ -22,7 +22,7 @@ async function getBrowser() {
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
-            headless: "new",
+            headless: true,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
