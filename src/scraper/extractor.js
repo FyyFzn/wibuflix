@@ -687,15 +687,7 @@ async function extractVideoUrl(embedUrl, req) {
         tempPage.off('response', responseHandler);
         
         if (finalUrl && finalUrl !== 'ERROR') {
-            const baseUrl = new URL(embedUrl).origin;
-            return { 
-                url: finalUrl,
-                headers: {
-                    'Referer': `${baseUrl}/`,
-                    'Origin': baseUrl,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-                }
-            };
+            return { url: finalUrl };
         }
         return null;
     } catch (error) {
