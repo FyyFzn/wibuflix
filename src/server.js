@@ -92,11 +92,11 @@ app.get('/api/extract-video', async (req, res) => {
         const data = await extractVideoUrl(embedUrl, req);
         let finalUrl = data.url;
         
-        // Disable proxy untuk Krakenfiles agar langsung dari CDN (mengatasi buffering parah)
-        // if (data.headers && data.headers.token && data.url) {
-        //     const baseUrl = `${req.protocol}://${req.get('host')}`;
-        //     finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        // }
+        // Gunakan proxy untuk Krakenfiles karena CDN mengunci IP (IP lock)
+        if (data.headers && data.headers.token && data.url) {
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
+        }
         
         res.json({ 
             success: true, 
@@ -119,7 +119,7 @@ app.get('/api/proxy/kraken', async (req, res) => {
     
     if (!videoUrl) return res.status(400).send('URL required');
     
-    const axios = require('axios');
+    const https = require('https');
     try {
         const headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -132,24 +132,32 @@ app.get('/api/proxy/kraken', async (req, res) => {
             headers['Range'] = req.headers.range;
         }
 
-        const response = await axios({
-            method: 'GET',
-            url: videoUrl,
-            responseType: 'stream',
-            headers: headers,
-            validateStatus: status => status >= 200 && status < 400
+        const proxyReq = https.get(videoUrl, { headers }, (proxyRes) => {
+            if (proxyRes.statusCode >= 400) {
+                res.status(proxyRes.statusCode).send('Proxy upstream error');
+                return;
+            }
+            
+            if (proxyRes.headers['content-type']) res.setHeader('Content-Type', proxyRes.headers['content-type']);
+            if (proxyRes.headers['content-length']) res.setHeader('Content-Length', proxyRes.headers['content-length']);
+            if (proxyRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', proxyRes.headers['accept-ranges']);
+            if (proxyRes.headers['content-range']) res.setHeader('Content-Range', proxyRes.headers['content-range']);
+            
+            res.status(proxyRes.statusCode);
+            proxyRes.pipe(res);
         });
-        
-        if (response.headers['content-type']) res.setHeader('Content-Type', response.headers['content-type']);
-        if (response.headers['content-length']) res.setHeader('Content-Length', response.headers['content-length']);
-        if (response.headers['accept-ranges']) res.setHeader('Accept-Ranges', response.headers['accept-ranges']);
-        if (response.headers['content-range']) res.setHeader('Content-Range', response.headers['content-range']);
-        
-        res.status(response.status);
-        response.data.pipe(res);
+
+        proxyReq.on('error', (err) => {
+            console.error('[Proxy Error]', err.message);
+            if (!res.headersSent) res.status(500).send('Proxy error');
+        });
+
+        req.on('close', () => {
+            proxyReq.destroy();
+        });
     } catch (err) {
         console.error('[Proxy Error]', err.message);
-        res.status(500).send('Proxy error');
+        if (!res.headersSent) res.status(500).send('Proxy error');
     }
 });
 
