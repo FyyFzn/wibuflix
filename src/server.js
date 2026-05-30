@@ -3,6 +3,7 @@ const cors = require('cors');
 const { initPagePool } = require('./puppeteer/pool');
 const { getKatalog } = require('./scraper/katalog');
 const { getEpisodes } = require('./scraper/episodes');
+const { getHotAnime } = require('./scraper/hot');
 const { scrapeVideoServers, resolveSingleServer, extractVideoUrl } = require('./scraper/extractor');
 
 const app = express();
@@ -28,6 +29,19 @@ app.get('/api/katalog', async (req, res) => {
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Katalog Error]', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// ============================================================
+// RUTE 1B: GET /api/hot
+// ============================================================
+app.get('/api/hot', async (req, res) => {
+    try {
+        const data = await getHotAnime();
+        res.json({ status: 'success', data });
+    } catch (err) {
+        console.error('[Hot Error]', err.message);
         res.status(500).json({ status: 'error', message: err.message });
     }
 });
