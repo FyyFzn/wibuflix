@@ -53,9 +53,9 @@ async function getKatalog(pageParams, searchParam) {
                 const titleNode = $(el).find('.title, .tt h2, .entry-title').first();
                 const linkNode = $(el).find('a').first();
                 const imgNode = $(el).find('img').first();
-                const typeNode = $(el).find('.typez, .type, .bt span.type').first();
+                const typeNode = $(el).find('.content-thumb .type, .typez, .bt span.type').first();
                 const scoreNode = $(el).find('.score, .numscore, .rating').first();
-                const statusNode = $(el).find('.status, .epx, .sb, .bt span:not(.type)').first();
+                const statusNode = $(el).find('.data .type, .status, .epx, .sb, .bt span:not(.type)').first();
                 
                 if (titleNode.length && linkNode.length && imgNode.length) {
                     const skorRaw = scoreNode.length ? scoreNode.text().trim() : '';
