@@ -114,10 +114,10 @@ app.get('/api/extract-video', async (req, res) => {
         let finalUrl = data.url;
         
         // Gunakan proxy untuk Krakenfiles karena CDN mengunci IP (IP lock)
-        if (data.headers && data.headers.token && data.url) {
+        if (data?.headers?.token && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        } else if (embedUrl.includes('filedon')) {
+        } else if (embedUrl.includes('filedon') && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
@@ -125,7 +125,7 @@ app.get('/api/extract-video', async (req, res) => {
         res.json({ 
             success: true, 
             url: finalUrl,
-            headers: data.headers || undefined
+            headers: data?.headers || undefined
         });
     } catch (err) {
         console.error(`[Extractor Error] URL: ${embedUrl} | STACK:`, err.stack);
