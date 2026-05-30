@@ -82,7 +82,7 @@ async function httpGetWithRetry(url, maxRetry = 3) {
     return null;
 }
 
-// ── Normalisasi judul ───────────────
+// ── Normalisasi judulse ───────────────
 function normalizeTitle(title) {
     return title
         .toLowerCase()

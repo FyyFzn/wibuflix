@@ -441,7 +441,7 @@ async function extractVideoUrl(embedUrl, req) {
                             htmlSource.match(/file:\s*["']([^"']+\.m3u8[^"']*)["']/i);
             
             if (m3Match && m3Match[1]) {
-                const vidhideUrl = m3Match[1].replace(/\\/g, '');
+                const vidhideUrl = m3Match[1].replace(/\\/g, '').replace(/&amp;/g, '&');
                 console.log(`[Vidhide] Found direct URL!`);
                 return {
                     url: vidhideUrl,
@@ -688,7 +688,8 @@ async function extractVideoUrl(embedUrl, req) {
         tempPage.off('response', responseHandler);
         
         if (finalUrl && finalUrl !== 'ERROR') {
-            return { url: finalUrl };
+            const cleanUrl = finalUrl.replace(/&amp;/g, '&');
+            return { url: cleanUrl };
         }
         return null;
     } catch (error) {
