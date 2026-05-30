@@ -23,7 +23,10 @@ async function getEpisodes(targetUrl) {
 
         const html = await page.evaluate(async (url) => {
             try {
-                const res = await fetch(url);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 return await res.text();
             } catch(e) {
                 return '';

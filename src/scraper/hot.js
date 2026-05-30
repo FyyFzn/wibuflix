@@ -23,7 +23,10 @@ async function getHotAnime() {
         // Fetch HTML of homepage
         const html = await page.evaluate(async (targetUrl) => {
             try {
-                const res = await fetch(targetUrl);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(targetUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 return await res.text();
             } catch(e) {
                 return '';

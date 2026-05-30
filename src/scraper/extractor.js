@@ -238,8 +238,15 @@ async function scrapeVideoServers(targetUrl) {
 
         // Fetch HTML text directly via Puppeteer's fetch to bypass CF quickly
         const html = await page.evaluate(async (url) => {
-            const res = await fetch(url);
-            return await res.text();
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                return await res.text();
+            } catch(e) {
+                return '';
+            }
         }, targetUrl);
 
         const $ = cheerio.load(html);
@@ -317,8 +324,15 @@ async function resolveSingleServer(targetUrl, nume, req) {
 
         // Fast fetch to get the post ID
         const html = await page.evaluate(async (url) => {
-            const res = await fetch(url);
-            return await res.text();
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                return await res.text();
+            } catch(e) {
+                return '';
+            }
         }, targetUrl);
 
         const $ = cheerio.load(html);
