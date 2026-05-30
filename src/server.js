@@ -117,7 +117,7 @@ app.get('/api/extract-video', async (req, res) => {
         if (data?.headers?.token && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        } else if (embedUrl.includes('filedon') && data?.url) {
+        } else if ((embedUrl.includes('filedon') || embedUrl.includes('pucuk')) && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
