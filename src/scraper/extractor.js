@@ -471,39 +471,37 @@ async function extractVideoUrl(embedUrl, req) {
             const slug = originUrl.pathname.split('/').filter(Boolean).pop();
             console.log(`[Filedon/Pucuk] Extracting slug="${slug}" from: ${embedUrl}`);
 
-            // ── Strategi 1: Inertia.js JSON API (X-Inertia header) ──
+            // ── Strategi 1: Fast HTML Parse (data-page) ──
             try {
-                const inertiaRes = await axios.get(embedUrl, {
-                    timeout: 10000,
+                const { data } = await axios.get(embedUrl, {
+                    timeout: 8000,
                     headers: {
-                        'X-Inertia': 'true',
-                        'X-Inertia-Version': '1',
-                        'Accept': 'application/json',
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Referer': 'https://v2.samehadaku.how/',
+                        'Referer': 'https://v2.samehadaku.how/'
                     }
                 });
-                const props = inertiaRes.data?.props || inertiaRes.data;
-                const propsStr = JSON.stringify(props);
-                // Cari URL video dalam props JSON
-                const videoMatch = propsStr.match(/"(https?:\/\/[^"]+\.(?:m3u8|mp4)[^"]*)"/i) ||
-                                   propsStr.match(/"stream_url"\s*:\s*"([^"]+)"/i) ||
-                                   propsStr.match(/"url"\s*:\s*"(https?:\/\/[^"]+\.(?:m3u8|mp4)[^"]*)"/i);
-                if (videoMatch && videoMatch[1]) {
-                    const videoUrl = videoMatch[1].replace(/\\/g, '');
-                    console.log(`[Filedon/Pucuk] Inertia: Found URL!`);
-                    return {
-                        url: videoUrl,
-                        headers: {
-                            'Referer': `${baseUrl}/`,
-                            'Origin': baseUrl,
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        }
-                    };
+                
+                const m = data.match(/data-page="({.*?})"/);
+                if (m && m[1]) {
+                    const decoded = m[1].replace(/&quot;/g, '"');
+                    const parsed = JSON.parse(decoded);
+                    
+                    if (parsed.props && parsed.props.url) {
+                        const videoUrl = parsed.props.url.replace(/\\/g, '');
+                        console.log(`[Filedon/Pucuk] Fast HTML Parse: Found URL!`);
+                        return {
+                            url: videoUrl,
+                            headers: {
+                                'Referer': `${baseUrl}/`,
+                                'Origin': baseUrl,
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            }
+                        };
+                    }
                 }
-                console.log('[Filedon/Pucuk] Inertia response tidak mengandung URL video');
+                console.log('[Filedon/Pucuk] Fast HTML Parse tidak mengandung URL video');
             } catch (e) {
-                console.log(`[Filedon/Pucuk] Inertia request gagal: ${e.message}`);
+                console.log(`[Filedon/Pucuk] Fast HTML Parse gagal: ${e.message}`);
             }
 
             // ── Strategi 2: POST /embed/{slug}/download/start ──
