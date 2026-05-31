@@ -456,7 +456,7 @@ async function extractVideoUrl(embedUrl, req) {
                     url: vidhideUrl,
                     headers: { 
                         'Referer': embedUrl,
-                        'Origin': new URL(embedUrl).origin
+                        'Origin': 'https://vidhidepro.com'
                     }
                 };
             }
