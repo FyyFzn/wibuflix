@@ -237,7 +237,7 @@ async function scrapeVideoServers(targetUrl) {
         const page = slot.page;
 
         // Fetch HTML text directly via Puppeteer's fetch to bypass CF quickly
-        const html = await page.evaluate(async (url) => {
+        let html = await page.evaluate(async (url) => {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -248,6 +248,12 @@ async function scrapeVideoServers(targetUrl) {
                 return '';
             }
         }, targetUrl);
+
+        if (!html || html.trim() === '' || html.includes('cf-browser-verification') || html.includes('Just a moment')) {
+            console.log(`[Scrape] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            html = await page.content();
+        }
 
         const $ = cheerio.load(html);
 

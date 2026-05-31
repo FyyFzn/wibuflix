@@ -117,7 +117,7 @@ app.get('/api/extract-video', async (req, res) => {
         if (data?.headers?.token && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        } else if ((embedUrl.includes('filedon') || embedUrl.includes('pucuk')) && data?.url) {
+        } else if ((embedUrl.includes('filedon') || embedUrl.includes('pucuk') || embedUrl.includes('pixeldrain.com')) && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
@@ -145,6 +145,7 @@ app.get('/api/proxy/filedon', async (req, res) => {
         const headers = { ...req.headers };
         delete headers.host;
         delete headers.referer;
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
         
         const proxyReq = https.get(videoUrl, { headers }, (proxyRes) => {
             if (proxyRes.statusCode >= 400) {
