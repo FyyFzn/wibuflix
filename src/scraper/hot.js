@@ -21,7 +21,7 @@ async function getHotAnime() {
         const page = slot.page;
 
         // Fetch HTML of homepage
-        const html = await page.evaluate(async (targetUrl) => {
+        let html = await page.evaluate(async (targetUrl) => {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -32,6 +32,12 @@ async function getHotAnime() {
                 return '';
             }
         }, url);
+
+        if (!html || html.trim() === '') {
+            console.log(`[Hot] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            html = await page.content();
+        }
 
         if (!html) throw new Error("Gagal mengambil HTML dari target");
 

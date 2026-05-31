@@ -21,7 +21,7 @@ async function getEpisodes(targetUrl) {
         slot = await ambilDariPool();
         const page = slot.page;
 
-        const html = await page.evaluate(async (url) => {
+        let html = await page.evaluate(async (url) => {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -32,6 +32,12 @@ async function getEpisodes(targetUrl) {
                 return '';
             }
         }, targetUrl);
+
+        if (!html || html.trim() === '') {
+            console.log(`[Episodes] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            html = await page.content();
+        }
 
         if (!html) throw new Error("Gagal mengambil HTML dari target");
 

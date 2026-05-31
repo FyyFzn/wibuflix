@@ -29,8 +29,8 @@ async function getKatalog(pageParams, searchParam) {
         slot = await ambilDariPool();
         const page = slot.page;
 
-        // Fast fetch HTML text directly
-        const html = await page.evaluate(async (targetUrl) => {
+        // Fast fetch to get HTML
+        let html = await page.evaluate(async (targetUrl) => {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -41,6 +41,12 @@ async function getKatalog(pageParams, searchParam) {
                 return '';
             }
         }, url);
+
+        if (!html || html.trim() === '') {
+            console.log(`[Katalog] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            html = await page.content();
+        }
 
         if (!html) throw new Error("Gagal mengambil HTML dari target");
 

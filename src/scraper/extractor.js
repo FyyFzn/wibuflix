@@ -323,7 +323,7 @@ async function resolveSingleServer(targetUrl, nume, req) {
         const page = slot.page;
 
         // Fast fetch to get the post ID
-        const html = await page.evaluate(async (url) => {
+        let html = await page.evaluate(async (url) => {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -335,10 +335,19 @@ async function resolveSingleServer(targetUrl, nume, req) {
             }
         }, targetUrl);
 
-        const $ = cheerio.load(html);
-        const post = $('.east_player_option').first().attr('data-post') || '';
+        let $ = cheerio.load(html);
+        let post = $('.east_player_option').first().attr('data-post') || '';
 
-        if (!post) throw new Error("Tidak menemukan ID Post (data-post)");
+        // Fallback to Puppeteer page.goto if fetch failed (Cloudflare IUAM / Tarpit)
+        if (!post) {
+            console.log(`[Resolve] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            html = await page.content();
+            $ = cheerio.load(html);
+            post = $('.east_player_option').first().attr('data-post') || '';
+        }
+
+        if (!post) throw new Error("Tidak menemukan ID Post (data-post) setelah fallback");
 
         const iframeUrl = await resolveServerIframe(page, {
             post,
