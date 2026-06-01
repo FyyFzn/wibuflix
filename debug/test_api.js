@@ -1,24 +1,21 @@
-const http = require('http');
+const { startServer } = require('./server');
+const { scrapeVideoServers } = require('./scraper/extractor');
+const { initPagePool, destroyPagePool } = require('./puppeteer/pool');
 
-http.get('http://localhost:3000/api/katalog?page=2', (res) => {
-    let data = '';
-    res.on('data', (chunk) => data += chunk);
-    res.on('end', () => {
-        try {
-            const json = JSON.parse(data);
-            console.log('Status:', json.status);
-            console.log('Message:', json.message);
-            console.log('HasNext:', json.data.hasNext);
-            console.log('List Length:', json.data.list.length);
-            if (json.data.list.length > 0) {
-                console.log('First Item:', json.data.list[0]);
-            } else if (json.data.html) {
-                console.log('HTML Preview:', json.data.html);
-            }
-        } catch(e) {
-            console.log('Raw output:', data.substring(0, 500));
-        }
-    });
-}).on('error', (err) => {
-    console.error('Error:', err.message);
-});
+async function testApi() {
+    try {
+        console.log("Init pool...");
+        await initPagePool();
+        const url = 'https://v2.samehadaku.how/one-piece-episode-1107/';
+        console.log("Scraping", url);
+        const data = await scrapeVideoServers(url);
+        console.log("SERVERS FOUND:");
+        console.log(JSON.stringify(data.servers, null, 2));
+    } catch(e) {
+        console.error(e);
+    } finally {
+        await destroyPagePool();
+        process.exit(0);
+    }
+}
+testApi();
