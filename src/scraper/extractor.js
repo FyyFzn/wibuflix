@@ -283,7 +283,7 @@ async function scrapeVideoServers(targetUrl) {
                     const hostNameLower = hostNameRaw.toLowerCase();
                     const href = $(a).attr('href');
                     
-                    const allowedHosts = ['kraken', 'pucuk', 'pixeldrain', 'wibufile', 'vidhide', 'filedon', 'filemoon', 'filelions'];
+                    const allowedHosts = ['kraken', 'pucuk', 'pixeldrain', 'wibufile', 'vidhide', 'filedon', 'filemoon', 'filelions', 'gofile', 'acefile', 'mirrorupload', 'mega'];
                     const isAllowed = allowedHosts.some(h => hostNameLower.includes(h));
                     
                     // Kita ambil hoster prioritas
