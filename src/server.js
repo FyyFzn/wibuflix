@@ -245,12 +245,16 @@ function startServer() {
     app.listen(PORT, '0.0.0.0', async () => {
         const log = global.forceLog || console.log;
         
-        log('\n=============================================');
-        log(`🚀 WIBUFLIX BACKEND SERVER BERHASIL RESTART!`);
-        log(`⏰ Waktu Lokal  : ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}`);
-        log(`📡 Port Aktif   : ${PORT}`);
-        if (global.forceLog) log(`💡 Mode         : PRODUCTION (Log standar dinonaktifkan)`);
-        log('=============================================\n');
+        const modeText = global.forceLog ? `\n💡 Mode         : PRODUCTION (Log standar dinonaktifkan)` : '';
+        const banner = `
+=============================================
+🚀 WIBUFLIX BACKEND SERVER BERHASIL RESTART!
+⏰ Waktu Lokal  : ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+📡 Port Aktif   : ${PORT}${modeText}
+=============================================
+`;
+        // Print sebagai satu kesatuan string (Atomic) agar tidak terselip error/log lain di Azure
+        log(banner);
 
         log('⏳ [Puppeteer] Memulai inisialisasi pool browser...');
         await initPagePool();
