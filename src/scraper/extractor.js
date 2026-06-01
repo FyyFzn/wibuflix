@@ -414,6 +414,13 @@ async function extractVideoUrl(embedUrl, req) {
     if (!embedUrl) throw new Error("Parameter 'url' wajib diisi!");
     console.log(`\n[Extract] ${embedUrl}`);
 
+    // ── Bypass Cepat untuk Server WebView-Only (Mencegah Timeout 25 Detik) ──
+    const webviewOnlyHosts = ['mega.nz', 'mirrorupload', 'acefile', 'gofile'];
+    if (webviewOnlyHosts.some(h => embedUrl.toLowerCase().includes(h))) {
+        console.log(`[WebView-Only] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
+        return null; // Akan langsung memicu fallback WebView di frontend secara instan
+    }
+
     const browser = await getBrowser();
 
     // ── Bypass untuk link langsung (seperti Wibufile .mp4) ──
