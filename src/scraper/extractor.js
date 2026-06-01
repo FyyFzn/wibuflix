@@ -283,8 +283,11 @@ async function scrapeVideoServers(targetUrl) {
                     const hostNameLower = hostNameRaw.toLowerCase();
                     const href = $(a).attr('href');
                     
-                    // Kita ambil hoster prioritas (Kraken, Gofile, dll)
-                    if (href && (hostNameLower.includes('kraken') || hostNameLower.includes('zippy') || hostNameLower.includes('pucuk'))) {
+                    const allowedHosts = ['kraken', 'pucuk', 'pixeldrain', 'wibufile', 'vidhide', 'filedon', 'filemoon', 'filelions'];
+                    const isAllowed = allowedHosts.some(h => hostNameLower.includes(h));
+                    
+                    // Kita ambil hoster prioritas
+                    if (href && isAllowed) {
                         servers.push({
                             nama: `${res} ${formatDesc}`.trim(),
                             post: "",
