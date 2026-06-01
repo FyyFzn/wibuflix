@@ -521,7 +521,8 @@ async function extractVideoUrl(embedUrl, req) {
     // HTML statis TIDAK mengandung URL video — perlu hit Inertia API atau download API.
     const isFilemoonLike = embedUrl.includes('filemoon') || embedUrl.includes('filelions') ||
                            embedUrl.includes('moonplayer') || embedUrl.includes('filedon') ||
-                           embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
+                           embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk') ||
+                           embedUrl.includes('wibufile');
     if (isFilemoonLike) {
         const axios = require('axios');
         try {
@@ -645,7 +646,7 @@ async function extractVideoUrl(embedUrl, req) {
     let tempPage;
     let isTempSpaPage = false;
     try {
-        const isSPA = embedUrl.includes('filedon') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer') || embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
+        const isSPA = embedUrl.includes('filedon') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer') || embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk') || embedUrl.includes('wibufile');
 
         if (isSPA) {
             const { getBrowser } = require('../puppeteer/pool');
@@ -669,7 +670,7 @@ async function extractVideoUrl(embedUrl, req) {
             const url = response.url();
             const type = response.headers()['content-type'] || '';
             
-            if (url.includes('filedon')) console.log(`[Ext-Network] URL: ${url} | Type: ${type}`);
+            if (url.includes('filedon') || url.includes('wibufile')) console.log(`[Ext-Network] URL: ${url} | Type: ${type}`);
 
             if (
                 url.includes('.m3u8') || url.includes('.mp4') || 
