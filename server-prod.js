@@ -4,6 +4,9 @@
 
 const originalLog = console.log;
 
+// Membuka akses untuk log penting saat startup
+global.forceLog = originalLog;
+
 // Mematikan log standar
 console.log = function () { };
 console.debug = function () { };
@@ -11,8 +14,6 @@ console.info = function () { };
 
 // Catatan: console.error dan console.warn sengaja TIDAK dimatikan 
 // agar jika terjadi error kritis di server, Anda tetap bisa melihat log-nya.
-
-originalLog('🚀 Memulai server dalam mode PRODUCTION (Log standar dinonaktifkan untuk kecepatan maksimal)...');
 
 // Mulai aplikasi utama persis seperti biasa
 const { startServer } = require('./src/server');

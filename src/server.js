@@ -243,8 +243,18 @@ app.get('/api/cache-clear', (req, res) => {
 
 function startServer() {
     app.listen(PORT, '0.0.0.0', async () => {
-        console.log(`Server WibuFlix jalan di http://0.0.0.0:${PORT}`);
+        const log = global.forceLog || console.log;
+        
+        log('\n=============================================');
+        log(`🚀 WIBUFLIX BACKEND SERVER BERHASIL RESTART!`);
+        log(`⏰ Waktu Lokal  : ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}`);
+        log(`📡 Port Aktif   : ${PORT}`);
+        if (global.forceLog) log(`💡 Mode         : PRODUCTION (Log standar dinonaktifkan)`);
+        log('=============================================\n');
+
+        log('⏳ [Puppeteer] Memulai inisialisasi pool browser...');
         await initPagePool();
+        log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
     });
 }
 

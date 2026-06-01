@@ -414,17 +414,8 @@ async function extractVideoUrl(embedUrl, req) {
     if (!embedUrl) throw new Error("Parameter 'url' wajib diisi!");
     console.log(`\n[Extract] ${embedUrl}`);
 
-    // ── Bypass Cepat untuk Server WebView-Only (Mencegah Timeout 25 Detik) ──
-    const webviewOnlyHosts = ['mega.nz', 'mirrorupload', 'acefile', 'gofile'];
-    if (webviewOnlyHosts.some(h => embedUrl.toLowerCase().includes(h))) {
-        console.log(`[WebView-Only] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
-        return null; // Akan langsung memicu fallback WebView di frontend secara instan
-    }
-
-    const browser = await getBrowser();
-
-    // ── Bypass untuk link langsung (seperti Wibufile .mp4) ──
-    if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i) || embedUrl.includes('wibufile.com')) {
+    // ── 1. Bypass Mutlak untuk link yang sudah berupa file video langsung ──
+    if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i)) {
         console.log(`[Direct] URL sudah merupakan file video langsung: ${embedUrl}`);
         return { 
             url: embedUrl,
@@ -434,6 +425,15 @@ async function extractVideoUrl(embedUrl, req) {
             }
         };
     }
+
+    // ── 2. Bypass Cepat untuk Server WebView-Only (Mencegah Timeout 25 Detik) ──
+    const webviewOnlyHosts = ['mega.nz', 'mirrorupload', 'acefile', 'gofile'];
+    if (webviewOnlyHosts.some(h => embedUrl.toLowerCase().includes(h))) {
+        console.log(`[WebView-Only] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
+        return null; // Akan langsung memicu fallback WebView di frontend secara instan
+    }
+
+    const browser = await getBrowser();
 
     // ── Handler API Pixeldrain (Ekstraksi Instan Tanpa Puppeteer) ──
     if (embedUrl.includes('pixeldrain.com/u/')) {
