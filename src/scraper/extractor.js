@@ -266,24 +266,59 @@ async function scrapeVideoServers(targetUrl) {
             if (cls.includes('chevron-right')) nav_next = $(el).attr('href');
         });
 
-        const rawServers = [];
-        $('.east_player_option').each((_, el) => {
-            rawServers.push({
-                nama: $(el).find('span').text().trim() || $(el).text().trim() || 'Server',
-                post: $(el).attr('data-post') || '',
-                nume: $(el).attr('data-nume') || '',
-                type: $(el).attr('data-type') || 'schtml',
-                aktif: $(el).hasClass('on')
+        const servers = [];
+        
+        // --- NEW LOGIC: Ekstrak link download untuk Resolusi Eksplisit ---
+        $('*[class*="download"]').each((_, el) => {
+            const block = $(el);
+            let formatDesc = block.find('p b').text().trim() || 'MP4';
+            if (formatDesc.toLowerCase().includes('mkv')) formatDesc = 'MKV';
+            else if (formatDesc.toLowerCase().includes('mp4')) formatDesc = 'MP4';
+            else if (formatDesc.toLowerCase().includes('x265')) formatDesc = 'x265';
+            
+            block.find('ul li').each((_, li) => {
+                const res = $(li).find('strong').text().trim().replace(' ', ''); // e.g. "360p"
+                $(li).find('span a').each((_, a) => {
+                    const hostNameRaw = $(a).text().trim();
+                    const hostNameLower = hostNameRaw.toLowerCase();
+                    const href = $(a).attr('href');
+                    
+                    // Kita ambil hoster prioritas (Kraken, Gofile, dll)
+                    if (href && (hostNameLower.includes('kraken') || hostNameLower.includes('zippy') || hostNameLower.includes('pucuk'))) {
+                        servers.push({
+                            nama: `${res} ${formatDesc}`.trim(),
+                            post: "",
+                            nume: "",
+                            type: "direct",
+                            aktif: servers.length === 0, // Jadikan yang pertama aktif
+                            iframeUrl: href,
+                            namaHost: hostNameRaw
+                        });
+                    }
+                });
             });
         });
 
-        const seen = new Set();
-        const servers = [];
-        for (const s of rawServers) {
-            const key = `${s.post}-${s.nume}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                servers.push(s);
+        // Jika tidak ada link download (episode lama), gunakan cara lama (side-by-side dimatikan jika download ada)
+        if (servers.length === 0) {
+            const rawServers = [];
+            $('.east_player_option').each((_, el) => {
+                rawServers.push({
+                    nama: $(el).find('span').text().trim() || $(el).text().trim() || 'Server',
+                    post: $(el).attr('data-post') || '',
+                    nume: $(el).attr('data-nume') || '',
+                    type: $(el).attr('data-type') || 'schtml',
+                    aktif: $(el).hasClass('on')
+                });
+            });
+
+            const seen = new Set();
+            for (const s of rawServers) {
+                const key = `${s.post}-${s.nume}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    servers.push(s);
+                }
             }
         }
 
