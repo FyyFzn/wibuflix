@@ -33,9 +33,19 @@ app.get('/api/katalog', async (req, res) => {
         if (!searchParam) {
             try {
                 const wizardData = await getWizardCatalog(pageParams);
-                if (wizardData && wizardData.anime) {
+                if (wizardData && wizardData.anime && Array.isArray(wizardData.anime)) {
+                    // Konversi struktur WizardSubs agar cocok dengan struktur Samehadaku
+                    const wizardList = wizardData.anime.map(w => ({
+                        judul: w.title,
+                        url: w.endpoint,
+                        gambar: w.thumb,
+                        gambarScraper: w.thumb,
+                        tipe: 'Toku',
+                        skor: '-',
+                        status: 'WizardSubs'
+                    }));
                     // Gabungkan (selipkan di awal atau campur)
-                    data.anime = [...wizardData.anime, ...data.anime];
+                    data.list = [...wizardList, ...(data.list || [])];
                 }
             } catch(e) {
                 console.error('[Inject Wizard Error]', e.message);
