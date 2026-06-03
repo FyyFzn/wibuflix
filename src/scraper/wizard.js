@@ -37,7 +37,7 @@ async function getWizardCatalog(page = 1, searchParam = '') {
             // Keyword utama Tokusatsu
             const keywords = ['kamen rider', 'ultraman', 'sentai', 'ranger', 'garo', 'hero', 'metal hero', 'ultra'];
             // Blacklist label yang sifatnya metadata/generik
-            const generic = ['bd', 'bluray', 'movie', 'tokusatsu', 'action', 'drama', 'comedy', 'special', 'sub indo', 'raw', 'adventure', 'sci-fi', 'science fiction', 'super hero', 'survival', 'sports', 'mystery', 'kaiju', 'fiction', 'battle royal', 'ongoing', 'completed', 'batch'];
+            const generic = ['bd', 'bluray', 'movie', 'tokusatsu', 'action', 'drama', 'comedy', 'special', 'sub indo', 'raw', 'adventure', 'sci-fi', 'science fiction', 'super hero', 'survival', 'sports', 'mystery', 'kaiju', 'fiction', 'battle royal', 'ongoing', 'completed', 'batch', 'pc games', 'game', 'games', 'extra', 'software'];
 
             let bestLabel = null;
             let bestScore = -1;
@@ -100,35 +100,53 @@ async function getWizardEpisodes(targetUrl) {
     console.log(`\n[Wizard Scraper] Mengambil daftar episode dari: ${targetUrl}`);
 
     try {
-        // Agar mengambil semua episode dalam satu page label, set max-results tinggi
-        const fetchUrl = targetUrl.includes('/search/label/') ? (targetUrl.includes('?') ? `${targetUrl}&max-results=100` : `${targetUrl}?max-results=100`) : targetUrl;
-        
-        const { data } = await axios.get(fetchUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 15000
-        });
-        
-        const $ = cheerio.load(data);
-        
-        const judulSeri = $('h1.entry-title').text().trim() || 'Tokusatsu Series';
-        const cover = $('.post-thumbnail').first().attr('src') || $('meta[property="og:image"]').attr('content') || '';
         const daftar_episode = [];
+        let judulSeri = 'Tokusatsu Series';
+        let cover = '';
 
         // Jika ini adalah halaman Label (Kumpulan Post)
-        if ($('.post.hentry').length > 0 && targetUrl.includes('/search/label/')) {
-            $('.post.hentry').each((i, el) => {
-                const titleNode = $(el).find('h2.entry-title a').length ? $(el).find('h2.entry-title a') : $(el).find('h1.entry-title a');
-                const epTitle = titleNode.text().trim();
-                const epUrl = titleNode.attr('href');
-                if (epTitle && epUrl) {
-                    daftar_episode.push({
-                        judul: epTitle,
-                        url: epUrl
-                    });
-                }
+        if (targetUrl.includes('/search/label/')) {
+            const labelRaw = targetUrl.split('/search/label/')[1].split('?')[0];
+            // Decode url encode
+            const labelDecoded = decodeURIComponent(labelRaw);
+            judulSeri = labelDecoded;
+            
+            // Menggunakan API JSON bawaan Blogger untuk bypass limit pagination HTML 
+            // Blogger JSON Feed bisa mengambil hingga 500 post sekaligus tanpa potong!
+            const feedUrl = `https://www.wizardsubs.my.id/feeds/posts/default/-/${labelRaw}?alt=json&max-results=500`;
+            
+            const { data } = await axios.get(feedUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                timeout: 15000
             });
+            
+            if (data && data.feed && data.feed.entry) {
+                data.feed.entry.forEach(entry => {
+                    const epTitle = entry.title.$t;
+                    const linkObj = entry.link.find(l => l.rel === 'alternate');
+                    if (linkObj && linkObj.href) {
+                        daftar_episode.push({
+                            judul: epTitle,
+                            url: linkObj.href
+                        });
+                    }
+                    
+                    // Ambil thumbnail pertama yang ditemukan untuk cover seri
+                    if (!cover && entry.media$thumbnail) {
+                        cover = entry.media$thumbnail.url.replace(/\/s\d+-c\//, '/s1600/');
+                    }
+                });
+            }
         } else {
             // Jika ini halaman Post tunggal
+            const { data } = await axios.get(targetUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                timeout: 15000
+            });
+            const $ = cheerio.load(data);
+            judulSeri = $('h1.entry-title').text().trim() || 'Tokusatsu Series';
+            cover = $('.post-thumbnail').first().attr('src') || $('meta[property="og:image"]').attr('content') || '';
+            
             daftar_episode.push({
                 judul: judulSeri,
                 url: targetUrl
