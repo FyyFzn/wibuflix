@@ -289,9 +289,10 @@ async function scrapeVideoServers(targetUrl) {
                     // Kita ambil hoster prioritas
                     if (href && isAllowed) {
                         // Normalisasi URL: konversi download page (/f/) ke embed URL (/e/)
-                        // agar extractor bisa bekerja (pucuk/filedon/filemoon/wibufile)
+                        // agar extractor bisa bekerja (wibufile/filemoon/filelions)
+                        // Catatan: Filedon/Pucuk tidak butuh ini karena /f/ mereka adalah SPA Inertia valid
                         let normalizedHref = href;
-                        const isEmbedHost = ['pucuk', 'filedon', 'filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostNameLower.includes(h));
+                        const isEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostNameLower.includes(h));
                         if (isEmbedHost && normalizedHref.match(/\/f\/[^/]+\/?$/)) {
                             normalizedHref = normalizedHref.replace(/\/f\//, '/e/');
                             console.log(`[Scrape] Konversi ke embed URL: ${normalizedHref}`);
@@ -582,9 +583,10 @@ async function extractVideoUrl(embedUrl, req) {
     if (isFilemoonLike) {
         const axios = require('axios');
         try {
-            // Safety net: normalisasi /f/{id} → /e/{id} jika belum dikonversi oleh scrapeVideoServers
+            // Safety net: normalisasi /f/{id} → /e/{id} untuk host yang mewajibkannya
             let normalizedEmbedUrl = embedUrl;
-            if (embedUrl.match(/\/f\/[^/]+\/?$/)) {
+            const isStrictEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => embedUrl.includes(h));
+            if (isStrictEmbedHost && embedUrl.match(/\/f\/[^/]+\/?$/)) {
                 normalizedEmbedUrl = embedUrl.replace(/\/f\//, '/e/');
                 console.log(`[Filedon/Pucuk] Normalisasi URL: ${embedUrl} → ${normalizedEmbedUrl}`);
             }
