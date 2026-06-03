@@ -5,6 +5,7 @@ const { getKatalog } = require('./scraper/katalog');
 const { getEpisodes } = require('./scraper/episodes');
 const { getHotAnime } = require('./scraper/hot');
 const { scrapeVideoServers, resolveSingleServer, extractVideoUrl } = require('./scraper/extractor');
+const { getWizardEpisodes, getWizardCatalog, getWizardServers } = require('./scraper/wizard');
 
 const app = express();
 app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure (di belakang proxy)
@@ -26,6 +27,21 @@ app.get('/api/katalog', async (req, res) => {
 
     try {
         const data = await getKatalog(pageParams, searchParam);
+        
+        // --- INJEKSI WIZARDSUBS ---
+        // Jika tidak ada pencarian, tambahkan item dari WizardSubs ke dalam katalog utama
+        if (!searchParam) {
+            try {
+                const wizardData = await getWizardCatalog(pageParams);
+                if (wizardData && wizardData.anime) {
+                    // Gabungkan (selipkan di awal atau campur)
+                    data.anime = [...wizardData.anime, ...data.anime];
+                }
+            } catch(e) {
+                console.error('[Inject Wizard Error]', e.message);
+            }
+        }
+
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Katalog Error]', err.message);
@@ -54,7 +70,13 @@ app.get('/api/episodes', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
 
     try {
-        const data = await getEpisodes(targetUrl);
+        let data;
+        // Deteksi secara otomatis jika URL mengarah ke WizardSubs
+        if (targetUrl.includes('wizardsubs.my.id')) {
+            data = await getWizardEpisodes(targetUrl);
+        } else {
+            data = await getEpisodes(targetUrl);
+        }
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Episodes Error]', err.message);
@@ -70,7 +92,13 @@ app.get('/api/scrape', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
 
     try {
-        const data = await scrapeVideoServers(targetUrl);
+        let data;
+        if (targetUrl.includes('wizardsubs.my.id')) {
+            const servers = await getWizardServers(targetUrl);
+            data = { judul: 'Tokusatsu', nav_prev: null, nav_next: null, servers: servers };
+        } else {
+            data = await scrapeVideoServers(targetUrl);
+        }
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Scrape Error]', err.message);
