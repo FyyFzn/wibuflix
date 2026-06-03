@@ -6,6 +6,7 @@ const { getEpisodes } = require('./scraper/episodes');
 const { getHotAnime } = require('./scraper/hot');
 const { scrapeVideoServers, resolveSingleServer, extractVideoUrl } = require('./scraper/extractor');
 const { getEpisodes, getAllEpisodes } = require('./scraper/episodes');
+const { getNeosatsuCatalog, getNeosatsuEpisodes, getNeosatsuServers } = require('./scraper/neosatsu');
 
 const app = express();
 app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure (di belakang proxy)
@@ -27,6 +28,27 @@ app.get('/api/katalog', async (req, res) => {
 
     try {
         const data = await getKatalog(pageParams, searchParam);
+        
+        // --- INJEKSI NEOSATSU ---
+        try {
+            const neosatsuData = await getNeosatsuCatalog(pageParams, searchParam);
+            if (neosatsuData && neosatsuData.anime && Array.isArray(neosatsuData.anime)) {
+                const neosatsuList = neosatsuData.anime.map(w => ({
+                    judul: w.title,
+                    url: w.endpoint,
+                    gambar: w.thumb,
+                    gambarScraper: w.thumb,
+                    tipe: 'Toku',
+                    skor: '-',
+                    status: 'Neosatsu'
+                }));
+                // Gabungkan
+                data.list = [...neosatsuList, ...(data.list || [])];
+            }
+        } catch(e) {
+            console.error('[Inject Neosatsu Error]', e.message);
+        }
+
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Katalog Error]', err.message);
@@ -55,7 +77,12 @@ app.get('/api/episodes', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
 
     try {
-        const data = await getEpisodes(targetUrl);
+        let data;
+        if (targetUrl.includes('neosatsu.com')) {
+            data = await getNeosatsuEpisodes(targetUrl);
+        } else {
+            data = await getEpisodes(targetUrl);
+        }
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Episodes Error]', err.message);
@@ -71,7 +98,13 @@ app.get('/api/scrape', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
 
     try {
-        const data = await scrapeVideoServers(targetUrl);
+        let data;
+        if (targetUrl.includes('neosatsu.com') && targetUrl.includes('#neosatsu_ep_')) {
+            const servers = await getNeosatsuServers(targetUrl);
+            data = { judul: 'Tokusatsu', nav_prev: null, nav_next: null, servers: servers };
+        } else {
+            data = await scrapeVideoServers(targetUrl);
+        }
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Scrape Error]', err.message);
