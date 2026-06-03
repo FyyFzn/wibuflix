@@ -43,6 +43,12 @@ async function getWizardCatalog(page = 1, searchParam = '') {
             let bestScore = -1;
             const postTitle = $(el).find('h2.entry-title a').length ? $(el).find('h2.entry-title a').text().trim() : $(el).find('h1.entry-title a').text().trim();
 
+            // === FILTER BATCH/GAME ===
+            // Jangan tampilkan postingan yang merupakan BATCH atau Game di Katalog
+            if (postTitle.toLowerCase().includes('batch') || postTitle.toLowerCase().includes('game') || postTitle.toLowerCase().includes('pc')) {
+                return; // skip this post
+            }
+
             $(el).find('a[href*="/search/label/"]').each((j, a) => {
                 const labelName = $(a).text().trim();
                 const lower = labelName.toLowerCase();
@@ -50,13 +56,13 @@ async function getWizardCatalog(page = 1, searchParam = '') {
                 if (generic.includes(lower)) return; // Skip label generik
                 
                 let score = 0;
-                // Jika label mengandung keyword (Kamen Rider, dll), kasih poin besar
-                if (keywords.some(k => lower.includes(k))) score += 10;
+                // Jika label mengandung keyword (Kamen Rider, dll), kasih poin kecil
+                if (keywords.some(k => lower.includes(k))) score += 5;
                 
-                // Jika judul post benar-benar mengandung kata dari label ini secara persis, poin super besar
-                if (postTitle.toLowerCase().includes(lower)) score += 20;
+                // Jika judul post benar-benar mengandung kata dari label ini secara persis, poin MUTLAK
+                if (postTitle.toLowerCase().includes(lower)) score += 50;
                 
-                // Label spesifik yang lebih panjang sedikit lebih bagus (menghindari "Kamen Rider" kalah dengan "Kamen Rider Geats")
+                // Label spesifik yang lebih panjang sedikit lebih bagus
                 score += (labelName.length * 0.1);
 
                 if (score > bestScore) {
@@ -65,12 +71,21 @@ async function getWizardCatalog(page = 1, searchParam = '') {
                 }
             });
 
-            // Fallback ke judul post (dibersihkan) jika tetap tidak ada label
-            if (bestLabel) {
+            // Jika label menang mutlak (terdapat dalam judul), gunakan label.
+            // Jika tidak, labelnya mungkin cuma label generik (spt "Metal Heroes"), jadi lebih baik pakai Judul Post.
+            if (bestLabel && bestScore >= 50) {
                 seriesName = bestLabel.name;
                 seriesUrl = bestLabel.url;
             } else {
-                seriesName = postTitle.replace(/\[.*?\]/g, '').replace(/(Episode|Sub|Subtitle).*$/i, '').trim();
+                seriesName = postTitle
+                    .replace(/\[.*?\]/g, '') // hapus [RAW], [Reupload]
+                    .replace(/(Episode|Eps|Sub|Subtitle|BD|Batch).*$/i, '') // hapus embel-embel episode ke belakang
+                    .replace(/\(\d{4}\)/g, '') // hapus tahun (2014) dll
+                    .trim();
+                
+                // Hapus karakter aneh di akhir jika ada (seperti - atau :)
+                seriesName = seriesName.replace(/[:\-]$/, '').trim();
+                
                 seriesUrl = $(el).find('a[href*="/search/label/"]').first().attr('href') || $(el).find('.entry-title a').attr('href');
             }
 
@@ -123,6 +138,12 @@ async function getWizardEpisodes(targetUrl) {
             if (data && data.feed && data.feed.entry) {
                 data.feed.entry.forEach(entry => {
                     const epTitle = entry.title.$t;
+                    
+                    // Filter Batch/Movie yang salah tag
+                    if (epTitle.toLowerCase().includes('batch') || epTitle.toLowerCase().includes('game') || epTitle.toLowerCase().includes('pc')) {
+                        return;
+                    }
+
                     const linkObj = entry.link.find(l => l.rel === 'alternate');
                     if (linkObj && linkObj.href) {
                         daftar_episode.push({
@@ -135,6 +156,20 @@ async function getWizardEpisodes(targetUrl) {
                     if (!cover && entry.media$thumbnail) {
                         cover = entry.media$thumbnail.url.replace(/\/s\d+-c\//, '/s1600/');
                     }
+                });
+
+                // --- PENGURUTAN EPISODE BERDASARKAN ANGKA DI JUDUL ---
+                // Secara bawaan, API Blogger memberikan urutan berdasarkan tanggal update (acak-acakan).
+                daftar_episode.sort((a, b) => {
+                    // Coba ektrak angka episode (misal: "Episode 12", "Eps 02", "04-05")
+                    const matchA = a.judul.match(/(?:Episode|Eps)\s*0*(\d+)/i) || a.judul.match(/0*(\d+)\s*(?:Sub|Subtitle)/i);
+                    const matchB = b.judul.match(/(?:Episode|Eps)\s*0*(\d+)/i) || b.judul.match(/0*(\d+)\s*(?:Sub|Subtitle)/i);
+                    
+                    if (matchA && matchB) {
+                        return parseInt(matchB[1]) - parseInt(matchA[1]); // Descending (Episode terbaru di atas)
+                    }
+                    // Jika tidak ada angka yang jelas, urutkan alfabetikal (z-a)
+                    return b.judul.localeCompare(a.judul);
                 });
             }
         } else {
