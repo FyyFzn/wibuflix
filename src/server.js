@@ -119,7 +119,7 @@ app.get('/api/extract-video', async (req, res) => {
         if (data?.headers?.token && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        } else if (embedUrl.includes('pixeldrain.com') && data?.url) {
+        } else if ((embedUrl.includes('filedon') || embedUrl.includes('pucuk') || embedUrl.includes('pixeldrain.com')) && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
@@ -136,34 +136,96 @@ app.get('/api/extract-video', async (req, res) => {
 });
 
 // ============================================================
-// RUTE 5B: GET /api/proxy/filedon
+// RUTE 5B: GET /api/proxy/filedon (SMART HLS PROXY)
 // ============================================================
 app.get('/api/proxy/filedon', async (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).send('URL required');
     
     const https = require('https');
+    const http = require('http');
     try {
         const headers = { ...req.headers };
         delete headers.host;
         delete headers.referer;
         headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+        if (videoUrl.includes('filedon') || videoUrl.includes('pucuk')) {
+            headers['Referer'] = 'https://filedon.co/';
+        }
         
-        const proxyReq = https.get(videoUrl, { headers }, (proxyRes) => {
+        const client = videoUrl.startsWith('https') ? https : http;
+        const proxyReq = client.get(videoUrl, { headers }, (proxyRes) => {
+            
+            // 1. Tangani Redirect (301/302) agar tidak bypass proxy
+            if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+                let redirectUrl = proxyRes.headers.location;
+                if (!redirectUrl.startsWith('http')) {
+                    redirectUrl = new URL(redirectUrl, videoUrl).href;
+                }
+                const baseUrl = `${req.protocol}://${req.get('host')}/api/proxy/filedon?url=`;
+                res.setHeader('Location', baseUrl + encodeURIComponent(redirectUrl));
+                res.status(proxyRes.statusCode).send();
+                return;
+            }
+
             if (proxyRes.statusCode >= 400) {
                 res.status(proxyRes.statusCode).send('Proxy upstream error');
                 return;
             }
             
-            Object.keys(proxyRes.headers).forEach(key => {
-                if (key.toLowerCase() !== 'content-disposition' && key.toLowerCase() !== 'content-type') {
-                    res.setHeader(key, proxyRes.headers[key]);
+            const contentType = proxyRes.headers['content-type'] || '';
+            const isM3u8 = videoUrl.includes('.m3u8') || contentType.includes('mpegurl') || contentType.includes('m3u8');
+
+            // 2. Tangani M3U8 Playlist (Tulis ulang semua URL relatif/absolut ke Proxy)
+            if (isM3u8) {
+                let body = '';
+                proxyRes.on('data', chunk => body += chunk);
+                proxyRes.on('end', () => {
+                    const baseUrl = `${req.protocol}://${req.get('host')}/api/proxy/filedon?url=`;
+                    const baseVideoUrl = new URL(videoUrl);
+                    
+                    const rewritten = body.split('\n').map(line => {
+                        const tLine = line.trim();
+                        if (tLine && !tLine.startsWith('#')) {
+                            let absoluteUri = tLine;
+                            if (!tLine.startsWith('http')) {
+                                absoluteUri = new URL(tLine, baseVideoUrl.href).href;
+                            }
+                            return baseUrl + encodeURIComponent(absoluteUri);
+                        } else if (tLine.startsWith('#EXT-X-STREAM-INF:') || tLine.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) {
+                            if (tLine.includes('URI="')) {
+                                return tLine.replace(/URI="([^"]+)"/, (match, uri) => {
+                                    let absoluteUri = uri;
+                                    if (!uri.startsWith('http')) {
+                                        absoluteUri = new URL(uri, baseVideoUrl.href).href;
+                                    }
+                                    return `URI="${baseUrl}${encodeURIComponent(absoluteUri)}"`;
+                                });
+                            }
+                        }
+                        return line;
+                    }).join('\n');
+
+                    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+                    res.setHeader('Access-Control-Allow-Origin', '*');
+                    res.status(200).send(rewritten);
+                });
+            } else {
+                // 3. File TS / MP4 langsung di-pipe
+                Object.keys(proxyRes.headers).forEach(key => {
+                    if (key.toLowerCase() !== 'content-disposition') {
+                        res.setHeader(key, proxyRes.headers[key]);
+                    }
+                });
+                
+                if (!contentType) {
+                    if (videoUrl.includes('.ts')) res.setHeader('Content-Type', 'video/mp2t');
+                    else if (videoUrl.includes('.mp4')) res.setHeader('Content-Type', 'video/mp4');
                 }
-            });
-            res.setHeader('Content-Type', 'video/mp4'); // Force as video/mp4 stream
-            
-            res.status(proxyRes.statusCode);
-            proxyRes.pipe(res);
+                
+                res.status(proxyRes.statusCode);
+                proxyRes.pipe(res);
+            }
         });
 
         proxyReq.on('error', (err) => {
