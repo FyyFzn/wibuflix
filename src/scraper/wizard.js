@@ -25,24 +25,47 @@ async function getWizardCatalog(page = 1) {
             let thumb = $(el).find('img.post-thumbnail').attr('src') || $(el).find('meta[itemprop="image"]').attr('content') || '';
             if (thumb) thumb = thumb.replace(/\/w\d+-h\d+(-[c|p|s])?(-[a-zA-Z0-9]+)?\//g, '/s1600/');
 
-            // Filter label untuk mencari nama Seri (Mengabaikan label generik)
-            const genericLabels = ['BD', 'Movie', 'Tokusatsu', 'sub indo', 'Action', 'Drama', 'Comedy', 'Special', 'Super Sentai', 'Kamen Rider', 'Metal Heroes'];
             let seriesName = '';
             let seriesUrl = '';
+            
+            // Keyword utama Tokusatsu
+            const keywords = ['kamen rider', 'ultraman', 'sentai', 'ranger', 'garo', 'hero', 'metal hero', 'ultra'];
+            // Blacklist label yang sifatnya metadata/generik
+            const generic = ['bd', 'bluray', 'movie', 'tokusatsu', 'action', 'drama', 'comedy', 'special', 'sub indo', 'raw', 'adventure', 'sci-fi', 'science fiction', 'super hero', 'survival', 'sports', 'mystery', 'kaiju', 'fiction', 'battle royal', 'ongoing', 'completed', 'batch'];
+
+            let bestLabel = null;
+            let bestScore = -1;
+            const postTitle = $(el).find('h2.entry-title a').length ? $(el).find('h2.entry-title a').text().trim() : $(el).find('h1.entry-title a').text().trim();
 
             $(el).find('a[href*="/search/label/"]').each((j, a) => {
                 const labelName = $(a).text().trim();
-                if (!genericLabels.includes(labelName) && !seriesName) {
-                    seriesName = labelName;
-                    seriesUrl = $(a).attr('href');
+                const lower = labelName.toLowerCase();
+                
+                if (generic.includes(lower)) return; // Skip label generik
+                
+                let score = 0;
+                // Jika label mengandung keyword (Kamen Rider, dll), kasih poin besar
+                if (keywords.some(k => lower.includes(k))) score += 10;
+                
+                // Jika judul post benar-benar mengandung kata dari label ini secara persis, poin super besar
+                if (postTitle.toLowerCase().includes(lower)) score += 20;
+                
+                // Label spesifik yang lebih panjang sedikit lebih bagus (menghindari "Kamen Rider" kalah dengan "Kamen Rider Geats")
+                score += (labelName.length * 0.1);
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestLabel = { name: labelName, url: $(a).attr('href') };
                 }
             });
 
-            // Jika label spesifik tidak ditemukan, gunakan judul post sebagai nama
-            if (!seriesName) {
-                const titleNode = $(el).find('h2.entry-title a').length ? $(el).find('h2.entry-title a') : $(el).find('h1.entry-title a');
-                seriesName = titleNode.text().trim();
-                seriesUrl = titleNode.attr('href');
+            // Fallback ke judul post (dibersihkan) jika tetap tidak ada label
+            if (bestLabel) {
+                seriesName = bestLabel.name;
+                seriesUrl = bestLabel.url;
+            } else {
+                seriesName = postTitle.replace(/\[.*?\]/g, '').replace(/(Episode|Sub|Subtitle).*$/i, '').trim();
+                seriesUrl = $(el).find('a[href*="/search/label/"]').first().attr('href') || $(el).find('.entry-title a').attr('href');
             }
 
             if (seriesName && seriesUrl && !seenSeries.has(seriesName)) {
