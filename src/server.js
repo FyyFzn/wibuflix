@@ -29,27 +29,25 @@ app.get('/api/katalog', async (req, res) => {
         const data = await getKatalog(pageParams, searchParam);
         
         // --- INJEKSI WIZARDSUBS ---
-        // Jika tidak ada pencarian, tambahkan item dari WizardSubs ke dalam katalog utama
-        if (!searchParam) {
-            try {
-                const wizardData = await getWizardCatalog(pageParams);
-                if (wizardData && wizardData.anime && Array.isArray(wizardData.anime)) {
-                    // Konversi struktur WizardSubs agar cocok dengan struktur Samehadaku
-                    const wizardList = wizardData.anime.map(w => ({
-                        judul: w.title,
-                        url: w.endpoint,
-                        gambar: w.thumb,
-                        gambarScraper: w.thumb,
-                        tipe: 'Toku',
-                        skor: '-',
-                        status: 'WizardSubs'
-                    }));
-                    // Gabungkan (selipkan di awal atau campur)
-                    data.list = [...wizardList, ...(data.list || [])];
-                }
-            } catch(e) {
-                console.error('[Inject Wizard Error]', e.message);
+        // Selalu tambahkan item dari WizardSubs ke dalam katalog utama (termasuk saat pencarian)
+        try {
+            const wizardData = await getWizardCatalog(pageParams, searchParam);
+            if (wizardData && wizardData.anime && Array.isArray(wizardData.anime)) {
+                // Konversi struktur WizardSubs agar cocok dengan struktur Samehadaku
+                const wizardList = wizardData.anime.map(w => ({
+                    judul: w.title,
+                    url: w.endpoint,
+                    gambar: w.thumb,
+                    gambarScraper: w.thumb,
+                    tipe: 'Toku',
+                    skor: '-',
+                    status: 'WizardSubs'
+                }));
+                // Gabungkan (selipkan di awal atau campur)
+                data.list = [...wizardList, ...(data.list || [])];
             }
+        } catch(e) {
+            console.error('[Inject Wizard Error]', e.message);
         }
 
         res.json({ status: 'success', data });

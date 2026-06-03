@@ -4,10 +4,16 @@ const cheerio = require('cheerio');
 /**
  * [TAHAP 1] Mengekstrak halaman katalog WizardSubs (Dikelompokkan berdasarkan Seri)
  */
-async function getWizardCatalog(page = 1) {
+async function getWizardCatalog(page = 1, searchParam = '') {
     const maxResults = 15;
     const startIndex = (page - 1) * maxResults + 1;
-    const targetUrl = `https://www.wizardsubs.my.id/search/label/Tokusatsu?max-results=${maxResults}&start-index=${startIndex}`;
+    
+    let targetUrl = '';
+    if (searchParam && searchParam.trim() !== '') {
+        targetUrl = `https://www.wizardsubs.my.id/search?q=${encodeURIComponent(searchParam)}&max-results=${maxResults}&start-index=${startIndex}`;
+    } else {
+        targetUrl = `https://www.wizardsubs.my.id/search/label/Tokusatsu?max-results=${maxResults}&start-index=${startIndex}`;
+    }
     
     console.log(`\n[Wizard Scraper] Mengambil katalog dari: ${targetUrl}`);
 
