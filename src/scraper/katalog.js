@@ -44,7 +44,7 @@ async function getKatalog(pageParams, searchParam) {
 
         if (!html || html.trim() === '') {
             console.log(`[Katalog] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
             html = await page.content();
         }
 

@@ -20,7 +20,7 @@ async function getWizardCatalog(page = 1, searchParam = '') {
     try {
         const { data } = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 15000
+            timeout: 30000
         });
         
         const $ = cheerio.load(data);
@@ -117,7 +117,7 @@ async function getWizardEpisodes(targetUrl) {
             
             const { data } = await axios.get(feedUrl, {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 15000
+                timeout: 30000
             });
             
             if (data && data.feed && data.feed.entry) {
@@ -141,7 +141,7 @@ async function getWizardEpisodes(targetUrl) {
             // Jika ini halaman Post tunggal
             const { data } = await axios.get(targetUrl, {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 15000
+                timeout: 30000
             });
             const $ = cheerio.load(data);
             judulSeri = $('h1.entry-title').text().trim() || 'Tokusatsu Series';
@@ -174,7 +174,7 @@ async function getWizardServers(targetUrl) {
     try {
         const { data } = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 15000
+            timeout: 30000
         });
         
         const $ = cheerio.load(data);

@@ -35,7 +35,7 @@ async function getEpisodes(targetUrl) {
 
         if (!html || html.trim() === '') {
             console.log(`[Episodes] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
             html = await page.content();
         }
 
