@@ -5,7 +5,6 @@ const { getKatalog } = require('./scraper/katalog');
 const { getEpisodes } = require('./scraper/episodes');
 const { getHotAnime } = require('./scraper/hot');
 const { scrapeVideoServers, resolveSingleServer, extractVideoUrl } = require('./scraper/extractor');
-const { getEpisodes, getAllEpisodes } = require('./scraper/episodes');
 const { getNeosatsuCatalog, getNeosatsuEpisodes, getNeosatsuServers } = require('./scraper/neosatsu');
 
 const app = express();
