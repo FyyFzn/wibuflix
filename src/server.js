@@ -105,10 +105,12 @@ app.get('/api/extract-video', async (req, res) => {
     try {
         const data = await extractVideoUrl(embedUrl, req);
         
-        // Guard: jika semua strategy gagal, extractVideoUrl return null
+        // Guard: jika semua strategy gagal (misal wibufile/mega/gofile), extractVideoUrl return null
+        // Kembalikan webviewOnly: true agar frontend bisa langsung fallback ke WebView
+        // JANGAN kirim HTTP 500 karena akan menyebabkan frontend throw exception (res.ok === false)
         if (!data || !data.url) {
-            console.log(`[Extract-Video] Gagal mengekstrak URL dari: ${embedUrl}`);
-            return res.status(500).json({ success: false, message: 'Gagal mengekstrak URL video dari server ini' });
+            console.log(`[Extract-Video] Ekstraksi gagal/WebView-only: ${embedUrl}`);
+            return res.json({ success: false, webviewOnly: true, message: 'Server ini hanya bisa diputar lewat WebView' });
         }
         
         let finalUrl = data.url;

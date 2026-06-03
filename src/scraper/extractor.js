@@ -288,13 +288,21 @@ async function scrapeVideoServers(targetUrl) {
                     
                     // Kita ambil hoster prioritas
                     if (href && isAllowed) {
+                        // Normalisasi URL: konversi download page (/f/) ke embed URL (/e/)
+                        // agar extractor bisa bekerja (pucuk/filedon/filemoon/wibufile)
+                        let normalizedHref = href;
+                        const isEmbedHost = ['pucuk', 'filedon', 'filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostNameLower.includes(h));
+                        if (isEmbedHost && normalizedHref.match(/\/f\/[^/]+\/?$/)) {
+                            normalizedHref = normalizedHref.replace(/\/f\//, '/e/');
+                            console.log(`[Scrape] Konversi ke embed URL: ${normalizedHref}`);
+                        }
                         servers.push({
                             nama: `${res} ${formatDesc}`.trim(),
                             post: "",
                             nume: "",
                             type: "direct",
                             aktif: servers.length === 0, // Jadikan yang pertama aktif
-                            iframeUrl: href,
+                            iframeUrl: normalizedHref,
                             namaHost: hostNameRaw
                         });
                     }
@@ -516,21 +524,78 @@ async function extractVideoUrl(embedUrl, req) {
         }
     }
 
+    // ── Handler Wibufile (File Hosting Sederhana) ──────────────────────────
+    // Wibufile bukan SPA Inertia.js — strategi filedon/pucuk tidak berlaku.
+    // Coba parse HTML untuk mendapat direct download/stream URL.
+    // Jika gagal, return null → frontend langsung fallback WebView (tidak ada timeout 25 detik).
+    if (embedUrl.includes('wibufile')) {
+        const axios = require('axios');
+        try {
+            console.log(`[Wibufile] Mencoba ekstrak direct URL dari: ${embedUrl}`);
+            // Konversi link download (/f/ atau /d/) ke link embed/view jika perlu
+            let fetchUrl = embedUrl;
+            if (embedUrl.match(/\/f\/[^/]+\/?$/)) {
+                // /f/{id} → coba /e/{id} (embed page)
+                fetchUrl = embedUrl.replace(/\/f\//, '/e/');
+                console.log(`[Wibufile] Konversi ke embed URL: ${fetchUrl}`);
+            }
+
+            const { data } = await axios.get(fetchUrl, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Referer': 'https://v2.samehadaku.how/'
+                }
+            });
+
+            // Cari URL video langsung di HTML (src video tag, atau link .mp4/.m3u8)
+            const videoSrcMatch = data.match(/<source[^>]+src=["']([^"']+\.(?:mp4|m3u8)[^"']*)["']/i) ||
+                                  data.match(/<video[^>]+src=["']([^"']+\.(?:mp4|m3u8)[^"']*)["']/i) ||
+                                  data.match(/file:\s*["']([^"']+\.(?:mp4|m3u8)[^"']*)["']/i) ||
+                                  data.match(/["'](https?:\/\/[^"']+\.(?:mp4|m3u8)[^"']*)["']/i);
+
+            if (videoSrcMatch && videoSrcMatch[1]) {
+                const videoUrl = videoSrcMatch[1].replace(/\\/g, '').replace(/&amp;/g, '&');
+                console.log(`[Wibufile] Direct URL ditemukan!`);
+                return {
+                    url: videoUrl,
+                    headers: {
+                        'Referer': fetchUrl,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                };
+            }
+            console.log('[Wibufile] Tidak ada URL video di HTML, fallback ke WebView');
+        } catch (e) {
+            console.log(`[Wibufile] Axios gagal: ${e.message}, fallback ke WebView`);
+        }
+        // Kembalikan null → server.js akan kirim HTTP 500 → frontend fallback WebView
+        return null;
+    }
+
     // ── Handler Filedon.co / Pucuk (Inertia.js SPA Extractor) ──────────────
     // Filedon.co menggunakan Laravel + Inertia.js (React SPA).
     // HTML statis TIDAK mengandung URL video — perlu hit Inertia API atau download API.
     const isFilemoonLike = embedUrl.includes('filemoon') || embedUrl.includes('filelions') ||
                            embedUrl.includes('moonplayer') || embedUrl.includes('filedon') ||
-                           embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk') ||
-                           embedUrl.includes('wibufile');
+                           embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
     if (isFilemoonLike) {
         const axios = require('axios');
         try {
-            const originUrl = new URL(embedUrl);
+            // Safety net: normalisasi /f/{id} → /e/{id} jika belum dikonversi oleh scrapeVideoServers
+            let normalizedEmbedUrl = embedUrl;
+            if (embedUrl.match(/\/f\/[^/]+\/?$/)) {
+                normalizedEmbedUrl = embedUrl.replace(/\/f\//, '/e/');
+                console.log(`[Filedon/Pucuk] Normalisasi URL: ${embedUrl} → ${normalizedEmbedUrl}`);
+            }
+
+            const originUrl = new URL(normalizedEmbedUrl);
             const baseUrl = `${originUrl.protocol}//${originUrl.hostname}`;
             const slug = originUrl.pathname.split('/').filter(Boolean).pop();
-            console.log(`[Filedon/Pucuk] Extracting slug="${slug}" from: ${embedUrl}`);
+            console.log(`[Filedon/Pucuk] Extracting slug="${slug}" from: ${normalizedEmbedUrl}`);
 
+            // Override embedUrl lokal untuk strategi-strategi di bawah
+            embedUrl = normalizedEmbedUrl;
             // ── Strategi 1: Fast HTML Parse (data-page) ──
             try {
                 const { data } = await axios.get(embedUrl, {
@@ -646,7 +711,7 @@ async function extractVideoUrl(embedUrl, req) {
     let tempPage;
     let isTempSpaPage = false;
     try {
-        const isSPA = embedUrl.includes('filedon') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer') || embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk') || embedUrl.includes('wibufile');
+        const isSPA = embedUrl.includes('filedon') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer') || embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
 
         if (isSPA) {
             const { getBrowser } = require('../puppeteer/pool');

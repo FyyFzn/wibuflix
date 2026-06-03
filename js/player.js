@@ -75,7 +75,16 @@ export function muatIframe(url, serverName = '', targetUrl = '', onExtractFail =
     }
 
     if (namaServerLokal.includes('wibufile')) {
-        fallbackKeIframe();
+        // Konversi /f/{id} (download page) → /e/{id} (embed page) agar bisa di-iframe
+        let embedUrl = url;
+        if (url.match(/\/f\/[^/]+\/?$/)) {
+            embedUrl = url.replace(/\/f\//, '/e/');
+            console.log(`[Wibufile] Konversi ke embed URL: ${embedUrl}`);
+        }
+        iframe.src = embedUrl;
+        iframe.style.display = 'block';
+        iframe.onload = () => { playerOverlay.style.display = 'none'; };
+        setTimeout(() => { playerOverlay.style.display = 'none'; }, 8000);
         return;
     }
 
