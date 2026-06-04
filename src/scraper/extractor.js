@@ -494,29 +494,43 @@ async function extractVideoUrl(embedUrl, req) {
                 });
                 
                 let directUrl = '';
+                let usercontentUrl = '';
+                
                 if (res.status === 302 || res.status === 303) {
-                    directUrl = res.headers.location;
+                    usercontentUrl = res.headers.location;
                 } else if (res.status === 200) {
-                    const html = res.data;
-                    const match = html.match(/confirm=([0-9A-Za-z_-]+)/);
-                    if (match && match[1]) {
-                        const res2 = await axios.get(`${apiUrl}&confirm=${match[1]}`, {
+                    usercontentUrl = apiUrl; 
+                }
+                
+                if (usercontentUrl) {
+                    const res2 = await axios.get(usercontentUrl, {
                         maxRedirects: 0,
                         validateStatus: (status) => status >= 200 && status < 400,
-                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                            responseType: 'stream' // prevent downloading full file if it doesn't redirect
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                     });
+                    
                     if (res2.status === 302 || res2.status === 303) {
                         directUrl = res2.headers.location;
+                    } else if (res2.status === 200) {
+                        const html = res2.data;
+                        const uuidMatch = html.match(/name="uuid"\s+value="([^"]+)"/i);
+                        if (uuidMatch && uuidMatch[1]) {
+                            const uuid = uuidMatch[1];
+                            directUrl = `${usercontentUrl}&confirm=t&uuid=${uuid}`;
+                        } else {
+                            const confirmMatch = html.match(/confirm=([0-9A-Za-z_-]+)/);
+                            if (confirmMatch && confirmMatch[1]) {
+                                directUrl = `${usercontentUrl}&confirm=${confirmMatch[1]}`;
+                            }
                         }
                     }
                 }
                 
                 if (directUrl) {
-                    console.log(`[GDrive] Direct URL berhasil diekstrak!`);
+                    console.log(`[GDrive] Direct URL berhasil diekstrak: ${directUrl}`);
                     return {
                         url: directUrl,
-                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
                     };
                 }
             }
