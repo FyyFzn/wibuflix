@@ -24,15 +24,15 @@ app.use(express.static(path.join(__dirname, '../')));
 app.get('/api/katalog', async (req, res) => {
     const pageParams = req.query.page || 1;
     const searchParam = req.query.s || '';
-    const tabParam = req.query.tab || 'anime'; // default ke anime
+    const tabParam = req.query.tab || 'anime'; // default ke 'anime' karena semua frontend sudah mendukung parameter tab
 
     try {
         let data = { list: [], hasNext: false };
-        
+
         if (tabParam === 'anime' || tabParam === 'all') {
             data = await getKatalog(pageParams, searchParam);
         }
-        
+
         // --- INJEKSI NEOSATSU ---
         if (tabParam === 'toku' || tabParam === 'all') {
             try {
@@ -47,7 +47,7 @@ app.get('/api/katalog', async (req, res) => {
                         skor: '-',
                         status: w.status || 'Completed'
                     }));
-                    
+
                     if (tabParam === 'toku') {
                         data.list = neosatsuList;
                         data.hasNext = neosatsuList.length > 0; // Simple pagination indicator
@@ -56,7 +56,7 @@ app.get('/api/katalog', async (req, res) => {
                         data.list = [...neosatsuList, ...(data.list || [])];
                     }
                 }
-            } catch(e) {
+            } catch (e) {
                 console.error('[Inject Neosatsu Error]', e.message);
             }
         }
@@ -113,11 +113,11 @@ app.get('/api/scrape', async (req, res) => {
         let data;
         if (targetUrl.includes('neosatsu.com') && targetUrl.includes('#neosatsu_ep_')) {
             const neoData = await getNeosatsuServers(targetUrl);
-            data = { 
-                judul: neoData.judul || 'Tokusatsu', 
-                nav_prev: neoData.nav_prev, 
-                nav_next: neoData.nav_next, 
-                servers: neoData.servers 
+            data = {
+                judul: neoData.judul || 'Tokusatsu',
+                nav_prev: neoData.nav_prev,
+                nav_next: neoData.nav_next,
+                servers: neoData.servers
             };
         } else {
             data = await scrapeVideoServers(targetUrl);
@@ -155,7 +155,7 @@ app.get('/api/extract-video', async (req, res) => {
 
     try {
         const data = await extractVideoUrl(embedUrl, req);
-        
+
         // Guard: jika semua strategy gagal (misal wibufile/mega/gofile), extractVideoUrl return null
         // Kembalikan webviewOnly: true agar frontend bisa langsung fallback ke WebView
         // JANGAN kirim HTTP 500 karena akan menyebabkan frontend throw exception (res.ok === false)
@@ -163,9 +163,9 @@ app.get('/api/extract-video', async (req, res) => {
             console.log(`[Extract-Video] Ekstraksi gagal/WebView-only: ${embedUrl}`);
             return res.json({ success: false, webviewOnly: true, message: 'Server ini hanya bisa diputar lewat WebView' });
         }
-        
+
         let finalUrl = data.url;
-        
+
         // Gunakan proxy untuk Krakenfiles karena CDN mengunci IP (IP lock)
         if (data?.headers?.token && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -174,9 +174,9 @@ app.get('/api/extract-video', async (req, res) => {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
-        
-        res.json({ 
-            success: true, 
+
+        res.json({
+            success: true,
             url: finalUrl,
             headers: data?.headers || undefined
         });
@@ -192,7 +192,7 @@ app.get('/api/extract-video', async (req, res) => {
 app.get('/api/proxy/filedon', async (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).send('URL required');
-    
+
     const https = require('https');
     const http = require('http');
     try {
@@ -203,10 +203,10 @@ app.get('/api/proxy/filedon', async (req, res) => {
         if (videoUrl.includes('filedon') || videoUrl.includes('pucuk')) {
             headers['Referer'] = 'https://filedon.co/';
         }
-        
+
         const client = videoUrl.startsWith('https') ? https : http;
         const proxyReq = client.get(videoUrl, { headers }, (proxyRes) => {
-            
+
             // 1. Tangani Redirect (301/302) agar tidak bypass proxy
             if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
                 let redirectUrl = proxyRes.headers.location;
@@ -223,7 +223,7 @@ app.get('/api/proxy/filedon', async (req, res) => {
                 res.status(proxyRes.statusCode).send('Proxy upstream error');
                 return;
             }
-            
+
             const contentType = proxyRes.headers['content-type'] || '';
             const isM3u8 = videoUrl.includes('.m3u8') || contentType.includes('mpegurl') || contentType.includes('m3u8');
 
@@ -234,7 +234,7 @@ app.get('/api/proxy/filedon', async (req, res) => {
                 proxyRes.on('end', () => {
                     const baseUrl = `${req.protocol}://${req.get('host')}/api/proxy/filedon?url=`;
                     const baseVideoUrl = new URL(videoUrl);
-                    
+
                     const rewritten = body.split('\n').map(line => {
                         const tLine = line.trim();
                         if (tLine && !tLine.startsWith('#')) {
@@ -268,12 +268,12 @@ app.get('/api/proxy/filedon', async (req, res) => {
                         res.setHeader(key, proxyRes.headers[key]);
                     }
                 });
-                
+
                 if (!contentType) {
                     if (videoUrl.includes('.ts')) res.setHeader('Content-Type', 'video/mp2t');
                     else if (videoUrl.includes('.mp4')) res.setHeader('Content-Type', 'video/mp4');
                 }
-                
+
                 res.status(proxyRes.statusCode);
                 proxyRes.pipe(res);
             }
@@ -300,9 +300,9 @@ app.get('/api/proxy/kraken', async (req, res) => {
     const videoUrl = req.query.url;
     const token = req.query.token;
     const referer = req.query.referer;
-    
+
     if (!videoUrl) return res.status(400).send('URL required');
-    
+
     const https = require('https');
     try {
         const headers = {
@@ -311,7 +311,7 @@ app.get('/api/proxy/kraken', async (req, res) => {
             "Accept": "*/*",
             "token": token || ''
         };
-        
+
         if (req.headers.range) {
             headers['Range'] = req.headers.range;
         }
@@ -321,12 +321,12 @@ app.get('/api/proxy/kraken', async (req, res) => {
                 res.status(proxyRes.statusCode).send('Proxy upstream error');
                 return;
             }
-            
+
             if (proxyRes.headers['content-type']) res.setHeader('Content-Type', proxyRes.headers['content-type']);
             if (proxyRes.headers['content-length']) res.setHeader('Content-Length', proxyRes.headers['content-length']);
             if (proxyRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', proxyRes.headers['accept-ranges']);
             if (proxyRes.headers['content-range']) res.setHeader('Content-Range', proxyRes.headers['content-range']);
-            
+
             res.status(proxyRes.statusCode);
             proxyRes.pipe(res);
         });
@@ -359,7 +359,7 @@ app.get('/api/cache-clear', (req, res) => {
 function startServer() {
     app.listen(PORT, '0.0.0.0', async () => {
         const log = global.forceLog || console.log;
-        
+
         const modeText = global.forceLog ? `\n💡 Mode         : PRODUCTION (Log standar dinonaktifkan)` : '';
         const banner = `
 =============================================
