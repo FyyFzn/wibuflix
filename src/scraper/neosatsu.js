@@ -131,11 +131,14 @@ async function getNeosatsuEpisodes(targetUrl) {
 
         parsedData.forEach(ep => {
             const epTitle = ep.name; // "Kamen Rider Zeztz Episode 37"
+            if (epTitle.toLowerCase().includes('batch')) return; // Skip Batch Episodes!
+            
             const resolutions = [];
             
             if (ep.item && Array.isArray(ep.item)) {
                 ep.item.forEach(resGroup => {
                     const resolusi = resGroup.label; // "360p", "480p", "720p"
+                    if (resolusi.toLowerCase().includes('batch')) return; // Skip Batch resolutions!
                     
                     if (resGroup.link && Array.isArray(resGroup.link)) {
                         resGroup.link.forEach(serverObj => {
@@ -150,7 +153,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                                     const fullUrl = `https:/${decryptedPath}`;
                                     
                                     resolutions.push({
-                                        resolusi: resolusi,
+                                        nama: resolusi, // Gunakan 'nama' agar sesuai dengan standar Samehadaku extractor
                                         namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
                                         urlAsli: fullUrl,
                                         iframeUrl: fullUrl

@@ -279,9 +279,13 @@ async function scrapeVideoServers(targetUrl) {
             
             block.find('ul li').each((_, li) => {
                 const res = $(li).find('strong').text().trim().replace(' ', ''); // e.g. "360p"
+                if (res.toLowerCase().includes('batch')) return; // Skip batch resolution
+
                 $(li).find('span a').each((_, a) => {
                     const hostNameRaw = $(a).text().trim();
                     const hostNameLower = hostNameRaw.toLowerCase();
+                    if (hostNameLower.includes('batch')) return; // Skip batch host name
+
                     const href = $(a).attr('href');
                     
                     const allowedHosts = ['kraken', 'pucuk', 'pixeldrain', 'wibufile', 'vidhide', 'filedon', 'filemoon', 'filelions', 'gofile', 'acefile', 'mirrorupload', 'mega'];
