@@ -425,7 +425,7 @@ const savedState = loadState();
 
             if (!grup[kunci]) {
                 grup[kunci] = {
-                    label: srv.namaHost || kunci.charAt(0).toUpperCase() + kunci.slice(1),
+                    label: srv.namaHost || (kunci && kunci.length > 0 ? kunci.charAt(0).toUpperCase() + kunci.slice(1) : 'Server'),
                     items: []
                 };
             }

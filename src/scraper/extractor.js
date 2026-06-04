@@ -272,6 +272,7 @@ async function scrapeVideoServers(targetUrl) {
         $('*[class*="download"]').each((_, el) => {
             const block = $(el);
             let formatDesc = block.find('p b').text().trim() || 'MP4';
+            if (formatDesc.toLowerCase().includes('batch')) return; // skip batch
             if (formatDesc.toLowerCase().includes('mkv')) formatDesc = 'MKV';
             else if (formatDesc.toLowerCase().includes('mp4')) formatDesc = 'MP4';
             else if (formatDesc.toLowerCase().includes('x265')) formatDesc = 'x265';

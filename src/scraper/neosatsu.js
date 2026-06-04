@@ -139,7 +139,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                     
                     if (resGroup.link && Array.isArray(resGroup.link)) {
                         resGroup.link.forEach(serverObj => {
-                            const serverName = serverObj.name;
+                            const serverName = serverObj.name || '';
                             const encryptedId = serverObj.ids; // "3qBczo3qBvL2RyaXZlLmdvb2dsZS5jb20..."
                             
                             if (encryptedId && encryptedId.length > 13) {
