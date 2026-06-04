@@ -257,10 +257,13 @@ async function getNeosatsuEpisodes(targetUrl) {
                                                 let finalIframeUrl = fullUrl;
                                                 if (finalIframeUrl.includes('drive.google.com')) {
                                                     finalIframeUrl = finalIframeUrl.replace(/\/view(\?.*)?$/, '/preview');
-                                                    if (finalIframeUrl.includes('/open?id=')) {
-                                                        const id = new URL(finalIframeUrl).searchParams.get('id');
-                                                        if (id) finalIframeUrl = `https://drive.google.com/file/d/${id}/preview`;
-                                                    }
+                                                    try {
+                                                        const urlObj = new URL(finalIframeUrl);
+                                                        if (urlObj.pathname === '/open' || urlObj.pathname === '/uc') {
+                                                            const id = urlObj.searchParams.get('id');
+                                                            if (id) finalIframeUrl = `https://drive.google.com/file/d/${id}/preview`;
+                                                        }
+                                                    } catch(e){}
                                                 }
                                                 
                                                 nestedServers.push({
@@ -313,10 +316,13 @@ async function getNeosatsuEpisodes(targetUrl) {
                                                 let finalIframeUrl = fullUrl;
                                                 if (finalIframeUrl.includes('drive.google.com')) {
                                                     finalIframeUrl = finalIframeUrl.replace(/\/view(\?.*)?$/, '/preview');
-                                                    if (finalIframeUrl.includes('/open?id=')) {
-                                                        const id = new URL(finalIframeUrl).searchParams.get('id');
-                                                        if (id) finalIframeUrl = `https://drive.google.com/file/d/${id}/preview`;
-                                                    }
+                                                    try {
+                                                        const urlObj = new URL(finalIframeUrl);
+                                                        if (urlObj.pathname === '/open' || urlObj.pathname === '/uc') {
+                                                            const id = urlObj.searchParams.get('id');
+                                                            if (id) finalIframeUrl = `https://drive.google.com/file/d/${id}/preview`;
+                                                        }
+                                                    } catch(e){}
                                                 }
 
                                                 resolutions.push({
