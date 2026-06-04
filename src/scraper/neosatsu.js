@@ -8,7 +8,7 @@ const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kame
  * Kita akan mengelompokkan post yang memiliki judul seri yang sama.
  */
 async function getNeosatsuCatalog(page = 1, searchParam = '') {
-    const maxResults = 50; // Perbesar fetch untuk memudahkan penggabungan di halaman yang sama
+    const maxResults = 100; // Perbesar fetch untuk memudahkan penggabungan di halaman yang sama
     const startIndex = (page - 1) * maxResults + 1;
     
     try {
@@ -95,8 +95,8 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
         }
         
         // Paginasi mungkin butuh disesuaikan karena kita menggabungkan hasil,
-        // namun 15 item unik biasanya cukup untuk 1 halaman.
-        return { page: parseInt(page), max_results: 15, anime: animeList.slice(0, 15) };
+        // kita batasi menjadi 9 item unik per halaman (seperti Anime).
+        return { page: parseInt(page), max_results: 9, anime: animeList.slice(0, 9) };
         
     } catch (err) {
         console.error('[Neosatsu Catalog Error]:', err.message);
