@@ -501,13 +501,13 @@ async function extractVideoUrl(embedUrl, req) {
                     const match = html.match(/confirm=([0-9A-Za-z_-]+)/);
                     if (match && match[1]) {
                         const res2 = await axios.get(`${apiUrl}&confirm=${match[1]}`, {
-                            maxRedirects: 0,
-                            validateStatus: (status) => status >= 200 && status < 400,
+                        maxRedirects: 0,
+                        validateStatus: (status) => status >= 200 && status < 400,
                             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
                             responseType: 'stream' // prevent downloading full file if it doesn't redirect
-                        });
-                        if (res2.status === 302 || res2.status === 303) {
-                            directUrl = res2.headers.location;
+                    });
+                    if (res2.status === 302 || res2.status === 303) {
+                        directUrl = res2.headers.location;
                         }
                     }
                 }
