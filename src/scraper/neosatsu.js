@@ -267,7 +267,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                                                 }
                                                 
                                                 nestedServers.push({
-                                                    nama: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
+                                                    nama: `HD ${serverName}`,
                                                     namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
                                                     urlAsli: fullUrl,
                                                     iframeUrl: finalIframeUrl
@@ -326,7 +326,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                                                 }
 
                                                 resolutions.push({
-                                                    nama: resolusi,
+                                                    nama: `${resolusi} ${serverName}`.trim(),
                                                     namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
                                                     urlAsli: fullUrl,
                                                     iframeUrl: finalIframeUrl
