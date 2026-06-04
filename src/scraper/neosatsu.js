@@ -359,6 +359,31 @@ async function getNeosatsuEpisodes(targetUrl) {
                 return match ? parseInt(match[1]) : -1;
             };
 
+            // Deduplikasi: Hapus duplikat jika ada 2 episode dengan nomor yang sama (misal dari post satuan & post batch)
+            const seenEpNums = new Set();
+            const seenTitles = new Set();
+            const uniqueEpisodes = [];
+
+            for (let i = 0; i < daftar_episode.length; i++) {
+                const ep = daftar_episode[i];
+                const num = getEpNum(ep.judul);
+                if (num !== -1) {
+                    if (!seenEpNums.has(num)) {
+                        seenEpNums.add(num);
+                        uniqueEpisodes.push(ep);
+                    }
+                } else {
+                    const lowerTitle = ep.judul.toLowerCase();
+                    if (!seenTitles.has(lowerTitle)) {
+                        seenTitles.add(lowerTitle);
+                        uniqueEpisodes.push(ep);
+                    }
+                }
+            }
+            
+            // Timpa array asli dengan array yang sudah unik
+            daftar_episode.splice(0, daftar_episode.length, ...uniqueEpisodes);
+
             let firstEpNum = -1;
             let lastEpNum = -1;
 
