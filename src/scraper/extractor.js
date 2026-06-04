@@ -471,6 +471,61 @@ async function extractVideoUrl(embedUrl, req) {
         throw new Error('Gagal mengekstrak video dari Blogger');
     }
 
+    // ── Handler GDrive (Google Drive Direct Download Extractor) ──────────
+    if (embedUrl.includes('drive.google.com')) {
+        const axios = require('axios');
+        try {
+            console.log(`[GDrive] Mencoba ekstrak direct URL dari: ${embedUrl}`);
+            let fileId = '';
+            
+            const urlObj = new URL(embedUrl);
+            if (embedUrl.includes('/file/d/')) {
+                fileId = embedUrl.split('/file/d/')[1].split('/')[0];
+            } else if (urlObj.searchParams.has('id')) {
+                fileId = urlObj.searchParams.get('id');
+            }
+            
+            if (fileId) {
+                const apiUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+                const res = await axios.get(apiUrl, {
+                    maxRedirects: 0,
+                    validateStatus: (status) => status >= 200 && status < 400,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                });
+                
+                let directUrl = '';
+                if (res.status === 302 || res.status === 303) {
+                    directUrl = res.headers.location;
+                } else if (res.status === 200) {
+                    const html = res.data;
+                    const match = html.match(/confirm=([0-9A-Za-z_-]+)/);
+                    if (match && match[1]) {
+                        const res2 = await axios.get(`${apiUrl}&confirm=${match[1]}`, {
+                            maxRedirects: 0,
+                            validateStatus: (status) => status >= 200 && status < 400,
+                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                            responseType: 'stream' // prevent downloading full file if it doesn't redirect
+                        });
+                        if (res2.status === 302 || res2.status === 303) {
+                            directUrl = res2.headers.location;
+                        }
+                    }
+                }
+                
+                if (directUrl) {
+                    console.log(`[GDrive] Direct URL berhasil diekstrak!`);
+                    return {
+                        url: directUrl,
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                    };
+                }
+            }
+        } catch (e) {
+            console.error(`[GDrive] Gagal ekstrak:`, e.message);
+        }
+        throw new Error('Gagal mengekstrak video dari GDrive');
+    }
+
     if (embedUrl.includes('krakenfiles.com')) {
         const result = await extractKrakenVideo(embedUrl, req);
         if (result && result.url) {
