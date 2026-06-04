@@ -359,10 +359,18 @@ async function getNeosatsuEpisodes(targetUrl) {
                 return match ? parseInt(match[1]) : -1;
             };
 
-            const firstEpNum = getEpNum(daftar_episode[0].judul);
-            const lastEpNum = getEpNum(daftar_episode[daftar_episode.length - 1].judul);
+            let firstEpNum = -1;
+            let lastEpNum = -1;
 
-            // Jika episode pertama lebih besar dari episode terakhir (misal 50 -> 1), kita reverse agar jadi 1 -> 50
+            for (let i = 0; i < daftar_episode.length; i++) {
+                const num = getEpNum(daftar_episode[i].judul);
+                if (num !== -1) {
+                    if (firstEpNum === -1) firstEpNum = num;
+                    lastEpNum = num;
+                }
+            }
+
+            // Jika episode pertama yang ditemukan lebih besar dari episode terakhir (misal 50 -> 1), kita reverse
             if (firstEpNum !== -1 && lastEpNum !== -1 && firstEpNum > lastEpNum) {
                 daftar_episode.reverse();
             }
