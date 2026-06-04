@@ -26,9 +26,13 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
             $('.post.hentry').each((i, el) => {
                 const title = $(el).find('h2.entry-title a, h1.entry-title a').text().trim();
                 const url = $(el).find('h2.entry-title a, h1.entry-title a').attr('href');
-                let thumb = $(el).find('.thumbnail img').attr('src') || $(el).find('.thumbnail img').attr('data-src') || '';
+                let thumb = $(el).find('.thumbnail img').attr('data-src') || $(el).find('.thumbnail img').attr('src') || '';
                 
-                if (thumb) thumb = thumb.replace(/\/w\d+-h\d+(-[c|p|s])?(-[a-zA-Z0-9]+)?\//g, '/s1600/').replace(/\/s\d+-c\//, '/s1600/');
+                if (thumb && thumb.startsWith('http')) {
+                    thumb = thumb.replace(/\/w\d+-h\d+(-[c|p|s])?(-[a-zA-Z0-9]+)?\//g, '/s1600/').replace(/\/s\d+-c\//, '/s1600/');
+                } else if (thumb && thumb.startsWith('data:')) {
+                    // Jika hanya ada base64, kita bisa biarkan atau beri fallback
+                }
 
                 if (title && url) {
                     const titleLower = title.toLowerCase();
