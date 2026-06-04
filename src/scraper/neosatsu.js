@@ -285,7 +285,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                                     } else if (isMovieOrSpecial) {
                                         nestedEpTitle = `[Spesial/Movie] ${nestedEpTitle}`;
                                     }
-                                    const fakeEpUrl = `${targetUrl}#neosatsu_ep_${nestedEpTitle.replace(/\s+/g, '_')}`;
+                                    const fakeEpUrl = `${targetUrl}___neosatsu_ep___${nestedEpTitle.replace(/\s+/g, '_')}`;
                                     daftar_episode.push({
                                         judul: nestedEpTitle,
                                         url: fakeEpUrl,
@@ -339,7 +339,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                         }
 
                         if (resolutions.length > 0) {
-                            const fakeEpUrl = `${targetUrl}#neosatsu_ep_${epTitle.replace(/\s+/g, '_')}`;
+                            const fakeEpUrl = `${targetUrl}___neosatsu_ep___${epTitle.replace(/\s+/g, '_')}`;
                             daftar_episode.push({
                                 judul: epTitle,
                                 url: fakeEpUrl,
@@ -374,7 +374,7 @@ async function getNeosatsuEpisodes(targetUrl) {
  * [TAHAP 3] Mengambil server dari cache yang sudah di-scrape di Tahap 2
  */
 async function getNeosatsuServers(fakeUrl) {
-    const [targetUrl, epId] = fakeUrl.split('#neosatsu_ep_');
+    const [targetUrl, epId] = fakeUrl.split('___neosatsu_ep___');
     if (!targetUrl || !epId) return { judul: '', servers: [], nav_prev: null, nav_next: null };
 
     const titleTarget = epId.replace(/_/g, ' ');
