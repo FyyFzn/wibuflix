@@ -351,9 +351,22 @@ async function getNeosatsuEpisodes(targetUrl) {
             }
         }
         
-        // Sorting: Biasanya API Blogger return dari yang terbaru, jadi daftar episode terbalik (Ep 50, 49, 48)
-        // Kita reverse agar Episode 1 berada di awal (atau biarkan sesuai selera UI)
-        daftar_episode.reverse();
+        // Sorting Pintar: Karena uploader Neosatsu terkadang tidak konsisten (ada yang Ep 1 di atas, ada yang Ep 50 di atas),
+        // Kita harus memastikan urutan selalu 1 -> 50 agar tombol Next selalu menuju episode selanjutnya yang benar.
+        if (daftar_episode.length > 1) {
+            const getEpNum = (title) => {
+                const match = title.match(/Episode\s*(\d+)/i) || title.match(/Ep\s*(\d+)/i);
+                return match ? parseInt(match[1]) : -1;
+            };
+
+            const firstEpNum = getEpNum(daftar_episode[0].judul);
+            const lastEpNum = getEpNum(daftar_episode[daftar_episode.length - 1].judul);
+
+            // Jika episode pertama lebih besar dari episode terakhir (misal 50 -> 1), kita reverse agar jadi 1 -> 50
+            if (firstEpNum !== -1 && lastEpNum !== -1 && firstEpNum > lastEpNum) {
+                daftar_episode.reverse();
+            }
+        }
 
         // Simpan cache
         global.neosatsuCache = global.neosatsuCache || {};
