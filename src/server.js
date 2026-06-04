@@ -90,7 +90,7 @@ app.get('/api/episodes', async (req, res) => {
 
     try {
         let data;
-        if (targetUrl.includes('neosatsu.com')) {
+        if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
             data = await getNeosatsuEpisodes(targetUrl);
         } else {
             data = await getEpisodes(targetUrl);
@@ -111,7 +111,7 @@ app.get('/api/scrape', async (req, res) => {
 
     try {
         let data;
-        if (targetUrl.includes('neosatsu.com') && targetUrl.includes('#neosatsu_ep_')) {
+        if ((targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) && targetUrl.includes('#neosatsu_ep_')) {
             const neoData = await getNeosatsuServers(targetUrl);
             data = {
                 judul: neoData.judul || 'Tokusatsu',
