@@ -35,7 +35,7 @@ async function getHotAnime() {
 
         if (!html || html.trim() === '') {
             console.log(`[Hot] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             html = await page.content();
         }
 

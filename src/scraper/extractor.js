@@ -251,7 +251,7 @@ async function scrapeVideoServers(targetUrl) {
 
         if (!html || html.trim() === '' || html.includes('cf-browser-verification') || html.includes('Just a moment')) {
             console.log(`[Scrape] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             html = await page.content();
         }
 
@@ -394,7 +394,7 @@ async function resolveSingleServer(targetUrl, nume, req) {
         // Fallback to Puppeteer page.goto if fetch failed (Cloudflare IUAM / Tarpit)
         if (!post) {
             console.log(`[Resolve] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             html = await page.content();
             $ = cheerio.load(html);
             post = $('.east_player_option').first().attr('data-post') || '';
@@ -786,7 +786,7 @@ async function extractVideoUrl(embedUrl, req) {
 
 
         if (isSPA) {
-            await tempPage.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => {});
+            await tempPage.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(e => {});
         } else {
             await tempPage.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(e => {});
             await tempPage.setContent('<html style="height:100%;"><body style="height:100%; margin:0; background:#000;"></body></html>');

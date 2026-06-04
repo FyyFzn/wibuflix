@@ -41,7 +41,7 @@ async function buatPageBaru(browser) {
     page.on('request', req => {
         const type = req.resourceType();
         const url = req.url();
-        if (['image', 'font', 'media', 'stylesheet'].includes(type)) return req.abort();
+        if (['font', 'media'].includes(type)) return req.abort();
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
             url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
         req.continue();
@@ -57,7 +57,7 @@ async function buatPageExtractor(browser) {
         const type = req.resourceType();
         const url = req.url();
         // MENGIZINKAN MEDIA (VIDEO) DAN STYLESHEET (AGAR SPA TIDAK CRASH)
-        if (['image', 'font'].includes(type)) return req.abort();
+        if (['font'].includes(type)) return req.abort();
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
             url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
         req.continue();

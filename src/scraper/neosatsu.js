@@ -18,7 +18,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
             
             const { data } = await axios.get(searchUrl, {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 30000
+                timeout: 60000
             });
             const $ = cheerio.load(data);
             const animeList = [];
@@ -46,7 +46,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
             
             const { data } = await axios.get(feedUrl, {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 30000
+                timeout: 60000
             });
             
             const animeList = [];
@@ -88,7 +88,7 @@ async function getNeosatsuEpisodes(targetUrl) {
     try {
         const { data } = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 30000
+            timeout: 60000
         });
         
         const $ = cheerio.load(data);
