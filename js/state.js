@@ -6,7 +6,8 @@ export const State = {
     gambarSeriSaatIni: '',
     historyPage: 1,
     historyPerPage: 0,
-    lastUsedServer: ''
+    lastUsedServer: '',
+    activeTab: 'anime'
 };
 
 export function saveState(layarId) {

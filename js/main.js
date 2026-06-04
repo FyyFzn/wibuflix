@@ -55,6 +55,30 @@ const savedState = loadState();
         muatKatalog();
     });
 
+    // ── Event Listener: Tabs ─────────────────────────────────────
+    const tabAnime = document.getElementById('tabAnime');
+    const tabTokusatsu = document.getElementById('tabTokusatsu');
+
+    function switchTab(newTab) {
+        if (State.activeTab === newTab) return;
+        State.activeTab = newTab;
+        State.currentPage = 1;
+        State.currentSearch = '';
+        UI.inputSearch.value = '';
+        
+        if (newTab === 'anime') {
+            tabAnime.classList.add('active');
+            tabTokusatsu.classList.remove('active');
+        } else {
+            tabTokusatsu.classList.add('active');
+            tabAnime.classList.remove('active');
+        }
+        muatKatalog();
+    }
+
+    if (tabAnime) tabAnime.addEventListener('click', () => switchTab('anime'));
+    if (tabTokusatsu) tabTokusatsu.addEventListener('click', () => switchTab('toku'));
+
     // ── Event Listener: Navigasi ──────────────────────────────────
     UI.btnKembaliKatalog.addEventListener('click', () => UI.tampilkan(UI.layarKatalog));
     
@@ -89,7 +113,7 @@ const savedState = loadState();
     async function muatKatalog() {
         UI.setLoading('Memuat daftar anime...');
         try {
-            const json = await fetchKatalog(State.currentPage, State.currentSearch);
+            const json = await fetchKatalog(State.currentPage, State.currentSearch, State.activeTab);
             if (json.status !== 'success') throw new Error(json.message);
             
             UI.katalogGrid.innerHTML = '';

@@ -24,28 +24,41 @@ app.use(express.static(path.join(__dirname, '../')));
 app.get('/api/katalog', async (req, res) => {
     const pageParams = req.query.page || 1;
     const searchParam = req.query.s || '';
+    const tabParam = req.query.tab || 'anime'; // default ke anime
 
     try {
-        const data = await getKatalog(pageParams, searchParam);
+        let data = { list: [], hasNext: false };
+        
+        if (tabParam === 'anime' || tabParam === 'all') {
+            data = await getKatalog(pageParams, searchParam);
+        }
         
         // --- INJEKSI NEOSATSU ---
-        try {
-            const neosatsuData = await getNeosatsuCatalog(pageParams, searchParam);
-            if (neosatsuData && neosatsuData.anime && Array.isArray(neosatsuData.anime)) {
-                const neosatsuList = neosatsuData.anime.map(w => ({
-                    judul: w.title,
-                    url: w.endpoint,
-                    gambar: w.thumb,
-                    gambarScraper: w.thumb,
-                    tipe: 'Toku',
-                    skor: '-',
-                    status: 'Neosatsu'
-                }));
-                // Gabungkan
-                data.list = [...neosatsuList, ...(data.list || [])];
+        if (tabParam === 'toku' || tabParam === 'all') {
+            try {
+                const neosatsuData = await getNeosatsuCatalog(pageParams, searchParam);
+                if (neosatsuData && neosatsuData.anime && Array.isArray(neosatsuData.anime)) {
+                    const neosatsuList = neosatsuData.anime.map(w => ({
+                        judul: w.title,
+                        url: w.endpoint,
+                        gambar: w.thumb,
+                        gambarScraper: w.thumb,
+                        tipe: w.tipe || 'Toku',
+                        skor: '-',
+                        status: w.status || 'Completed'
+                    }));
+                    
+                    if (tabParam === 'toku') {
+                        data.list = neosatsuList;
+                        data.hasNext = neosatsuList.length > 0; // Simple pagination indicator
+                    } else {
+                        // Gabungkan
+                        data.list = [...neosatsuList, ...(data.list || [])];
+                    }
+                }
+            } catch(e) {
+                console.error('[Inject Neosatsu Error]', e.message);
             }
-        } catch(e) {
-            console.error('[Inject Neosatsu Error]', e.message);
         }
 
         res.json({ status: 'success', data });
@@ -99,8 +112,13 @@ app.get('/api/scrape', async (req, res) => {
     try {
         let data;
         if (targetUrl.includes('neosatsu.com') && targetUrl.includes('#neosatsu_ep_')) {
-            const servers = await getNeosatsuServers(targetUrl);
-            data = { judul: 'Tokusatsu', nav_prev: null, nav_next: null, servers: servers };
+            const neoData = await getNeosatsuServers(targetUrl);
+            data = { 
+                judul: neoData.judul || 'Tokusatsu', 
+                nav_prev: neoData.nav_prev, 
+                nav_next: neoData.nav_next, 
+                servers: neoData.servers 
+            };
         } else {
             data = await scrapeVideoServers(targetUrl);
         }

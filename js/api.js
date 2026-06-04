@@ -7,9 +7,8 @@ export const API = {
     resolve: `${API_BASE}/api/resolve`
 };
 
-export async function fetchKatalog(page = 1, search = '') {
-    let url = `${API.katalog}?page=${page}`;
-    if (search) url += `&s=${encodeURIComponent(search)}`;
+export async function fetchKatalog(page = 1, search = '', tab = 'anime') {
+    const url = `${API_BASE}/api/katalog?page=${page}&s=${encodeURIComponent(search)}&tab=${tab}`;
     const res = await fetch(url);
     return res.json();
 }

@@ -31,10 +31,25 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
                 if (thumb) thumb = thumb.replace(/\/w\d+-h\d+(-[c|p|s])?(-[a-zA-Z0-9]+)?\//g, '/s1600/').replace(/\/s\d+-c\//, '/s1600/');
 
                 if (title && url) {
+                    const titleLower = title.toLowerCase();
+                    let tipe = 'Series';
+                    let status = 'Completed';
+                    
+                    if (titleLower.includes('movie')) tipe = 'Movie';
+                    else if (titleLower.includes('special') || titleLower.includes('spin-off') || titleLower.includes('hyper battle')) tipe = 'Spesial';
+                    
+                    if (tipe === 'Series') {
+                        if (titleLower.includes('episode') && !titleLower.includes('end') && !titleLower.includes('batch')) {
+                            status = 'Ongoing';
+                        }
+                    }
+
                     animeList.push({
                         title: title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').trim(),
                         thumb: thumb,
-                        endpoint: url
+                        endpoint: url,
+                        tipe: tipe,
+                        status: status
                     });
                 }
             });
@@ -60,11 +75,30 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
                     }
                     
                     if (title && linkObj) {
+                        const titleLower = title.toLowerCase();
+                        let tipe = 'Series';
+                        let status = 'Completed';
+                        
+                        // Ekstrak tipe dari kategori JSON jika ada
+                        const cats = entry.category ? entry.category.map(c => c.term.toLowerCase()) : [];
+                        const catsStr = cats.join(' ');
+                        
+                        if (titleLower.includes('movie') || catsStr.includes('movie')) tipe = 'Movie';
+                        else if (titleLower.includes('special') || titleLower.includes('spin-off') || titleLower.includes('hyper battle') || catsStr.includes('spin-off') || catsStr.includes('dvd')) tipe = 'Spesial';
+                        
+                        if (tipe === 'Series') {
+                            if (titleLower.includes('episode') && !titleLower.includes('end') && !titleLower.includes('batch')) {
+                                status = 'Ongoing';
+                            }
+                        }
+
                         title = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').trim();
                         animeList.push({
                             title: title,
                             thumb: thumb,
-                            endpoint: linkObj.href
+                            endpoint: linkObj.href,
+                            tipe: tipe,
+                            status: status
                         });
                     }
                 });
@@ -133,55 +167,96 @@ async function getNeosatsuEpisodes(targetUrl) {
             const epTitle = ep.name; // "Kamen Rider Zeztz Episode 37"
             if (epTitle.toLowerCase().includes('batch')) return; // Skip Batch Episodes!
             
-            const resolutions = [];
-            
+            // STRUKTUR B: resGroup.label justru adalah episode (contoh: "Episode 1", "Episode 01")
+            // Kalau dia mengandung "episode" ATAU tidak punya embel-embel "p" (bukan 360p, 480p, dll),
+            // kita jadikan dia sebagai episode mandiri!
+            let hasNestedEpisodes = false;
             if (ep.item && Array.isArray(ep.item)) {
                 ep.item.forEach(resGroup => {
-                    const resolusi = resGroup.label; // "360p", "480p", "720p"
-                    if (resolusi.toLowerCase().includes('batch')) return; // Skip Batch resolutions!
+                    const resolusi = resGroup.label;
+                    if (resolusi.toLowerCase().includes('batch')) return;
                     
-                    if (resGroup.link && Array.isArray(resGroup.link)) {
-                        resGroup.link.forEach(serverObj => {
-                            const serverName = serverObj.name || '';
-                            const encryptedId = serverObj.ids; // "3qBczo3qBvL2RyaXZlLmdvb2dsZS5jb20..."
-                            
-                            if (encryptedId && encryptedId.length > 13) {
-                                // Dekripsi: buang 10 char pertama dan 3 char terakhir
-                                const b64 = encryptedId.substring(10, encryptedId.length - 3);
-                                try {
-                                    const decryptedPath = Buffer.from(b64, 'base64').toString('utf8');
-                                    const fullUrl = `https:/${decryptedPath}`;
-                                    
-                                    resolutions.push({
-                                        nama: resolusi, // Gunakan 'nama' agar sesuai dengan standar Samehadaku extractor
-                                        namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
-                                        urlAsli: fullUrl,
-                                        iframeUrl: fullUrl
-                                    });
-                                } catch (e) {
-                                    // Abaikan jika gagal decode base64
+                    // Deteksi Structure B
+                    if (resolusi.toLowerCase().includes('episode') || (!resolusi.toLowerCase().includes('p') && resolusi.match(/^[0-9\-\s]+$/))) {
+                        hasNestedEpisodes = true;
+                        
+                        // Ekstrak server di dalam episode bersarang ini
+                        const nestedServers = [];
+                        if (resGroup.link && Array.isArray(resGroup.link)) {
+                            resGroup.link.forEach(serverObj => {
+                                const serverName = serverObj.name || '';
+                                const encryptedId = serverObj.ids;
+                                
+                                if (encryptedId && encryptedId.length > 13) {
+                                    const b64 = encryptedId.substring(10, encryptedId.length - 3);
+                                    try {
+                                        const decryptedPath = Buffer.from(b64, 'base64').toString('utf8');
+                                        const fullUrl = `https:/${decryptedPath}`;
+                                        nestedServers.push({
+                                            nama: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
+                                            namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
+                                            urlAsli: fullUrl,
+                                            iframeUrl: fullUrl
+                                        });
+                                    } catch (e) {}
                                 }
-                            }
-                        });
+                            });
+                        }
+                        
+                        if (nestedServers.length > 0) {
+                            const nestedEpTitle = resolusi.trim();
+                            const fakeEpUrl = `${targetUrl}#neosatsu_ep_${nestedEpTitle.replace(/\s+/g, '_')}`;
+                            daftar_episode.push({
+                                judul: nestedEpTitle,
+                                url: fakeEpUrl,
+                                _servers: nestedServers
+                            });
+                        }
                     }
                 });
             }
+            
+            // STRUKTUR A: Normal (ep.name adalah episode, resGroup.label adalah 360p, dll)
+            if (!hasNestedEpisodes) {
+                const resolutions = [];
+                
+                if (ep.item && Array.isArray(ep.item)) {
+                    ep.item.forEach(resGroup => {
+                        const resolusi = resGroup.label;
+                        if (resolusi.toLowerCase().includes('batch')) return;
+                        
+                        if (resGroup.link && Array.isArray(resGroup.link)) {
+                            resGroup.link.forEach(serverObj => {
+                                const serverName = serverObj.name || '';
+                                const encryptedId = serverObj.ids;
+                                
+                                if (encryptedId && encryptedId.length > 13) {
+                                    const b64 = encryptedId.substring(10, encryptedId.length - 3);
+                                    try {
+                                        const decryptedPath = Buffer.from(b64, 'base64').toString('utf8');
+                                        const fullUrl = `https:/${decryptedPath}`;
+                                        
+                                        resolutions.push({
+                                            nama: resolusi,
+                                            namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
+                                            urlAsli: fullUrl,
+                                            iframeUrl: fullUrl
+                                        });
+                                    } catch (e) {}
+                                }
+                            });
+                        }
+                    });
+                }
 
-            if (resolutions.length > 0) {
-                // Di sistem Samehadaku kita, kita butuh "URL" untuk tiap episode yang dipanggil ke API /scrape
-                // Karena Neosatsu menyimpan SEMUA server dalam satu tempat, kita simpan datanya ke dalam struktur yang bisa digunakan
-                // Untuk kesederhanaan frontend Samehadaku, kita harus menyediakan endpoint fake atau pass datanya.
-                // Tapi frontend memanggil GET /api/scrape?url=EPISODE_URL
-                
-                // KITA AKAN SERIALISASI SELURUH SERVER OBJECT INI KE DALAM PARAMETER URL!
-                // Tapi karena terlalu panjang, kita buat parameter url khusus yang menunjuk kembali ke post ini tapi dengan identifier index.
-                const fakeEpUrl = `${targetUrl}#neosatsu_ep_${epTitle.replace(/\s+/g, '_')}`;
-                
-                daftar_episode.push({
-                    judul: epTitle,
-                    url: fakeEpUrl,
-                    _servers: resolutions // Simpan data internal untuk diambil nanti
-                });
+                if (resolutions.length > 0) {
+                    const fakeEpUrl = `${targetUrl}#neosatsu_ep_${epTitle.replace(/\s+/g, '_')}`;
+                    daftar_episode.push({
+                        judul: epTitle,
+                        url: fakeEpUrl,
+                        _servers: resolutions
+                    });
+                }
             }
         });
 
@@ -207,27 +282,40 @@ async function getNeosatsuEpisodes(targetUrl) {
 async function getNeosatsuServers(fakeUrl) {
     // fakeUrl format: https://www.neosatsu.com/2025/09/post.html#neosatsu_ep_Kamen_Rider_Zeztz_Episode_37
     const [targetUrl, epId] = fakeUrl.split('#neosatsu_ep_');
-    if (!targetUrl || !epId) return [];
+    if (!targetUrl || !epId) return { judul: '', servers: [], nav_prev: null, nav_next: null };
 
     const titleTarget = epId.replace(/_/g, ' ');
 
     if (global.neosatsuCache && global.neosatsuCache[targetUrl]) {
         const episodeList = global.neosatsuCache[targetUrl];
-        const episode = episodeList.find(e => e.judul === titleTarget);
-        if (episode && episode._servers) {
-            return episode._servers;
+        const idx = episodeList.findIndex(e => e.judul === titleTarget);
+        if (idx !== -1) {
+            const episode = episodeList[idx];
+            return {
+                judul: episode.judul,
+                servers: episode._servers || [],
+                nav_prev: idx > 0 ? episodeList[idx - 1].url : null,
+                nav_next: idx < episodeList.length - 1 ? episodeList[idx + 1].url : null
+            };
         }
     }
     
     // Fallback jika tidak ada di cache: Panggil getEpisodes secara diam-diam
     console.log("[Neosatsu Servers] Cache tidak ditemukan, mengambil ulang post...");
     const data = await getNeosatsuEpisodes(targetUrl);
-    const episode = data.daftar_episode.find(e => e.judul === titleTarget);
-    if (episode && episode._servers) {
-        return episode._servers;
+    const episodeList = data.daftar_episode;
+    const idx = episodeList.findIndex(e => e.judul === titleTarget);
+    if (idx !== -1) {
+        const episode = episodeList[idx];
+        return {
+            judul: episode.judul,
+            servers: episode._servers || [],
+            nav_prev: idx > 0 ? episodeList[idx - 1].url : null,
+            nav_next: idx < episodeList.length - 1 ? episodeList[idx + 1].url : null
+        };
     }
     
-    return [];
+    return { judul: titleTarget, servers: [], nav_prev: null, nav_next: null };
 }
 
 module.exports = {
