@@ -42,10 +42,10 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
 
                     $('a').each((i, el) => {
                         const href = $(el).attr('href');
-                        const title = $(el).attr('title') || $(el).find('span').text().trim();
-                        let img = $(el).find('img').attr('src');
+                        const title = $(el).attr('title') || $(el).text().trim();
+                        let img = $(el).find('img').attr('src') || 'https://i.imgur.com/KxJ4L6J.jpeg'; // Default Neosatsu logo if text link
                         
-                        if (href && img && title && href !== 'javascript:void(0)') {
+                        if (href && title && href !== 'javascript:void(0)' && title.length > 5) {
                             const tLower = title.toLowerCase();
                             
                             // Deteksi Special / V-Cinema dari judul
