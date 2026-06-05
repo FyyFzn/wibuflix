@@ -122,11 +122,12 @@ app.get('/api/scrape', async (req, res) => {
         let isOtakudesu = false;
         
         if (targetUrl.startsWith('/api/otakudesu/servers')) {
-            // Already Otakudesu request (direct)
             isOtakudesu = true;
-            // Fetch internal endpoint logic or just redirect? Wait, targetUrl is a relative path.
-            // But we already handle targetUrl.startsWith('/api/otakudesu/servers') in frontend (api.js)!
-            // So /api/scrape shouldn't receive this unless frontend missed it. But just in case.
+            // Parse url parameter
+            const urlParam = new URL('http://localhost' + targetUrl).searchParams.get('url');
+            if (urlParam) {
+                data = await otakudesu.getServersInternal(urlParam);
+            }
         }
 
         if ((targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) && targetUrl.includes('___neosatsu_ep___')) {

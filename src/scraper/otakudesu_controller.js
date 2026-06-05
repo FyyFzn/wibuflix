@@ -61,77 +61,81 @@ async function getServers(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: "Parameter url wajib diisi" });
         
-        console.log(`[Otakudesu] Fetching servers from: ${url}`);
-        
-        // Fetch raw HTML of the episode
-        const { data } = await axios.get(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 10000
-        });
-        
-        const $ = cheerio.load(data);
-        const servers = [];
-        
-        const promises = [];
-        const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega'];
-        
-        $('.download ul li').each((i, el) => {
-            const resText = $(el).find('strong').text().trim(); // e.g. "Mp4 360p"
-            $(el).find('a').each((j, a) => {
-                const hostRaw = $(a).text().trim();
-                const hostLower = hostRaw.toLowerCase();
-                const href = $(a).attr('href');
-                
-                if (allowedHosts.some(h => hostLower.includes(h))) {
-                    promises.push((async () => {
-                        try {
-                            // Resolve the desustream.com redirect link
-                            // e.g. https://link.desustream.com/?id=...
-                            const redRes = await axios.get(href, {
-                                maxRedirects: 0,
-                                validateStatus: () => true,
-                                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                                timeout: 8000
-                            });
-                            
-                            const directUrl = redRes.headers.location;
-                            if (directUrl) {
-                                servers.push({
-                                    nama: resText,
-                                    namaHost: hostRaw,
-                                    iframeUrl: directUrl, // URL yang sudah diresolve, akan dikirim ke client
-                                    type: 'direct',
-                                    aktif: servers.length === 0
-                                });
-                            }
-                        } catch(e) {
-                            console.log(`[Otakudesu] Resolve failed for ${hostRaw}: ${e.message}`);
-                        }
-                    })());
-                }
-            });
-        });
-        
-        // Tunggu semua resolve selesai
-        await Promise.all(promises);
-        
-        if (servers.length > 0) {
-            servers[0].aktif = true;
-        }
-
-        const judul = $('.venutama h1.posttl').text().trim();
-        
-        res.json({
-            judul,
-            servers,
-            nav_prev: null, // belum implementasi nav prev/next
-            nav_next: null
-        });
-
+        const data = await getServersInternal(url);
+        res.json(data);
     } catch (err) {
         console.error("[Otakudesu Servers Error]", err.message);
         res.status(500).json({ error: err.message });
     }
+}
+
+async function getServersInternal(url) {
+    console.log(`[Otakudesu] Fetching servers from: ${url}`);
+    
+    // Fetch raw HTML of the episode
+    const { data } = await axios.get(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        timeout: 10000
+    });
+    
+    const $ = cheerio.load(data);
+    const servers = [];
+    
+    const promises = [];
+    const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega'];
+    
+    $('.download ul li').each((i, el) => {
+        const resText = $(el).find('strong').text().trim(); // e.g. "Mp4 360p"
+        $(el).find('a').each((j, a) => {
+            const hostRaw = $(a).text().trim();
+            const hostLower = hostRaw.toLowerCase();
+            const href = $(a).attr('href');
+            
+            if (allowedHosts.some(h => hostLower.includes(h))) {
+                promises.push((async () => {
+                    try {
+                        // Resolve the desustream.com redirect link
+                        // e.g. https://link.desustream.com/?id=...
+                        const redRes = await axios.get(href, {
+                            maxRedirects: 0,
+                            validateStatus: () => true,
+                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                            timeout: 8000
+                        });
+                        
+                        const directUrl = redRes.headers.location;
+                        if (directUrl) {
+                            servers.push({
+                                nama: resText,
+                                namaHost: hostRaw,
+                                iframeUrl: directUrl, // URL yang sudah diresolve, akan dikirim ke client
+                                type: 'direct',
+                                aktif: servers.length === 0
+                            });
+                        }
+                    } catch(e) {
+                        console.log(`[Otakudesu] Resolve failed for ${hostRaw}: ${e.message}`);
+                    }
+                })());
+            }
+        });
+    });
+    
+    // Tunggu semua resolve selesai
+    await Promise.all(promises);
+    
+    if (servers.length > 0) {
+        servers[0].aktif = true;
+    }
+
+    const judul = $('.venutama h1.posttl').text().trim();
+    
+    return {
+        judul,
+        servers,
+        nav_prev: null, // belum implementasi nav prev/next
+        nav_next: null
+    };
 }
 
 function extractEpisodeNumber(title) {
@@ -239,6 +243,7 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
 module.exports = {
     getEpisodes,
     getServers,
+    getServersInternal,
     getAlternativeServers,
     getOtakuEpisodesFormatted
 };
