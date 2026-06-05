@@ -390,6 +390,7 @@ app.get('/api/cache-clear', (req, res) => {
 });
 
 const { startBackgroundAnimeSync } = require('./sync/anime_sync');
+const { startBackgroundOtakuSync } = require('./scraper/otakudesu_sync');
 
 function startServer() {
     app.listen(PORT, '0.0.0.0', async () => {
@@ -412,6 +413,7 @@ function startServer() {
 
         // Memulai background job
         startBackgroundAnimeSync();
+        startBackgroundOtakuSync();
     });
 }
 

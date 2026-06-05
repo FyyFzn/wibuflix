@@ -3,10 +3,18 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '../../otakudesu_db.json');
+const DB_PATH = process.env.HOME ? path.join(process.env.HOME, 'data', 'otakudesu_db.json') : path.join(__dirname, '../../otakudesu_db.json');
+
+const log = (...args) => {
+    if (global.forceLog) {
+        global.forceLog(...args);
+    } else {
+        console.log(...args);
+    }
+};
 
 async function syncOtakudesu() {
-    console.log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu...');
+    log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu...');
     try {
         const { data } = await axios.get('https://otakudesu.blog/anime-list/', {
             headers: {
@@ -22,8 +30,6 @@ async function syncOtakudesu() {
             const title = $(el).text().trim();
             const url = $(el).attr('href');
             if (title && url) {
-                // Ekstrak slug
-                // contoh: https://otakudesu.blog/anime/compass-20-sub-indo/
                 const parts = url.split('/').filter(Boolean);
                 const slug = parts[parts.length - 1];
                 
@@ -37,10 +43,18 @@ async function syncOtakudesu() {
         });
 
         if (list.length > 0) {
-            fs.writeFileSync(DB_PATH, JSON.stringify(list, null, 2));
-            console.log(`[OtakuSync] Berhasil menyimpan ${list.length} anime ke otakudesu_db.json`);
+            global.otakudesu_db_cache = list;
+            const dbDir = path.dirname(DB_PATH);
+            if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+            
+            try {
+                fs.writeFileSync(DB_PATH, JSON.stringify(list, null, 2));
+                log(`[OtakuSync] Berhasil menyimpan ${list.length} anime ke database.`);
+            } catch (fsErr) {
+                log(`[OtakuSync] Gagal menyimpan ke disk. Tersimpan di memory cache. Error: ${fsErr.message}`);
+            }
         } else {
-            console.log('[OtakuSync] Gagal: Tidak ada anime yang ditemukan.');
+            log('[OtakuSync] Peringatan: Tidak ada anime yang terambil dari list.');
         }
 
     } catch (err) {
@@ -48,9 +62,35 @@ async function syncOtakudesu() {
     }
 }
 
+function loadOtakuDatabase() {
+    if (global.otakudesu_db_cache) return global.otakudesu_db_cache;
+    
+    if (fs.existsSync(DB_PATH)) {
+        try {
+            const raw = fs.readFileSync(DB_PATH, 'utf-8');
+            global.otakudesu_db_cache = JSON.parse(raw);
+            return global.otakudesu_db_cache;
+        } catch(e) {
+            console.error("[Otaku DB] Gagal membaca JSON:", e.message);
+            return [];
+        }
+    }
+    return [];
+}
+
+function startBackgroundOtakuSync() {
+    // Jalankan segera saat start
+    syncOtakudesu();
+
+    // Jalankan ulang setiap 6 jam
+    setInterval(() => {
+        syncOtakudesu();
+    }, 6 * 60 * 60 * 1000);
+}
+
 // Jika dijalankan langsung
 if (require.main === module) {
     syncOtakudesu();
 }
 
-module.exports = { syncOtakudesu };
+module.exports = { syncOtakudesu, loadOtakuDatabase, startBackgroundOtakuSync };

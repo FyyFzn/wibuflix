@@ -137,12 +137,9 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
     if (!seriesTitle || !episodeTitle) return [];
     
     try {
-        const fs = require('fs');
-        const path = require('path');
-        const otakuDbPath = path.join(__dirname, '../../otakudesu_db.json');
-        if (!fs.existsSync(otakuDbPath)) return [];
-        
-        const otakuDb = JSON.parse(fs.readFileSync(otakuDbPath, 'utf8'));
+        const { loadOtakuDatabase } = require('./otakudesu_sync');
+        const otakuDb = loadOtakuDatabase();
+        if (!otakuDb || otakuDb.length === 0) return [];
         
         const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
         const queryWords = query.split(' ');

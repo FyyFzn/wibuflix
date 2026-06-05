@@ -2,6 +2,7 @@ const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 const cheerio = require('cheerio');
 const axios = require('axios');
 const { loadLocalDatabase } = require('../sync/anime_sync');
+const { loadOtakuDatabase } = require('./otakudesu_sync');
 const fs = require('fs');
 const path = require('path');
 
@@ -22,13 +23,7 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
     const localDb = loadLocalDatabase();
     
     // Load Otakudesu DB
-    let otakuDb = [];
-    const otakudesuDbPath = path.join(__dirname, '../../otakudesu_db.json');
-    if (fs.existsSync(otakudesuDbPath)) {
-        try {
-            otakuDb = JSON.parse(fs.readFileSync(otakudesuDbPath, 'utf8'));
-        } catch (e) {}
-    }
+    const otakuDb = loadOtakuDatabase();
 
     // Fungsi utilitas untuk mendeteksi tipe dengan pintar (Smart Tagging)
     const fixAnimeType = (item) => {
