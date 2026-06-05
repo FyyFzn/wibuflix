@@ -46,6 +46,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                         let img = $(el).find('img').attr('src') || 'https://i.imgur.com/KxJ4L6J.jpeg'; // Default Neosatsu logo if text link
                         
                         if (href && title && href !== 'javascript:void(0)' && title.length > 5) {
+                            if (href.includes('/p/')) return; // Abaikan link navigasi page statis
                             const tLower = title.toLowerCase();
                             
                             // Deteksi Special / V-Cinema dari judul
