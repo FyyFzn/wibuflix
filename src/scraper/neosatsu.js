@@ -99,8 +99,12 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
             const query = searchParam.toLowerCase();
             
             // Pencarian Lokal (Lebih Cepat dan Bersih)
-            const localResults = staticAnimeList.filter(item => item.title.toLowerCase().includes(query));
+            let localResults = staticAnimeList.filter(item => item.title.toLowerCase().includes(query));
             
+            if (typeFilter) {
+                localResults = localResults.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+            }
+
             if (localResults.length > 0) {
                 console.log(`[Neosatsu Scraper] Local Search Hit: Ditemukan ${localResults.length} hasil untuk "${searchParam}"`);
                 return { page: parseInt(page), max_results: 9, anime: localResults.slice((page - 1) * 9, page * 9) };
@@ -178,11 +182,21 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                 
                 uniqueAnimeMap.forEach(anime => animeList.push(anime));
             }
-            return { page: parseInt(page), max_results: 9, anime: animeList.slice(0, 9) };
+
+            let finalAnimeList = animeList;
+            if (typeFilter) {
+                finalAnimeList = finalAnimeList.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+            }
+
+            return { page: parseInt(page), max_results: 9, anime: finalAnimeList.slice(0, 9) };
             
         } else {
             // 3. Mode Browse Biasa
-            return { page: parseInt(page), max_results: 9, anime: staticAnimeList.slice((page - 1) * 9, page * 9) };
+            let browseDb = staticAnimeList;
+            if (typeFilter) {
+                browseDb = browseDb.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+            }
+            return { page: parseInt(page), max_results: 9, anime: browseDb.slice((page - 1) * 9, page * 9) };
         }
         
     } catch (err) {
