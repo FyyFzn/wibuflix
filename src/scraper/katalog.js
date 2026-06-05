@@ -9,9 +9,9 @@ const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
 const jikanCache = new NodeCache({ stdTTL: 86400 }); // Jikan cache 24 jam
 
-async function getKatalog(pageParams, searchParam) {
+async function getKatalog(pageParams, searchParam, typeFilter = '') {
     const isSearch = searchParam.trim() !== '';
-    const cacheKey = `katalog_${pageParams}_${searchParam}`;
+    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}`;
     
     const cachedData = cache.get(cacheKey);
     if (cachedData) {
@@ -29,6 +29,23 @@ async function getKatalog(pageParams, searchParam) {
             otakuDb = JSON.parse(fs.readFileSync(otakudesuDbPath, 'utf8'));
         } catch (e) {}
     }
+
+    // Fungsi utilitas untuk mendeteksi tipe dengan pintar (Smart Tagging)
+    const fixAnimeType = (item) => {
+        let actualType = item.tipe || 'TV';
+        const titleUp = item.judul ? item.judul.toUpperCase() : (item.title ? item.title.toUpperCase() : '');
+        
+        // Coba perbaiki jika tipe masih default/tidak akurat
+        if (actualType === 'TV' || actualType === 'OTAKUDESU' || actualType === 'UNKNOWN') {
+            if (titleUp.includes('SPECIAL') || titleUp.includes(' SP')) actualType = 'SPECIAL';
+            else if (titleUp.includes('OVA')) actualType = 'OVA';
+            else if (titleUp.includes('ONA')) actualType = 'ONA';
+            else if (titleUp.includes('MOVIE')) actualType = 'MOVIE';
+            else if (actualType === 'OTAKUDESU') actualType = 'TV'; // Fallback
+        }
+        item.tipe = actualType;
+        return item;
+    };
 
     // ==========================================
     // LOGIKA PENCARIAN & BROWSE MENGGUNAKAN LOKAL DB
@@ -70,7 +87,7 @@ async function getKatalog(pageParams, searchParam) {
                 otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
             }
 
-            const otakuFormatted = otakuResults.map(item => ({
+            const otakuFormatted = otakuResults.map(item => fixAnimeType({
                 judul: item.title,
                 url: `/anime/${item.id}`,
                 gambar: '',
@@ -89,7 +106,11 @@ async function getKatalog(pageParams, searchParam) {
                 if (samehadakuResults.length === 0 && jikanHit && query !== finalQuery) {
                     samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(query));
                 }
-                localResults = samehadakuResults;
+                localResults = samehadakuResults.map(fixAnimeType);
+            }
+
+            if (typeFilter) {
+                localResults = localResults.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
             }
 
             if (localResults.length > 0) {
@@ -107,13 +128,19 @@ async function getKatalog(pageParams, searchParam) {
             }
         } else {
             // Mode Browse A-Z menggunakan Lokal DB (Lebih Cepat!)
+            let browseDb = localDb.map(fixAnimeType);
+            
+            if (typeFilter) {
+                browseDb = browseDb.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+            }
+
             const startIndex = (pageParams - 1) * 9;
             const endIndex = startIndex + 9;
             
-            if (startIndex < localDb.length) {
+            if (startIndex < browseDb.length) {
                 const result = { 
-                    list: localDb.slice(startIndex, endIndex), 
-                    hasNext: endIndex < localDb.length 
+                    list: browseDb.slice(startIndex, endIndex), 
+                    hasNext: endIndex < browseDb.length 
                 };
                 cache.set(cacheKey, result);
                 return result;
@@ -192,12 +219,21 @@ async function getKatalog(pageParams, searchParam) {
                         (imgNode.attr('srcset') ? imgNode.attr('srcset').split(' ')[0] : null) || 
                         imgNode.attr('src') || '';
 
+                    let actualType = typeNode.length ? typeNode.text().trim().toUpperCase() : 'TV';
+                    const titleUp = titleNode.text().trim().toUpperCase();
+                    if (actualType === 'TV' || actualType === 'UNKNOWN') {
+                        if (titleUp.includes('SPECIAL') || titleUp.includes(' SP')) actualType = 'SPECIAL';
+                        else if (titleUp.includes('OVA')) actualType = 'OVA';
+                        else if (titleUp.includes('ONA')) actualType = 'ONA';
+                        else if (titleUp.includes('MOVIE')) actualType = 'MOVIE';
+                    }
+
                     list.push({
                         judul: titleNode.text().trim(),
                         url: linkNode.attr('href'),
                         gambar: gambarScraper,
                         gambarScraper,
-                        tipe: typeNode.length ? typeNode.text().trim().toUpperCase() : 'TV',
+                        tipe: actualType,
                         skor: skorAngka || '-',
                         status: epText || (statusNode.length ? statusNode.text().trim() : 'Ongoing'),
                     });
@@ -214,7 +250,12 @@ async function getKatalog(pageParams, searchParam) {
             hasNext = true; 
         }
 
-        const result = { list: list.slice(0, 9), hasNext };
+        let finalFilteredList = list;
+        if (typeFilter) {
+            finalFilteredList = list.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+        }
+
+        const result = { list: finalFilteredList.slice(0, 9), hasNext };
 
         if (result.list.length === 0) {
             result.hasNext = false;

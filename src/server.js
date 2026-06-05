@@ -20,24 +20,25 @@ app.set('json spaces', 2);
 app.use(express.static(path.join(__dirname, '../')));
 
 // ============================================================
-// RUTE 1: GET /api/katalog?page=N&s=KEYWORD
+// RUTE 1: GET /api/katalog
 // ============================================================
 app.get('/api/katalog', async (req, res) => {
-    const pageParams = req.query.page || 1;
+    const pageParams = parseInt(req.query.page) || 1;
     const searchParam = req.query.s || '';
-    const tabParam = req.query.tab || 'anime'; // default ke 'anime' karena semua frontend sudah mendukung parameter tab
+    const tabParam = req.query.tab || 'anime';
+    const typeFilter = req.query.typeFilter || '';
 
     try {
         let data = { list: [], hasNext: false };
 
         if (tabParam === 'anime' || tabParam === 'all') {
-            data = await getKatalog(pageParams, searchParam);
+            data = await getKatalog(pageParams, searchParam, typeFilter);
         }
 
         // --- INJEKSI NEOSATSU ---
         if (tabParam === 'toku' || tabParam === 'all') {
             try {
-                const neosatsuData = await getNeosatsuCatalog(pageParams, searchParam);
+                const neosatsuData = await getNeosatsuCatalog(pageParams, searchParam, typeFilter);
                 if (neosatsuData && neosatsuData.anime && Array.isArray(neosatsuData.anime)) {
                     const neosatsuList = neosatsuData.anime.map(w => ({
                         judul: w.title,

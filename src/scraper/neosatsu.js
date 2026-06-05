@@ -7,7 +7,7 @@ const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kame
  * [TAHAP 1] Mengambil katalog dari Neosatsu. 
  * Kita akan mengelompokkan post yang memiliki judul seri yang sama.
  */
-async function getNeosatsuCatalog(page = 1, searchParam = '') {
+async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
     const maxResults = 100;
     const startIndex = (page - 1) * maxResults + 1;
     
@@ -47,6 +47,11 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
                         
                         if (href && img && title && href !== 'javascript:void(0)') {
                             const tLower = title.toLowerCase();
+                            
+                            // Deteksi Special / V-Cinema dari judul
+                            let finalTipe = tipe;
+                            if (tLower.includes('special') || tLower.includes(' sp')) finalTipe = 'Special';
+                            else if (tLower.includes('v-cinema') || tLower.includes('returns')) finalTipe = 'V-Cinema';
                             if (tLower.includes('kamen rider') || tLower.includes('super sentai') || tLower.includes('ultraman')) {
                                 let endpoint = href;
                                 let status = 'Completed';
@@ -68,9 +73,10 @@ async function getNeosatsuCatalog(page = 1, searchParam = '') {
                                     uniqueCheck.add(endpoint);
                                     staticAnimeList.push({
                                         title: title,
-                                        thumb: img,
                                         endpoint: endpoint,
-                                        tipe: tipe,
+                                        thumb: img,
+                                        tipe: finalTipe,
+                                        skor: '-',
                                         status: status
                                     });
                                 }
