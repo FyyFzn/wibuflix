@@ -94,6 +94,10 @@ app.get('/api/episodes', async (req, res) => {
         let data;
         if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
             data = await getNeosatsuEpisodes(targetUrl);
+        } else if (targetUrl.startsWith('/anime/otakudesu:')) {
+            const slug = targetUrl.split(':')[1];
+            data = await otakudesu.getOtakuEpisodesFormatted(slug);
+            if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
         } else {
             data = await getEpisodes(targetUrl);
         }

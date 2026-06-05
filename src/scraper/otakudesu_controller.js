@@ -7,46 +7,53 @@ const otaku = new OtakudesuInstance('https://otakudesu.blog');
 async function getEpisodes(req, res) {
     try {
         const slug = req.params.slug;
-        console.log(`[Otakudesu] Fetching episodes for: ${slug}`);
-        const details = await otaku.getExtraAnime(slug);
-        
-        if (!details) {
-            return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
-        }
-
-        const data = {
-            judul: details.name,
-            gambar: details.image || '',
-            sinopsis: details.synopsis || '',
-            genre: Array.isArray(details.details.genre) ? details.details.genre.join(', ') : (details.details.genre || ''),
-            rating: details.details.skor || '-',
-            tipe: details.details.tipe || '-',
-            status: details.details.status || 'Completed',
-            total_episode: details.details.total_episode || '?',
-            episodes: details.episodes.map(ep => {
-                // Ekstrak URL Episode
-                // misalnya https://otakudesu.blog/episode/compass-20-episode-12-sub-indo/
-                // slug episodanya: compass-20-episode-12-sub-indo
-                const epParts = ep.url.split('/').filter(Boolean);
-                const epSlug = epParts[epParts.length - 1];
-                
-                // Parse tanggal
-                let date = ep.date || '';
-                
-                return {
-                    title: ep.title,
-                    url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
-                    date: date,
-                    slug: epSlug
-                };
-            })
-        };
-        
+        const data = await getOtakuEpisodesFormatted(slug);
+        if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
         res.json(data);
     } catch (err) {
         console.error("[Otakudesu Episodes Error]", err.message);
         res.status(500).json({ error: err.message });
     }
+}
+
+async function getOtakuEpisodesFormatted(slug) {
+    console.log(`[Otakudesu] Fetching episodes for: ${slug}`);
+    const details = await otaku.getExtraAnime(slug);
+    
+    if (!details) return null;
+
+    return {
+        judul: details.name,
+        judul_seri: details.name, // Kompatibilitas frontend
+        gambar: details.image || '',
+        cover_scraper: details.image || '', // Kompatibilitas frontend
+        sinopsis: details.synopsis || '',
+        genre: Array.isArray(details.details.genre) ? details.details.genre.join(', ') : (details.details.genre || ''),
+        rating: details.details.skor || '-',
+        tipe: details.details.tipe || '-',
+        status: details.details.status || 'Completed',
+        total_episode: details.details.total_episode || '?',
+        daftar_episode: details.episodes.map(ep => { // Kompatibilitas frontend
+            const epParts = ep.url.split('/').filter(Boolean);
+            const epSlug = epParts[epParts.length - 1];
+            return {
+                judul: ep.title,
+                url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
+                tanggal: ep.date || '',
+                slug: epSlug
+            };
+        }),
+        episodes: details.episodes.map(ep => { // Original untuk kompatibilitas Web Lama
+            const epParts = ep.url.split('/').filter(Boolean);
+            const epSlug = epParts[epParts.length - 1];
+            return {
+                title: ep.title,
+                url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
+                date: ep.date || '',
+                slug: epSlug
+            };
+        })
+    };
 }
 
 async function getServers(req, res) {
@@ -229,4 +236,9 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
     }
 }
 
-module.exports = { getEpisodes, getServers, getAlternativeServers };
+module.exports = {
+    getEpisodes,
+    getServers,
+    getAlternativeServers,
+    getOtakuEpisodesFormatted
+};
