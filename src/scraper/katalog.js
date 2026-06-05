@@ -54,6 +54,7 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             // 1. Tanya Jikan API (Smart Alias)
             const jikanCacheKey = `jikan_${query}`;
             let jikanTitle = jikanCache.get(jikanCacheKey);
+            let jikanImage = jikanCache.get(`jikanImg_${query}`);
             
             if (!jikanTitle) {
                 try {
@@ -61,7 +62,11 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     const jikanRes = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`, { timeout: 10000 });
                     if (jikanRes.data && jikanRes.data.data && jikanRes.data.data.length > 0) {
                         jikanTitle = jikanRes.data.data[0].title.toLowerCase();
+                        jikanImage = jikanRes.data.data[0].images?.webp?.image_url || jikanRes.data.data[0].images?.jpg?.image_url || '';
+                        
                         jikanCache.set(jikanCacheKey, jikanTitle);
+                        jikanCache.set(`jikanImg_${query}`, jikanImage);
+                        
                         console.log(`[Jikan API] Ditemukan judul asli: "${jikanTitle}"`);
                     }
                 } catch (e) {
@@ -85,8 +90,8 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             const otakuFormatted = otakuResults.map(item => fixAnimeType({
                 judul: item.title,
                 url: `/anime/${item.id}`,
-                gambar: '',
-                gambarScraper: '',
+                gambar: jikanImage || '',
+                gambarScraper: jikanImage || '',
                 tipe: 'Otakudesu',
                 skor: '-',
                 status: '-',
