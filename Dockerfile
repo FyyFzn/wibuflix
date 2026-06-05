@@ -51,6 +51,11 @@ COPY css/ ./css/
 COPY js/ ./js/
 COPY index.html ./
 
+# Copy local databases to avoid starting from zero
+COPY *db.json ./
+COPY jikan_cache.json ./
+COPY data/ ./data/
+
 # Expose port
 EXPOSE 3000
 

@@ -25,6 +25,10 @@ async function startBackgroundAnimeSync() {
     if (!fs.existsSync(DB_PATH)) {
         log("[Anime Sync] Database lokal tidak ditemukan. Memulai sinkronisasi awal...");
         runSync(true); // true = initial sync (don't block server startup)
+    } else {
+        log("[Anime Sync] Database ditemukan. Menjalankan sinkronisasi pembaruan di latar belakang (Delay 1 menit)...");
+        // Tunggu 1 menit sebelum sync agar tidak memberatkan CPU saat startup
+        setTimeout(() => runSync(false), 60000);
     }
 
     // Schedule every 12 hours (43200000 ms)
