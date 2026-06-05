@@ -120,7 +120,7 @@ app.get('/api/scrape', async (req, res) => {
     try {
         let data;
         let isOtakudesu = false;
-        
+
         if (targetUrl.startsWith('/api/otakudesu/servers')) {
             isOtakudesu = true;
             // Parse url parameter
@@ -134,6 +134,8 @@ app.get('/api/scrape', async (req, res) => {
             const neoData = await getNeosatsuServers(targetUrl);
             data = {
                 judul: neoData.judul || 'Tokusatsu',
+                judul_seri: neoData.judul_seri || neoData.judul || 'Tokusatsu',
+                cover_scraper: neoData.cover_scraper || '',
                 nav_prev: neoData.nav_prev,
                 nav_next: neoData.nav_next,
                 servers: neoData.servers.map(s => ({ ...s, source: 'Neosatsu' }))
@@ -143,7 +145,7 @@ app.get('/api/scrape', async (req, res) => {
             if (data && data.servers) {
                 data.servers = data.servers.map(s => ({ ...s, source: 'Samehadaku' }));
             }
-            
+
             // Coba cari alternatif di Otakudesu
             if (seriesTitle && episodeTitle) {
                 const otakuServers = await otakudesu.getAlternativeServers(seriesTitle, episodeTitle);

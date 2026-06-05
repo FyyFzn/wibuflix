@@ -19,12 +19,20 @@ async function getEpisodes(req, res) {
 async function getOtakuEpisodesFormatted(slug) {
     console.log(`[Otakudesu] Fetching episodes for: ${slug}`);
     const details = await otaku.getExtraAnime(slug);
-    
+
     if (!details) return null;
 
+    // Fallback title dari database lokal jika parser scraper gagal mendapatkan nama
+    const { loadOtakuDatabase } = require('./otakudesu_sync');
+    const otakuDb = loadOtakuDatabase();
+    const found = otakuDb.find(item => item.slug === slug || item.id === `otakudesu:${slug}`);
+    const fallbackTitle = found ? found.title : slug;
+    
+    const finalTitle = details.name || fallbackTitle;
+
     return {
-        judul: details.name,
-        judul_seri: details.name, // Kompatibilitas frontend
+        judul: finalTitle,
+        judul_seri: finalTitle, // Kompatibilitas frontend
         gambar: details.image || '',
         cover_scraper: details.image || '', // Kompatibilitas frontend
         sinopsis: details.synopsis || '',
@@ -36,11 +44,11 @@ async function getOtakuEpisodesFormatted(slug) {
         daftar_episode: details.episodes.map(ep => { // Kompatibilitas frontend
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
-            
+
             // Smart Extraction untuk Judul Episode
             let cleanTitle = ep.title;
             const match = ep.title.match(/(?:Episode|Eps|Ep|OVA|Special|SP)\s*\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?\s*(\(End\))?/i);
-            
+
             if (match) {
                 cleanTitle = match[0];
             } else {
@@ -76,7 +84,7 @@ async function getServers(req, res) {
     try {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: "Parameter url wajib diisi" });
-        
+
         const data = await getServersInternal(url);
         res.json(data);
     } catch (err) {
@@ -87,26 +95,26 @@ async function getServers(req, res) {
 
 async function getServersInternal(url) {
     console.log(`[Otakudesu] Fetching servers from: ${url}`);
-    
+
     // Fetch raw HTML of the episode
     const { data } = await axios.get(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         timeout: 10000
     });
-    
+
     const $ = cheerio.load(data);
     const servers = [];
-    
+
     const promises = [];
     const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega'];
-    
+
     $('.download ul li').each((i, el) => {
         const resText = $(el).find('strong').text().trim(); // e.g. "Mp4 360p"
         $(el).find('a').each((j, a) => {
             const hostRaw = $(a).text().trim();
             const hostLower = hostRaw.toLowerCase();
             const href = $(a).attr('href');
-            
+
             if (allowedHosts.some(h => hostLower.includes(h))) {
                 promises.push((async () => {
                     try {
@@ -118,7 +126,7 @@ async function getServersInternal(url) {
                             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
                             timeout: 8000
                         });
-                        
+
                         const directUrl = redRes.headers.location;
                         if (directUrl) {
                             servers.push({
@@ -129,28 +137,44 @@ async function getServersInternal(url) {
                                 aktif: servers.length === 0
                             });
                         }
-                    } catch(e) {
+                    } catch (e) {
                         console.log(`[Otakudesu] Resolve failed for ${hostRaw}: ${e.message}`);
                     }
                 })());
             }
         });
     });
-    
+
     // Tunggu semua resolve selesai
     await Promise.all(promises);
-    
+
     if (servers.length > 0) {
         servers[0].aktif = true;
     }
 
     const judul = $('.venutama h1.posttl').text().trim();
-    
+
+    // Parsing Prev / Next Navigation dari elemen HTML (Otakudesu class: flir)
+    let nav_prev = null;
+    let nav_next = null;
+    $('.flir a').each((i, el) => {
+        const text = $(el).text().trim().toLowerCase();
+        const href = $(el).attr('href');
+        
+        if (!href || href === '#') return;
+
+        if (text.includes('prev') || text.includes('sebelumnya')) {
+            nav_prev = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+        } else if (text.includes('next') || text.includes('selanjutnya')) {
+            nav_next = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+        }
+    });
+
     return {
         judul,
         servers,
-        nav_prev: null, // belum implementasi nav prev/next
-        nav_next: null
+        nav_prev,
+        nav_next
     };
 }
 
@@ -162,18 +186,18 @@ function extractEpisodeNumber(title) {
 
 async function getAlternativeServers(seriesTitle, episodeTitle) {
     if (!seriesTitle || !episodeTitle) return [];
-    
+
     try {
         const { loadOtakuDatabase } = require('./otakudesu_sync');
         const otakuDb = loadOtakuDatabase();
         if (!otakuDb || otakuDb.length === 0) return [];
-        
+
         const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
         const queryWords = query.split(' ');
-        
+
         let bestMatch = null;
         let maxMatches = 0;
-        
+
         for (const item of otakuDb) {
             const itemTitle = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
             let matches = 0;
@@ -185,15 +209,15 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
                 bestMatch = item;
             }
         }
-        
+
         if (!bestMatch || maxMatches < queryWords.length / 2) return [];
-        
+
         const targetEpNum = extractEpisodeNumber(episodeTitle);
         if (targetEpNum === null) return [];
-        
+
         const details = await otaku.getExtraAnime(bestMatch.slug);
         if (!details || !details.episodes) return [];
-        
+
         let targetEpUrl = null;
         for (const ep of details.episodes) {
             const epNum = extractEpisodeNumber(ep.title);
@@ -202,27 +226,27 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
                 break;
             }
         }
-        
+
         if (!targetEpUrl) return [];
-        
+
         // Fetch raw HTML of the episode directly
         const { data } = await axios.get(targetEpUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
             timeout: 10000
         });
-        
+
         const $ = cheerio.load(data);
         const servers = [];
         const promises = [];
         const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega'];
-        
+
         $('.download ul li').each((i, el) => {
             const resText = $(el).find('strong').text().trim();
             $(el).find('a').each((j, a) => {
                 const hostRaw = $(a).text().trim();
                 const hostLower = hostRaw.toLowerCase();
                 const href = $(a).attr('href');
-                
+
                 if (allowedHosts.some(h => hostLower.includes(h))) {
                     promises.push((async () => {
                         try {
@@ -242,12 +266,12 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
                                     aktif: false
                                 });
                             }
-                        } catch(e) {}
+                        } catch (e) { }
                     })());
                 }
             });
         });
-        
+
         await Promise.all(promises);
         return servers;
     } catch (e) {
