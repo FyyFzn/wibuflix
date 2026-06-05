@@ -145,9 +145,12 @@ async function runSync(isInitial = false) {
 
             // Check if there's a next page
             let hasNextPage = false;
-            $('.pagination a').each((_, el) => {
+            $('.pagination a, .pagination-id a').each((_, el) => {
                 const txt = $(el).text();
-                if (txt.includes('Next') || $(el).hasClass('next')) hasNextPage = true;
+                const hasNextIcon = $(el).find('#nextpagination, .fa-caret-right').length > 0;
+                if (txt.includes('Next') || $(el).hasClass('next') || $(el).hasClass('arrow_pag') || hasNextIcon) {
+                    hasNextPage = true;
+                }
             });
 
             if (!hasNextPage) {

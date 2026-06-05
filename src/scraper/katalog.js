@@ -241,9 +241,12 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                 }
             });
         } else {
-            $('.pagination a').each((_, el) => {
+            $('.pagination a, .pagination-id a').each((_, el) => {
                 const txt = $(el).text();
-                if (txt.includes('Next') || $(el).hasClass('next')) hasNext = true;
+                const hasNextIcon = $(el).find('#nextpagination, .fa-caret-right').length > 0;
+                if (txt.includes('Next') || $(el).hasClass('next') || $(el).hasClass('arrow_pag') || hasNextIcon) {
+                    hasNext = true;
+                }
             });
         }
 
