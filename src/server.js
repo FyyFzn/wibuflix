@@ -356,6 +356,8 @@ app.get('/api/cache-clear', (req, res) => {
     res.json({ status: 'ok', message: 'Cache cleared' });
 });
 
+const { startBackgroundAnimeSync } = require('./sync/anime_sync');
+
 function startServer() {
     app.listen(PORT, '0.0.0.0', async () => {
         const log = global.forceLog || console.log;
@@ -374,6 +376,9 @@ function startServer() {
         log('⏳ [Puppeteer] Memulai inisialisasi pool browser...');
         await initPagePool();
         log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
+
+        // Memulai background job
+        startBackgroundAnimeSync();
     });
 }
 
