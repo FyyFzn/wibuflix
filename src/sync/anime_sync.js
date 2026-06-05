@@ -3,7 +3,8 @@ const path = require('path');
 const cheerio = require('cheerio');
 const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 
-const DB_PATH = path.join(__dirname, '../../data/anime_db.json');
+// Gunakan /home/data di Azure agar persisten (karena wwwroot read-only jika RunFromPackage)
+const DB_PATH = process.env.HOME ? path.join(process.env.HOME, 'data/anime_db.json') : path.join(__dirname, '../../data/anime_db.json');
 let isSyncing = false;
 
 const log = (...args) => {
@@ -161,10 +162,15 @@ async function runSync(isInitial = false) {
         }
 
         if (allAnime.length > 0) {
-            fs.writeFileSync(DB_PATH, JSON.stringify(allAnime, null, 2));
-            log(`[Anime Sync] SUKSES! Tersimpan ${allAnime.length} anime ke database lokal.`);
-            // Update cache memory on the fly
+            // Update cache memory on the fly first (so it works even if disk write fails)
             global.anime_db_cache = allAnime;
+            
+            try {
+                fs.writeFileSync(DB_PATH, JSON.stringify(allAnime, null, 2));
+                log(`[Anime Sync] SUKSES! Tersimpan ${allAnime.length} anime ke database lokal.`);
+            } catch (fsErr) {
+                log(`[Anime Sync] Gagal menyimpan ke disk (mungkin Read-Only). Tersimpan di memory cache. Error: ${fsErr.message}`);
+            }
         } else {
             log(`[Anime Sync] Peringatan: Tidak ada anime yang terambil.`);
         }
