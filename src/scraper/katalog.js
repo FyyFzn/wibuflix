@@ -2,6 +2,8 @@ const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 const cheerio = require('cheerio');
 const axios = require('axios');
 const { loadLocalDatabase } = require('../sync/anime_sync');
+const fs = require('fs');
+const path = require('path');
 
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
@@ -18,11 +20,20 @@ async function getKatalog(pageParams, searchParam) {
     }
 
     const localDb = loadLocalDatabase();
+    
+    // Load Otakudesu DB
+    let otakuDb = [];
+    const otakudesuDbPath = path.join(__dirname, '../../otakudesu_db.json');
+    if (fs.existsSync(otakudesuDbPath)) {
+        try {
+            otakuDb = JSON.parse(fs.readFileSync(otakudesuDbPath, 'utf8'));
+        } catch (e) {}
+    }
 
     // ==========================================
     // LOGIKA PENCARIAN & BROWSE MENGGUNAKAN LOKAL DB
     // ==========================================
-    if (localDb && localDb.length > 0) {
+    if ((localDb && localDb.length > 0) || otakuDb.length > 0) {
         if (isSearch) {
             const query = searchParam.toLowerCase().trim();
             let finalQuery = query;
@@ -53,12 +64,32 @@ async function getKatalog(pageParams, searchParam) {
                 jikanHit = true;
             }
 
-            // 2. Pencarian di Database Lokal
-            let localResults = localDb.filter(item => item.judul.toLowerCase().includes(finalQuery));
-            
-            // Fallback: Jika Jikan title tidak ketemu di DB kita, coba query asli user
-            if (localResults.length === 0 && jikanHit && query !== finalQuery) {
-                localResults = localDb.filter(item => item.judul.toLowerCase().includes(query));
+            // 2. Pencarian di Database Lokal Otakudesu (UTAMA)
+            let otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(finalQuery));
+            if (otakuResults.length === 0 && jikanHit && query !== finalQuery) {
+                otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
+            }
+
+            const otakuFormatted = otakuResults.map(item => ({
+                judul: item.title,
+                url: `/anime/${item.id}`,
+                gambar: '',
+                gambarScraper: '',
+                tipe: 'Otakudesu',
+                skor: '-',
+                status: '-',
+                id: item.id
+            }));
+
+            let localResults = otakuFormatted;
+
+            // 3. Fallback ke Database Lokal Samehadaku JIKA Otakudesu kosong
+            if (localResults.length === 0) {
+                let samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(finalQuery));
+                if (samehadakuResults.length === 0 && jikanHit && query !== finalQuery) {
+                    samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(query));
+                }
+                localResults = samehadakuResults;
             }
 
             if (localResults.length > 0) {

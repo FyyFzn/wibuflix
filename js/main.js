@@ -340,7 +340,7 @@ const savedState = loadState();
 
 
     // ── Player Logic ──────────────────────────────────────────────
-    async function putarEpisode(targetUrl, gambar = '') {
+    async function putarEpisode(targetUrl, gambar = '', episodeTitle = '') {
         UI.setLoading('Menembus Cloudflare & mengambil server video...');
         
         stopVideo();
@@ -352,9 +352,12 @@ const savedState = loadState();
         UI.btnNext.disabled = true;
         State.episodeUrlSaatIni = targetUrl;
 
+        const seriesTitle = UI.judulSeriAnime.textContent || UI.judulSeriAnimeFallback.textContent || '';
+        const safeSeriesTitle = encodeURIComponent(seriesTitle);
+        const safeEpisodeTitle = encodeURIComponent(episodeTitle);
 
         try {
-            const json = await scrapeVideo(targetUrl);
+            const json = await scrapeVideo(targetUrl, safeSeriesTitle, safeEpisodeTitle);
             if (json.status !== 'success') throw new Error(json.message);
             const data = json.data;
 
@@ -435,85 +438,124 @@ const savedState = loadState();
     // ── Server Dropdown Logic ─────────────────────────────────────
     function renderTombolServer(servers, episodeUrl) {
         UI.serverListContainer.innerHTML = '';
-        const grup = {};
-        servers.forEach((srv, i) => {
-            let kunci;
-            if (srv.namaHost) {
-                kunci = srv.namaHost.toLowerCase();
-            } else {
-                const nama = srv.nama || '';
-                const bagian = nama.split('·');
-                const kandidat = bagian[bagian.length - 1].trim().split(' ')[0];
-                kunci = kandidat.toLowerCase() || `server_${i}`;
-            }
-
-            if (!grup[kunci]) {
-                grup[kunci] = {
-                    label: srv.namaHost || (kunci && kunci.length > 0 ? kunci.charAt(0).toUpperCase() + kunci.slice(1) : 'Server'),
-                    items: []
-                };
-            }
-            grup[kunci].items.push({ ...srv, _index: i });
-        });
-
-        Object.entries(grup).forEach(([kunci, g]) => {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'server-group';
-
-            const title = document.createElement('div');
-            title.className = 'server-group-title';
-            title.textContent = g.label;
-            wrapper.appendChild(title);
-
-            const resList = document.createElement('div');
-            resList.className = 'server-res-list';
-
-            function renderResolusi() {
-                resList.innerHTML = '';
-                g.items.forEach((srv) => {
-                    const item = document.createElement('button');
-                    item.className = 'btn-res';
-                    const resolusi = (srv.nama || '').replace(/·.*$/, '').trim() || srv.namaHost || 'Default';
-
-                    if (!srv.iframeUrl) {
-                        item.textContent = '⏳ ' + resolusi;
-                        item.disabled = true;
-                        item.classList.add('loading');
-                    } else {
-                        item.textContent = resolusi;
-                        item.addEventListener('click', () => {
-                            State.lastUsedServer = (srv.namaHost || srv.nama || '').toLowerCase().trim();
-                            muatIframe(srv.iframeUrl, srv.namaHost || srv.nama, episodeUrl);
-                            document.querySelectorAll('.btn-res').forEach(b => b.classList.remove('active'));
-                            item.classList.add('active');
-                        });
-                    }
-                    resList.appendChild(item);
+        
+        const sources = [...new Set(servers.map(s => s.source || 'Samehadaku'))];
+        
+        let tabContainer = null;
+        let contentContainer = UI.serverListContainer;
+        
+        if (sources.length > 1) {
+            tabContainer = document.createElement('div');
+            tabContainer.className = 'server-tabs';
+            
+            contentContainer = document.createElement('div');
+            contentContainer.className = 'server-tab-content';
+            
+            let activeSource = sources.includes('Samehadaku') ? 'Samehadaku' : sources[0];
+            
+            sources.forEach(src => {
+                const btn = document.createElement('button');
+                btn.className = 'server-tab-btn' + (src === activeSource ? ' active' : '');
+                btn.textContent = src;
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.server-tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderTabContent(src);
                 });
-            }
+                tabContainer.appendChild(btn);
+            });
+            
+            UI.serverListContainer.appendChild(tabContainer);
+            UI.serverListContainer.appendChild(contentContainer);
+            renderTabContent(activeSource);
+        } else {
+            renderTabContent(sources[0]);
+        }
 
-            renderResolusi();
-            wrapper.appendChild(resList);
-            UI.serverListContainer.appendChild(wrapper);
+        function renderTabContent(activeSource) {
+            contentContainer.innerHTML = '';
+            const filteredServers = servers.filter(s => (s.source || 'Samehadaku') === activeSource);
+            
+            const grup = {};
+            filteredServers.forEach((srv, i) => {
+                let kunci;
+                if (srv.namaHost) {
+                    kunci = srv.namaHost.toLowerCase();
+                } else {
+                    const nama = srv.nama || '';
+                    const bagian = nama.split('·');
+                    const kandidat = bagian[bagian.length - 1].trim().split(' ')[0];
+                    kunci = kandidat.toLowerCase() || `server_${i}`;
+                }
 
-            const belumResolve = g.items.filter(srv => !srv.iframeUrl);
-            if (belumResolve.length > 0) {
-                belumResolve.forEach(async (srv) => {
-                    try {
-                        const res = await resolveServer(episodeUrl, srv.nume);
-                        if (res.data && res.data.iframeUrl) {
-                            srv.iframeUrl = res.data.iframeUrl;
-                            srv.namaHost = res.data.namaHost || srv.namaHost;
-                            if (!g.label || g.label === kunci) {
-                                g.label = srv.namaHost;
-                                title.textContent = g.label;
-                            }
-                            renderResolusi();
+                if (!grup[kunci]) {
+                    grup[kunci] = {
+                        label: srv.namaHost || (kunci && kunci.length > 0 ? kunci.charAt(0).toUpperCase() + kunci.slice(1) : 'Server'),
+                        items: []
+                    };
+                }
+                grup[kunci].items.push({ ...srv, _index: i });
+            });
+
+            Object.entries(grup).forEach(([kunci, g]) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'server-group';
+
+                const title = document.createElement('div');
+                title.className = 'server-group-title';
+                title.textContent = g.label;
+                wrapper.appendChild(title);
+
+                const resList = document.createElement('div');
+                resList.className = 'server-res-list';
+
+                function renderResolusi() {
+                    resList.innerHTML = '';
+                    g.items.forEach((srv) => {
+                        const item = document.createElement('button');
+                        item.className = 'btn-res';
+                        const resolusi = (srv.nama || '').replace(/·.*$/, '').trim() || srv.namaHost || 'Default';
+
+                        if (!srv.iframeUrl) {
+                            item.textContent = '⏳ ' + resolusi;
+                            item.disabled = true;
+                            item.classList.add('loading');
+                        } else {
+                            item.textContent = resolusi;
+                            item.addEventListener('click', () => {
+                                State.lastUsedServer = (srv.namaHost || srv.nama || '').toLowerCase().trim();
+                                muatIframe(srv.iframeUrl, srv.namaHost || srv.nama, episodeUrl);
+                                document.querySelectorAll('.btn-res').forEach(b => b.classList.remove('active'));
+                                item.classList.add('active');
+                            });
                         }
-                    } catch (e) {}
-                });
-            }
-        });
+                        resList.appendChild(item);
+                    });
+                }
+
+                renderResolusi();
+                wrapper.appendChild(resList);
+                contentContainer.appendChild(wrapper);
+
+                const belumResolve = g.items.filter(srv => !srv.iframeUrl);
+                if (belumResolve.length > 0) {
+                    belumResolve.forEach(async (srv) => {
+                        try {
+                            const res = await resolveServer(episodeUrl, srv.nume);
+                            if (res.data && res.data.iframeUrl) {
+                                srv.iframeUrl = res.data.iframeUrl;
+                                srv.namaHost = res.data.namaHost || srv.namaHost;
+                                if (!g.label || g.label === kunci) {
+                                    g.label = srv.namaHost;
+                                    title.textContent = g.label;
+                                }
+                                renderResolusi();
+                            }
+                        } catch (e) {}
+                    });
+                }
+            });
+        }
     }
 
     // ── History Logic ─────────────────────────────────────────────

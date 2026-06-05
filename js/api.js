@@ -14,12 +14,21 @@ export async function fetchKatalog(page = 1, search = '', tab = 'anime') {
 }
 
 export async function fetchEpisodes(targetUrl) {
+    if (targetUrl.includes('otakudesu:')) {
+        const slug = targetUrl.split('otakudesu:')[1];
+        const res = await fetch(`/api/otakudesu/episodes/${slug}`);
+        return res.json();
+    }
     const res = await fetch(API.episodes + encodeURIComponent(targetUrl));
     return res.json();
 }
 
-export async function scrapeVideo(targetUrl) {
-    const res = await fetch(API.scrape + encodeURIComponent(targetUrl));
+export async function scrapeVideo(targetUrl, seriesTitle = '', episodeTitle = '') {
+    if (targetUrl.startsWith('/api/otakudesu/servers')) {
+        const res = await fetch(targetUrl);
+        return res.json();
+    }
+    const res = await fetch(`${API.scrape}${encodeURIComponent(targetUrl)}&series=${seriesTitle}&episode=${episodeTitle}`);
     return res.json();
 }
 

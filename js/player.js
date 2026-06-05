@@ -90,7 +90,7 @@ export function muatIframe(url, serverName = '', targetUrl = '', onExtractFail =
 
     // Untuk Pucuk / Filedon yang di-embed langsung ke iframe,
     // kita akan ekstrak URL MP4/M3U8-nya via backend API
-    const extractApiUrl = `http://localhost:3000/api/extract-video?url=${encodeURIComponent(url)}`;
+    const extractApiUrl = `/api/extract-video?url=${encodeURIComponent(url)}`;
     
     fetch(extractApiUrl)
         .then(r => r.json())

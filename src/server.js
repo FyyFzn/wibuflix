@@ -1,11 +1,13 @@
 const express = require('express');
 const cors = require('cors');
 const { initPagePool } = require('./puppeteer/pool');
-const { getKatalog } = require('./scraper/katalog');
+const path = require('path');
+const { getKatalog, cache } = require('./scraper/katalog');
 const { getEpisodes } = require('./scraper/episodes');
 const { getHotAnime } = require('./scraper/hot');
 const { scrapeVideoServers, resolveSingleServer, extractVideoUrl } = require('./scraper/extractor');
 const { getNeosatsuCatalog, getNeosatsuEpisodes, getNeosatsuServers } = require('./scraper/neosatsu');
+const otakudesu = require('./scraper/otakudesu_controller');
 
 const app = express();
 app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure (di belakang proxy)
@@ -15,7 +17,6 @@ app.use(cors());
 app.set('json spaces', 2);
 
 // Sajikan file statis (HTML, CSS, JS) dari direktori root proyek
-const path = require('path');
 app.use(express.static(path.join(__dirname, '../')));
 
 // ============================================================
@@ -107,20 +108,44 @@ app.get('/api/episodes', async (req, res) => {
 // ============================================================
 app.get('/api/scrape', async (req, res) => {
     const targetUrl = req.query.url;
+    const seriesTitle = req.query.series || '';
+    const episodeTitle = req.query.episode || '';
     if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
 
     try {
         let data;
+        let isOtakudesu = false;
+        
+        if (targetUrl.startsWith('/api/otakudesu/servers')) {
+            // Already Otakudesu request (direct)
+            isOtakudesu = true;
+            // Fetch internal endpoint logic or just redirect? Wait, targetUrl is a relative path.
+            // But we already handle targetUrl.startsWith('/api/otakudesu/servers') in frontend (api.js)!
+            // So /api/scrape shouldn't receive this unless frontend missed it. But just in case.
+        }
+
         if ((targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) && targetUrl.includes('___neosatsu_ep___')) {
             const neoData = await getNeosatsuServers(targetUrl);
             data = {
                 judul: neoData.judul || 'Tokusatsu',
                 nav_prev: neoData.nav_prev,
                 nav_next: neoData.nav_next,
-                servers: neoData.servers
+                servers: neoData.servers.map(s => ({ ...s, source: 'Neosatsu' }))
             };
-        } else {
+        } else if (!isOtakudesu) {
             data = await scrapeVideoServers(targetUrl);
+            if (data && data.servers) {
+                data.servers = data.servers.map(s => ({ ...s, source: 'Samehadaku' }));
+            }
+            
+            // Coba cari alternatif di Otakudesu
+            if (seriesTitle && episodeTitle) {
+                const otakuServers = await otakudesu.getAlternativeServers(seriesTitle, episodeTitle);
+                if (otakuServers && otakuServers.length > 0) {
+                    const labeledOtaku = otakuServers.map(s => ({ ...s, source: 'Otakudesu' }));
+                    data.servers = [...data.servers, ...labeledOtaku];
+                }
+            }
         }
         res.json({ status: 'success', data });
     } catch (err) {
@@ -293,8 +318,15 @@ app.get('/api/proxy/filedon', async (req, res) => {
     }
 });
 
-// ============================================================
-// RUTE 6: GET /api/proxy/kraken
+// =====================================
+// OTAKUDESU ROUTES
+// =====================================
+
+app.get('/api/otakudesu/episodes/:slug', otakudesu.getEpisodes);
+app.get('/api/otakudesu/servers', otakudesu.getServers);
+
+// =====================================
+// FRONTEND ROUTES (React/Vue/Vanilla SPA)
 // ============================================================
 app.get('/api/proxy/kraken', async (req, res) => {
     const videoUrl = req.query.url;
