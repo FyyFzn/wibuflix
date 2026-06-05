@@ -96,11 +96,14 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     }
                 }
 
+                // Gunakan placeholder modern jika gambar tidak ditemukan
+                const finalImg = matchedImg || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image';
+
                 return fixAnimeType({
                     judul: item.title,
                     url: `/anime/${item.id}`,
-                    gambar: matchedImg,
-                    gambarScraper: matchedImg,
+                    gambar: finalImg,
+                    gambarScraper: finalImg,
                     tipe: 'Otakudesu',
                     skor: '-',
                     status: '-',

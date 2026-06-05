@@ -36,8 +36,24 @@ async function getOtakuEpisodesFormatted(slug) {
         daftar_episode: details.episodes.map(ep => { // Kompatibilitas frontend
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
+            
+            // Smart Extraction untuk Judul Episode
+            let cleanTitle = ep.title;
+            const match = ep.title.match(/(?:Episode|Eps|Ep|OVA|Special|SP)\s*\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?\s*(\(End\))?/i);
+            
+            if (match) {
+                cleanTitle = match[0];
+            } else {
+                // Fallback pembersih string jika regex tidak cocok
+                if (details.name) cleanTitle = cleanTitle.replace(details.name, '').trim();
+                cleanTitle = cleanTitle.replace(/subtitle indonesia/ig, '').trim();
+                cleanTitle = cleanTitle.replace(/sub indo/ig, '').trim();
+                cleanTitle = cleanTitle.replace(/^[:-]/, '').trim();
+                if (!cleanTitle) cleanTitle = ep.title;
+            }
+
             return {
-                judul: ep.title,
+                judul: cleanTitle,
                 url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
                 tanggal: ep.date || '',
                 slug: epSlug
