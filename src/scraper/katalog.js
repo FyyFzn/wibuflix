@@ -178,7 +178,8 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             }
         }, url);
 
-        if (!html || html.trim() === '') {
+        const isCloudflare = html.includes('Just a moment') || html.includes('cloudflare') || html.includes('cf-browser-verification') || html.includes('Ray ID:');
+        if (!html || html.trim() === '' || isCloudflare) {
             console.log(`[Katalog] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             html = await page.content();

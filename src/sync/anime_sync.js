@@ -69,8 +69,9 @@ async function runSync(isInitial = false) {
                 break;
             }
 
-            if (!html || html.trim() === '') {
-                console.log(`[Anime Sync] Fetch gagal. Menggunakan page.goto...`);
+            const isCloudflare = html.includes('Just a moment') || html.includes('cloudflare') || html.includes('cf-browser-verification') || html.includes('Ray ID:');
+            if (!html || html.trim() === '' || isCloudflare) {
+                console.log(`[Anime Sync] Fetch gagal/terblokir. Menggunakan page.goto...`);
                 try {
                     const response = await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
                     if (response.status() === 404) {
