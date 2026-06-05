@@ -6,6 +6,11 @@ const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 const DB_PATH = path.join(__dirname, '../../data/anime_db.json');
 let isSyncing = false;
 
+const log = (...args) => {
+    if (global.forceLog) global.forceLog(...args);
+    else console.log(...args);
+};
+
 async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -13,7 +18,7 @@ async function delay(ms) {
 async function startBackgroundAnimeSync() {
     // Run immediately if DB doesn't exist
     if (!fs.existsSync(DB_PATH)) {
-        console.log("[Anime Sync] Database lokal tidak ditemukan. Memulai sinkronisasi awal...");
+        log("[Anime Sync] Database lokal tidak ditemukan. Memulai sinkronisasi awal...");
         runSync(true); // true = initial sync (don't block server startup)
     }
 
@@ -27,9 +32,9 @@ async function runSync(isInitial = false) {
     if (isSyncing) return;
     isSyncing = true;
     
-    console.log(`\n===========================================`);
-    console.log(`[Anime Sync] Memulai sinkronisasi katalog...`);
-    console.log(`===========================================\n`);
+    log(`\n===========================================`);
+    log(`[Anime Sync] Memulai sinkronisasi katalog...`);
+    log(`===========================================\n`);
 
     const dbDir = path.dirname(DB_PATH);
     if (!fs.existsSync(dbDir)) {
@@ -48,7 +53,7 @@ async function runSync(isInitial = false) {
 
         while (hasNext) {
             const url = page === 1 ? `https://v2.samehadaku.how/daftar-anime-2/` : `https://v2.samehadaku.how/daftar-anime-2/page/${page}/`;
-            console.log(`[Anime Sync] Scraping Halaman ${page}...`);
+            log(`[Anime Sync] Scraping Halaman ${page}...`);
 
             let html = await browserPage.evaluate(async (targetUrl) => {
                 try {
@@ -64,14 +69,14 @@ async function runSync(isInitial = false) {
             }, url);
 
             if (html === '404_NOT_FOUND') {
-                console.log(`[Anime Sync] Halaman ${page} mengembalikan 404. Akhir dari katalog dicapai.`);
+                log(`[Anime Sync] Halaman ${page} mengembalikan 404. Akhir dari katalog dicapai.`);
                 hasNext = false;
                 break;
             }
 
             const isCloudflare = html.includes('Just a moment') || html.includes('cloudflare') || html.includes('cf-browser-verification') || html.includes('Ray ID:');
             if (!html || html.trim() === '' || isCloudflare) {
-                console.log(`[Anime Sync] Fetch gagal/terblokir. Menggunakan page.goto...`);
+                log(`[Anime Sync] Fetch gagal/terblokir. Menggunakan page.goto...`);
                 try {
                     const response = await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
                     if (response.status() === 404) {
@@ -157,9 +162,11 @@ async function runSync(isInitial = false) {
 
         if (allAnime.length > 0) {
             fs.writeFileSync(DB_PATH, JSON.stringify(allAnime, null, 2));
-            console.log(`[Anime Sync] SUKSES! Tersimpan ${allAnime.length} anime ke database lokal.`);
+            log(`[Anime Sync] SUKSES! Tersimpan ${allAnime.length} anime ke database lokal.`);
             // Update cache memory on the fly
             global.anime_db_cache = allAnime;
+        } else {
+            log(`[Anime Sync] Peringatan: Tidak ada anime yang terambil.`);
         }
 
     } catch (e) {
