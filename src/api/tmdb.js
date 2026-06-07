@@ -121,6 +121,14 @@ async function searchTMDB(title) {
             let image = null;
             if (item.poster_path) {
                 image = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+            } else {
+                // Fallback to Jikan just for the image if TMDB lacks a poster
+                try {
+                    const jikanFallback = await searchJikan(cleanTitle);
+                    if (jikanFallback && jikanFallback.image) {
+                        image = jikanFallback.image;
+                    }
+                } catch(e) {}
             }
 
             // Overview/Synopsis
