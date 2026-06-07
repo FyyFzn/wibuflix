@@ -698,21 +698,17 @@ async function getNeosatsuEpisodes(targetUrl) {
             // Timpa array asli dengan array yang sudah unik
             daftar_episode.splice(0, daftar_episode.length, ...uniqueEpisodes);
 
-            let firstEpNum = -1;
-            let lastEpNum = -1;
-
-            for (let i = 0; i < daftar_episode.length; i++) {
-                const num = getEpNum(daftar_episode[i].judul);
-                if (num !== -1) {
-                    if (firstEpNum === -1) firstEpNum = num;
-                    lastEpNum = num;
-                }
-            }
-
-            // Jika episode pertama yang ditemukan lebih besar dari episode terakhir (misal 50 -> 1), kita reverse
-            if (firstEpNum !== -1 && lastEpNum !== -1 && firstEpNum > lastEpNum) {
-                daftar_episode.reverse();
-            }
+            // Mengurutkan secara numerik agar Episode 1 selalu di atas
+            // Jika tidak ada nomor (Movie/Spesial), letakkan di paling bawah
+            daftar_episode.sort((a, b) => {
+                const numA = getEpNum(a.judul);
+                const numB = getEpNum(b.judul);
+                
+                if (numA !== -1 && numB !== -1) return numA - numB;
+                if (numA !== -1 && numB === -1) return -1;
+                if (numB !== -1 && numA === -1) return 1;
+                return 0;
+            });
         }
 
         // Fetch metadata dari TMDB

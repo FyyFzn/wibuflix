@@ -522,7 +522,22 @@ async function extractVideoUrl(embedUrl, req) {
                         });
                         
                         if (checkRes.status === 403) {
-                            console.log(`[Acefile] Rute cepat 403 Forbidden (Rate Limited). Mencoba rute lambat (Local Mirror)...`);
+                            console.log(`[Acefile] Rute cepat 403 Forbidden (Rate Limited). Menunggu 1 detik untuk retry...`);
+                            await new Promise(r => setTimeout(r, 1000));
+                            const checkRes2 = await axios.get(finalUrl, { 
+                                headers: { Range: 'bytes=0-0' },
+                                validateStatus: () => true,
+                                timeout: 5000 
+                            });
+                            if (checkRes2.status === 403) {
+                                console.log(`[Acefile] Rute cepat TETAP 403. Mencoba rute lambat (Local Mirror)...`);
+                            } else {
+                                console.log(`[Acefile] Retry Health Check Lulus! Menggunakan rute cepat.`);
+                                return {
+                                    url: finalUrl,
+                                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                                };
+                            }
                         } else {
                             console.log(`[Acefile] Health Check Lulus! Menggunakan rute cepat.`);
                             return {
