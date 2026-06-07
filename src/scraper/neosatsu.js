@@ -75,8 +75,8 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
 
                                 img = img.replace(/\/s\d+(-c)?\//, '/s1600/');
 
-                                if (!uniqueCheck.has(endpoint)) {
-                                    uniqueCheck.add(endpoint);
+                                if (!uniqueCheck.has(tLower)) {
+                                    uniqueCheck.add(tLower);
                                     staticAnimeList.push({
                                         title: title,
                                         endpoint: endpoint,
@@ -136,9 +136,9 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                                     status = 'Ongoing';
                                 }
 
-                                // Cek deduplikasi: jika URL sudah ada di halaman statis, diabaikan
-                                if (!uniqueCheck.has(endpoint)) {
-                                    uniqueCheck.add(endpoint);
+                                // Cek deduplikasi: jika judul sudah ada di halaman statis, diabaikan
+                                if (!uniqueCheck.has(tLower)) {
+                                    uniqueCheck.add(tLower);
                                     staticAnimeList.push({
                                         title: baseTitle,
                                         endpoint: endpoint,
@@ -525,7 +525,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                         }
 
                         cleanTitle = cleanTitle.replace(/^[\-\:\s]+|[\-\:\s]+$/g, '');
-                        if (!cleanTitle) cleanTitle = 'Episode ?';
+                        if (!cleanTitle) cleanTitle = judulSeri || 'Full Series';
                     }
 
                     epTitle = cleanTitle;
