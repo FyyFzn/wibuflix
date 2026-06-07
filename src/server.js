@@ -402,6 +402,7 @@ app.get('/api/cache-clear', (req, res) => {
 
 const { startBackgroundAnimeSync } = require('./sync/anime_sync');
 const { startBackgroundOtakuSync } = require('./scraper/otakudesu_sync');
+const { syncUnified } = require('./sync/unified_sync');
 
 function startServer() {
     app.listen(PORT, '0.0.0.0', async () => {
@@ -425,6 +426,14 @@ function startServer() {
         // Memulai background job
         startBackgroundAnimeSync();
         startBackgroundOtakuSync();
+
+        // Mulai proses unified sync (akan berjalan sinkron atau asinkron tanpa memblok server)
+        setTimeout(() => {
+            syncUnified();
+            // Jadwalkan sinkronisasi berulang tiap jam
+            setInterval(syncUnified, 60 * 60 * 1000);
+        }, 10000); // Tunda 10 detik agar localDb & otakuDb selesai di-load
+
     });
 }
 

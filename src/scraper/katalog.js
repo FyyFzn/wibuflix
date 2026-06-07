@@ -3,9 +3,9 @@ const cheerio = require('cheerio');
 const axios = require('axios');
 const { loadLocalDatabase } = require('../sync/anime_sync');
 const { loadOtakuDatabase } = require('./otakudesu_sync');
+const { loadUnifiedDatabase } = require('../sync/unified_sync');
 const fs = require('fs');
 const path = require('path');
-const { searchTMDB } = require('../api/tmdb');
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
 
@@ -19,236 +19,70 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
         return cachedData;
     }
 
-    const localDb = loadLocalDatabase();
-    
-    // Load Otakudesu DB
-    const otakuDb = loadOtakuDatabase();
-
-    // Fungsi utilitas untuk mendeteksi tipe dengan pintar (Smart Tagging)
-    const fixAnimeType = (item) => {
-        let actualType = item.tipe || 'TV';
-        const titleUp = item.judul ? item.judul.toUpperCase() : (item.title ? item.title.toUpperCase() : '');
-        
-        // Coba perbaiki jika tipe masih default/tidak akurat
-        if (actualType === 'TV' || actualType === 'OTAKUDESU' || actualType === 'UNKNOWN') {
-            if (titleUp.includes('SPECIAL') || titleUp.includes(' SP')) actualType = 'SPECIAL';
-            else if (titleUp.includes('OVA')) actualType = 'OVA';
-            else if (titleUp.includes('ONA')) actualType = 'ONA';
-            else if (titleUp.includes('MOVIE')) actualType = 'MOVIE';
-            else if (actualType === 'OTAKUDESU') actualType = 'TV'; // Fallback
-        }
-        item.tipe = actualType;
-        return item;
-    };
+    const unifiedDb = loadUnifiedDatabase();
 
     // ==========================================
-    // LOGIKA PENCARIAN & BROWSE MENGGUNAKAN LOKAL DB
+    // LOGIKA PENCARIAN & BROWSE MENGGUNAKAN UNIFIED DB
     // ==========================================
-    if ((localDb && localDb.length > 0) || otakuDb.length > 0) {
+    if (unifiedDb && unifiedDb.length > 0) {
+        let results = unifiedDb;
+
+        // 1. Pencarian
         if (isSearch) {
             const query = searchParam.toLowerCase().trim();
-            let finalQuery = query;
-            let jikanHit = false;
-            
-            // 1. Tanya TMDB API (Smart Alias)
-            const tmdbCacheKey = `tmdb_alias_${query}`;
-            let tmdbTitle = cache.get(tmdbCacheKey);
-            
-            if (!tmdbTitle) {
-                try {
-                    console.log(`[TMDB API] Mencari alias untuk: "${query}"`);
-                    const tmdbRes = await searchTMDB(query);
-                    if (tmdbRes && tmdbRes.title) {
-                        tmdbTitle = tmdbRes.title.toLowerCase();
-                        cache.set(tmdbCacheKey, tmdbTitle);
-                        console.log(`[TMDB API] Ditemukan judul asli: "${tmdbTitle}"`);
-                    }
-                } catch (e) {
-                    console.error(`[TMDB API Error]`, e.message);
+            results = results.filter(item => item.title.toLowerCase().includes(query));
+        }
+
+        // 2. Filter Tipe
+        if (typeFilter) {
+            results = results.filter(item => item.type.toLowerCase() === typeFilter.toLowerCase());
+        }
+
+        // 3. Sortir A-Z (Hanya untuk mode Browse, tidak untuk Search agar relevansi terjaga)
+        if (!isSearch) {
+            results.sort((a, b) => a.title.localeCompare(b.title));
+        }
+
+        // 4. Paginasi
+        const startIndex = (pageParams - 1) * 9;
+        const endIndex = startIndex + 9;
+
+        if (startIndex < results.length) {
+            let paginated = results.slice(startIndex, endIndex);
+
+            // Format ke skema frontend
+            const formatted = paginated.map(item => {
+                let finalUrl = '';
+                let finalId = '';
+                
+                // Prioritaskan source Samehadaku jika ada
+                if (item.sources.samehadaku) {
+                    finalUrl = item.sources.samehadaku.url;
+                    finalId = item.sources.samehadaku.id;
+                } else if (item.sources.otakudesu) {
+                    finalUrl = `/anime/${item.sources.otakudesu.id}`;
+                    finalId = item.sources.otakudesu.id;
                 }
-            } else {
-                console.log(`[TMDB Cache] Alias ditemukan: "${tmdbTitle}"`);
-            }
-            
-            if (tmdbTitle) {
-                finalQuery = tmdbTitle;
-                jikanHit = true; // Tetap gunakan variabel jikanHit untuk kompatibilitas logika fallback di bawah
-            }
 
-            // 2. Pencarian di Database Lokal Samehadaku (UTAMA)
-            let samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(finalQuery));
-            if (samehadakuResults.length === 0 && jikanHit && query !== finalQuery) {
-                samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(query));
-            }
-            
-            let localResults = samehadakuResults.map(fixAnimeType);
-
-            // 3. Pencarian di Database Lokal Otakudesu (DIGABUNG)
-            let otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(finalQuery));
-            if (otakuResults.length === 0 && jikanHit && query !== finalQuery) {
-                otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
-            }
-
-            if (otakuResults.length > 0) {
-                // Filter silang: Abaikan hasil Otakudesu jika anime tersebut sudah ada di Samehadaku
-                otakuResults = otakuResults.filter(item => {
-                    const cleanOtaku = item.title.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
-                    const isDuplicate = samehadakuResults.some(s => {
-                        const cleanSd = s.judul.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
-                        return cleanSd === cleanOtaku || (cleanOtaku.includes(cleanSd) && cleanSd.length > 5) || (cleanSd.includes(cleanOtaku) && cleanOtaku.length > 5);
-                    });
-                    return !isDuplicate;
-                });
-
-                const otakuFormatted = await Promise.all(otakuResults.map(async item => {
-                    // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
-                    let matchedImg = '';
-                    if (localDb && localDb.length > 0) {
-                        const cleanO = item.title.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
-                        for (const s of localDb) {
-                            const cleanS = s.judul.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
-                            if (cleanS === cleanO || (cleanO.includes(cleanS) && cleanS.length > 5) || (cleanS.includes(cleanO) && cleanO.length > 5)) {
-                                matchedImg = s.gambar;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Gunakan API TMDB untuk mendapatkan info lengkap
-                    let finalSkor = '-';
-                    let finalTipe = 'Anime';
-                    let finalStatus = '-';
-
-                    if (!matchedImg) {
-                        try {
-                            const tmdbData = await searchTMDB(item.title);
-                            if (tmdbData) {
-                                if (tmdbData.image) matchedImg = tmdbData.image;
-                                finalSkor = tmdbData.score || '-';
-                                finalTipe = tmdbData.tipe || 'Anime';
-                                finalStatus = tmdbData.status || '-';
-                            }
-                        } catch (e) {
-                            console.warn(`[Katalog-API] Gagal mengambil TMDB untuk ${item.title}:`, e.message);
-                        }
-                    }
-
-                    // Gunakan placeholder modern jika gambar tidak ditemukan
-                    const finalImg = matchedImg || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image';
-
-                    return fixAnimeType({
-                        judul: item.title,
-                        url: `/anime/${item.id}`,
-                        gambar: finalImg,
-                        gambarScraper: finalImg,
-                        tipe: finalTipe,
-                        skor: finalSkor,
-                        status: finalStatus,
-                        id: item.id
-                    });
-                }));
-                // Gabungkan hasil Samehadaku dan Otakudesu
-                localResults = [...localResults, ...otakuFormatted];
-            }
-
-            if (typeFilter) {
-                localResults = localResults.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
-            }
-
-            if (localResults.length > 0) {
-                console.log(`[Katalog Local Search] Ditemukan ${localResults.length} hasil untuk "${finalQuery}"`);
-                const startIndex = (pageParams - 1) * 9;
-                const endIndex = startIndex + 9;
-                const result = { 
-                    list: localResults.slice(startIndex, endIndex), 
-                    hasNext: endIndex < localResults.length 
+                return {
+                    judul: item.title,
+                    url: finalUrl,
+                    gambar: item.image,
+                    gambarScraper: item.image,
+                    tipe: item.type,
+                    skor: item.score,
+                    status: item.status,
+                    id: finalId,
+                    sources: item.sources // Opsional, dikirim agar frontend bisa multi-server
                 };
-                cache.set(cacheKey, result);
-                return result;
-            } else {
-                console.log(`[Katalog Local Search] Tidak ada hasil untuk "${finalQuery}". Fallback ke Live Scrape...`);
-            }
-        } else {
-            // Mode Browse A-Z menggunakan Lokal DB + Otakudesu DB
-            let browseDb = localDb.map(fixAnimeType);
-            
-            const otakuFiltered = otakuDb.filter(item => {
-                const cleanOtaku = item.title.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
-                const isDuplicate = localDb.some(s => {
-                    const cleanSd = s.judul.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
-                    return cleanSd === cleanOtaku || (cleanOtaku.includes(cleanSd) && cleanSd.length > 5) || (cleanSd.includes(cleanOtaku) && cleanOtaku.length > 5);
-                });
-                return !isDuplicate;
             });
-            
-            const otakuMapped = otakuFiltered.map(item => ({
-                judul: item.title,
-                url: `/anime/${item.id}`,
-                gambar: '', // Akan diisi malas (lazy) setelah paginasi
-                gambarScraper: '',
-                tipe: 'Otakudesu',
-                skor: '?',
-                status: '-',
-                id: item.id
-            }));
-            
-            browseDb = [...browseDb, ...otakuMapped];
-            
-            // Sortir A-Z
-            browseDb.sort((a, b) => a.judul.localeCompare(b.judul));
 
-            if (typeFilter) {
-                browseDb = browseDb.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
-            }
-
-            const startIndex = (pageParams - 1) * 9;
-            const endIndex = startIndex + 9;
-            
-            if (startIndex < browseDb.length) {
-                let paginatedLocal = browseDb.slice(startIndex, endIndex);
-
-                // Ekstraksi gambar lazily hanya untuk 9 item di halaman ini
-                paginatedLocal = await Promise.all(paginatedLocal.map(async item => {
-                    if (item.tipe !== 'Otakudesu') return item; // Samehadaku sudah punya gambar
-                    
-                    let matchedImg = '';
-                    if (localDb && localDb.length > 0) {
-                        const cleanOtaku = item.judul.toLowerCase().replace(/season \d+/g, '').replace(/[^a-z0-9]/g, '');
-                        const match = localDb.find(sd => {
-                            const cleanSd = sd.judul.toLowerCase().replace(/season \d+/g, '').replace(/[^a-z0-9]/g, '');
-                            return cleanSd.includes(cleanOtaku) || cleanOtaku.includes(cleanSd);
-                        });
-                        if (match && match.gambar) matchedImg = match.gambar;
-                    }
-                    
-                    if (!matchedImg) {
-                        try {
-                            const tmdbRes = await searchTMDB(item.judul);
-                            if (tmdbRes) {
-                                if (tmdbRes.image) matchedImg = tmdbRes.image;
-                                item.tipe = tmdbRes.tipe || 'Anime';
-                                item.status = tmdbRes.status || '-';
-                                if (item.skor === '?') item.skor = tmdbRes.score || '-';
-                            }
-                        } catch(e) {}
-                    }
-                    
-                    item.gambar = matchedImg || 'https://via.placeholder.com/225x320.png?text=Otakudesu';
-                    item.gambarScraper = item.gambar;
-                    if (item.skor === '?') {
-                        item.skor = (Math.random() * (9.5 - 7.0) + 7.0).toFixed(2);
-                    }
-                    if (item.tipe === 'Otakudesu') item.tipe = 'Anime'; // Fallback jika TMDB gagal
-                    return fixAnimeType(item);
-                }));
-
-                const result = { 
-                    list: paginatedLocal, 
-                    hasNext: endIndex < browseDb.length 
-                };
-                cache.set(cacheKey, result);
-                return result;
-            }
+            const resultObj = { 
+                list: formatted, 
+                hasNext: endIndex < results.length 
+            };
+            cache.set(cacheKey, resultObj);
+            return resultObj;
         }
     }
 

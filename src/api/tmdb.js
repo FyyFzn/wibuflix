@@ -1,8 +1,41 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
+const fs = require('fs');
+const path = require('path');
 
 // TMDB API Cache (24 hours)
 const tmdbCache = new NodeCache({ stdTTL: 86400 });
+const CACHE_FILE = path.join(__dirname, '../../data/tmdb_cache.json');
+
+// Muat cache dari disk jika ada
+if (fs.existsSync(CACHE_FILE)) {
+    try {
+        const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
+        const data = JSON.parse(raw);
+        for (const key of Object.keys(data)) {
+            tmdbCache.set(key, data[key]);
+        }
+        console.log(`[TMDB] Berhasil memuat ${Object.keys(data).length} entri cache dari disk.`);
+    } catch(e) {
+        console.error('[TMDB] Gagal memuat cache dari disk:', e.message);
+    }
+}
+
+function saveTMDBCache() {
+    try {
+        const dir = path.dirname(CACHE_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        
+        const keys = tmdbCache.keys();
+        const dataToSave = {};
+        for (const key of keys) {
+            dataToSave[key] = tmdbCache.get(key);
+        }
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(dataToSave, null, 2));
+    } catch (e) {
+        console.error('[TMDB] Gagal menyimpan cache ke disk:', e.message);
+    }
+}
 
 // Fallback key, users should ideally set TMDB_API_KEY in .env
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '13e71c6778f9fd4a2f67ff77238002df';
@@ -113,4 +146,4 @@ async function searchTMDB(title) {
     }
 }
 
-module.exports = { searchTMDB, normalizeTitle };
+module.exports = { searchTMDB, normalizeTitle, saveTMDBCache };
