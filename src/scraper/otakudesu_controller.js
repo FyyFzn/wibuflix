@@ -243,7 +243,9 @@ async function getServersInternal(url) {
     const uniqueServers = [];
     const seenServers = new Set();
     for (const s of servers) {
-        const key = `${s.nama}-${s.namaHost}`;
+        const safeNama = s.nama ? s.nama.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+        const safeHost = s.namaHost ? s.namaHost.trim().toLowerCase() : '';
+        const key = `${safeNama}-${safeHost}`;
         if (!seenServers.has(key)) {
             seenServers.add(key);
             uniqueServers.push(s);

@@ -512,11 +512,27 @@ async function extractVideoUrl(embedUrl, req) {
 
                 if (driveId && apiKey) {
                     const finalUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${apiKey}`;
-                    console.log(`[Acefile] Fast Route URL ditemukan!`);
-                    return {
-                        url: finalUrl,
-                        headers: { 'User-Agent': 'Mozilla/5.0' }
-                    };
+                    console.log(`[Acefile] Fast Route URL ditemukan! Melakukan Health Check...`);
+                    
+                    try {
+                        const checkRes = await axios.get(finalUrl, { 
+                            headers: { Range: 'bytes=0-0' },
+                            validateStatus: () => true, // Jangan throw error pada status 403
+                            timeout: 5000 
+                        });
+                        
+                        if (checkRes.status === 403) {
+                            console.log(`[Acefile] Rute cepat 403 Forbidden (Rate Limited). Mencoba rute lambat (Local Mirror)...`);
+                        } else {
+                            console.log(`[Acefile] Health Check Lulus! Menggunakan rute cepat.`);
+                            return {
+                                url: finalUrl,
+                                headers: { 'User-Agent': 'Mozilla/5.0' }
+                            };
+                        }
+                    } catch (e) {
+                        console.log(`[Acefile] Health Check gagal: ${e.message}. Mencoba rute lambat...`);
+                    }
                 }
 
                 // Coba rute lambat (Local -> Service Play)

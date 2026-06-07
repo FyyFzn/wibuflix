@@ -13,6 +13,8 @@ function cleanTitle(title) {
     // Hapus Episode XX - XX Tamat / Eps XX - XX
     t = t.replace(/(?:Episode|Eps)\s*\d+\s*-\s*\d+.*$/i, '');
     t = t.replace(/(?:Episode|Eps)\s*\d+.*$/i, '');
+    // Hapus 1 - 49 Tamat (tanpa kata Episode)
+    t = t.replace(/\s*\d+\s*-\s*\d+\s*(?:Tamat|End)?.*$/i, '');
     // Hapus (Batch), [Batch], BD Batch, dll
     t = t.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '');
     // Hapus (End), [End], Tamat
