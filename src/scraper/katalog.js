@@ -95,10 +95,10 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             if (otakuResults.length > 0) {
                 // Filter silang: Abaikan hasil Otakudesu jika anime tersebut sudah ada di Samehadaku
                 otakuResults = otakuResults.filter(item => {
-                    const oTitle = item.title.toLowerCase();
+                    const cleanOtaku = item.title.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
                     const isDuplicate = samehadakuResults.some(s => {
-                        const sTitle = s.judul.toLowerCase();
-                        return sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5);
+                        const cleanSd = s.judul.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
+                        return cleanSd === cleanOtaku || (cleanOtaku.includes(cleanSd) && cleanSd.length > 5) || (cleanSd.includes(cleanOtaku) && cleanOtaku.length > 5);
                     });
                     return !isDuplicate;
                 });
@@ -107,10 +107,10 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
                     let matchedImg = '';
                     if (localDb && localDb.length > 0) {
+                        const cleanO = item.title.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
                         for (const s of localDb) {
-                            const sTitle = s.judul.toLowerCase();
-                            const oTitle = item.title.toLowerCase();
-                            if (sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5)) {
+                            const cleanS = s.judul.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
+                            if (cleanS === cleanO || (cleanO.includes(cleanS) && cleanS.length > 5) || (cleanS.includes(cleanO) && cleanO.length > 5)) {
                                 matchedImg = s.gambar;
                                 break;
                             }
@@ -182,10 +182,10 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             let browseDb = localDb.map(fixAnimeType);
             
             const otakuFiltered = otakuDb.filter(item => {
-                const oTitle = item.title.toLowerCase();
+                const cleanOtaku = item.title.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
                 const isDuplicate = localDb.some(s => {
-                    const sTitle = s.judul.toLowerCase();
-                    return sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5);
+                    const cleanSd = s.judul.toLowerCase().replace(/(:|~| - ).*/, '').replace(/season \d+/g, '').replace(/\d+nd season/g, '').replace(/\d+rd season/g, '').replace(/\d+th season/g, '').replace(/[^a-z0-9]/g, '');
+                    return cleanSd === cleanOtaku || (cleanOtaku.includes(cleanSd) && cleanSd.length > 5) || (cleanSd.includes(cleanOtaku) && cleanOtaku.length > 5);
                 });
                 return !isDuplicate;
             });
