@@ -6,6 +6,7 @@ const { loadOtakuDatabase } = require('./otakudesu_sync');
 const fs = require('fs');
 const path = require('path');
 const { searchAnime } = require('../api/jikan');
+const { searchTokusatsu } = require('../api/tmdb');
 
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
@@ -106,15 +107,28 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                         }
                     }
 
-                    // Fallback ke Jikan API jika gambar tidak ada di DB lokal
+                    // Fallback ke Jikan API atau TMDB API
+                    let finalSkor = '-';
                     if (!matchedImg) {
                         try {
-                            const jikanData = await searchAnime(item.title);
-                            if (jikanData && jikanData.cover) {
-                                matchedImg = jikanData.cover;
+                            const titleLow = item.title.toLowerCase();
+                            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice'].some(kw => titleLow.includes(kw));
+                            
+                            if (isToku) {
+                                const tmdbData = await searchTokusatsu(item.title);
+                                if (tmdbData && tmdbData.image) {
+                                    matchedImg = tmdbData.image;
+                                    finalSkor = tmdbData.score || '-';
+                                }
+                            } else {
+                                const jikanData = await searchAnime(item.title);
+                                if (jikanData && jikanData.cover) {
+                                    matchedImg = jikanData.cover;
+                                    finalSkor = jikanData.score || '-';
+                                }
                             }
                         } catch (e) {
-                            console.warn(`[Katalog-Jikan] Gagal mengambil cover untuk ${item.title}:`, e.message);
+                            console.warn(`[Katalog-API] Gagal mengambil cover untuk ${item.title}:`, e.message);
                         }
                     }
 
@@ -127,7 +141,7 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                         gambar: finalImg,
                         gambarScraper: finalImg,
                         tipe: 'Otakudesu',
-                        skor: '-',
+                        skor: finalSkor,
                         status: '-',
                         id: item.id
                     });

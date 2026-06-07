@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { searchTokusatsu } = require('../api/tmdb');
 
 const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kamen rider', 'super sentai', 'ultraman', 'metal hero', 'tokusatsu', 'spesial', 'spin-off', 'hyper battle dvd', 'project red', 'dvd', 'tv series', 'series'];
 
@@ -503,19 +504,37 @@ async function getNeosatsuEpisodes(targetUrl) {
             }
         }
 
+        // Fetch metadata dari TMDB
+        let mal = null;
+        try {
+            console.log(`[TMDB] Mencari metadata untuk: "${judulSeri}"`);
+            const tmdbData = await searchTokusatsu(judulSeri);
+            if (tmdbData) {
+                console.log(`[TMDB] Ketemu: score=${tmdbData.score}`);
+                mal = {
+                    malScore: tmdbData.score,
+                    synopsis: tmdbData.synopsis,
+                    cover: tmdbData.image || cover,
+                    status: tmdbData.status || 'Unknown',
+                    genres: ['Tokusatsu'],
+                    source: 'TMDB'
+                };
+            }
+        } catch (e) {
+            console.warn(`[TMDB Fallback] Error:`, e.message);
+        }
+
         // Simpan cache
         global.neosatsuCache = global.neosatsuCache || {};
-        global.neosatsuCache[targetUrl] = {
+        const finalResult = {
             judul_seri: judulSeri,
             cover_scraper: cover,
-            daftar_episode: daftar_episode
+            daftar_episode: daftar_episode,
+            mal: mal
         };
+        global.neosatsuCache[targetUrl] = finalResult;
 
-        return {
-            judul_seri: judulSeri,
-            cover_scraper: cover,
-            daftar_episode: daftar_episode
-        };
+        return finalResult;
     } catch (err) {
         console.error('[Neosatsu Episodes Error]:', err.message);
         throw err;

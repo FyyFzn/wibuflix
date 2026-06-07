@@ -1,5 +1,6 @@
 const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 const { searchAnime, getAnimeEpisodes } = require('../api/jikan');
+const { searchTokusatsu } = require('../api/tmdb');
 const cheerio = require('cheerio');
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam (super cepat)
@@ -69,18 +70,39 @@ async function getEpisodes(targetUrl) {
         let malEpisodeMap = {};
 
         try {
-            console.log(`[MAL] Mencari data untuk: "${result.judul_seri}"`);
-            mal = await searchAnime(result.judul_seri);
+            const titleLow = result.judul_seri.toLowerCase();
+            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice'].some(kw => titleLow.includes(kw));
 
-            if (mal) {
-                console.log(`[MAL] Ketemu: score=${mal.malScore}, genres=${mal.genres.join(', ')}`);
-                // Ambil judul episode dari MAL
-                malEpisodeMap = await getAnimeEpisodes(mal.malId, mal.episodes);
+            if (isToku) {
+                console.log(`[TMDB] Mencari data untuk Tokusatsu: "${result.judul_seri}"`);
+                const tmdbData = await searchTokusatsu(result.judul_seri);
+                if (tmdbData) {
+                    console.log(`[TMDB] Ketemu: score=${tmdbData.score}`);
+                    mal = {
+                        malScore: tmdbData.score,
+                        synopsis: tmdbData.synopsis,
+                        cover: tmdbData.image || result.cover_scraper,
+                        status: tmdbData.status,
+                        genres: ['Tokusatsu'],
+                        source: 'TMDB'
+                    };
+                } else {
+                    console.log(`[TMDB] Tidak ditemukan untuk: "${result.judul_seri}"`);
+                }
             } else {
-                console.log(`[MAL] Tidak ditemukan untuk: "${result.judul_seri}"`);
+                console.log(`[MAL] Mencari data untuk: "${result.judul_seri}"`);
+                mal = await searchAnime(result.judul_seri);
+
+                if (mal) {
+                    console.log(`[MAL] Ketemu: score=${mal.malScore}, genres=${mal.genres.join(', ')}`);
+                    // Ambil judul episode dari MAL
+                    malEpisodeMap = await getAnimeEpisodes(mal.malId, mal.episodes);
+                } else {
+                    console.log(`[MAL] Tidak ditemukan untuk: "${result.judul_seri}"`);
+                }
             }
         } catch (e) {
-            console.warn(`[MAL] Error:`, e.message);
+            console.warn(`[API Fallback] Error:`, e.message);
         }
 
         // ── Inject judul MAL ke tiap episode ──

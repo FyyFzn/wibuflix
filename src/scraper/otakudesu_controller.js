@@ -2,6 +2,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const { OtakudesuInstance } = require('otakudesu-scraper');
 const { searchAnime, getAnimeEpisodes } = require('../api/jikan');
+const { searchTokusatsu } = require('../api/tmdb');
 
 const otaku = new OtakudesuInstance('https://otakudesu.blog');
 
