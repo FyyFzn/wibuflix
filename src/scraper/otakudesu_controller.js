@@ -239,8 +239,19 @@ async function getServersInternal(url) {
     // Tunggu semua resolve selesai
     await Promise.all(promises);
 
-    if (servers.length > 0) {
-        servers[0].aktif = true;
+    // Deduplikasi server (Otakudesu sering menampilkan tombol mirror ganda yang mengarah ke link sama)
+    const uniqueServers = [];
+    const seenServers = new Set();
+    for (const s of servers) {
+        const key = `${s.nama}-${s.namaHost}-${s.iframeUrl}`;
+        if (!seenServers.has(key)) {
+            seenServers.add(key);
+            uniqueServers.push(s);
+        }
+    }
+
+    if (uniqueServers.length > 0) {
+        uniqueServers[0].aktif = true;
     }
 
     // Ambil judul raw dari halaman episode dan bersihkan

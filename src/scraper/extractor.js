@@ -468,6 +468,10 @@ async function extractVideoUrl(embedUrl, req) {
     if (embedUrl.includes('acefile')) {
         const axios = require('axios');
         try {
+            if (embedUrl.includes('/f/')) {
+                embedUrl = embedUrl.replace('/f/', '/player/');
+                console.log(`[Acefile] Mengonversi url ke /player/ -> ${embedUrl}`);
+            }
             console.log(`[Acefile] Mengekstrak: ${embedUrl}`);
             const { data: html } = await axios.get(embedUrl, {
                 timeout: 10000,

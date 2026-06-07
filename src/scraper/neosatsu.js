@@ -4,6 +4,22 @@ const { searchTokusatsu } = require('../api/tmdb');
 
 const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kamen rider', 'super sentai', 'ultraman', 'metal hero', 'tokusatsu', 'spesial', 'spin-off', 'hyper battle dvd', 'project red', 'dvd', 'tv series', 'series'];
 
+function cleanTitle(title) {
+    if (!title) return '';
+    let t = title;
+    // Hapus Subtitle Indonesia
+    t = t.replace(/Subtitle Indonesia.*$/i, '');
+    t = t.replace(/Sub Indo.*$/i, '');
+    // Hapus Episode XX - XX Tamat / Eps XX - XX
+    t = t.replace(/(?:Episode|Eps)\s*\d+\s*-\s*\d+.*$/i, '');
+    t = t.replace(/(?:Episode|Eps)\s*\d+.*$/i, '');
+    // Hapus (Batch), [Batch], BD Batch, dll
+    t = t.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '');
+    // Hapus (End), [End], Tamat
+    t = t.replace(/\s*[\(\[]?(?:End|Tamat)[\)\]]?\s*/gi, '');
+    // Hapus karakter non-alfanumerik di ujung
+    return t.replace(/[-\s]+$/, '').trim();
+}
 /**
  * [TAHAP 1] Mengambil katalog dari Neosatsu. 
  * Kita akan mengelompokkan post yang memiliki judul seri yang sama.
@@ -45,8 +61,8 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                     $('a').each((i, el) => {
                         const href = $(el).attr('href');
                         let title = $(el).attr('title') || $(el).text().trim();
-                        // Bersihkan kata "Batch", "(Batch)", "[Batch]", "BD Batch" agar TMDB bisa menemukannya
-                        title = title.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '').trim();
+                        // Bersihkan judul dari embel-embel batch, eps, tamat, dsb
+                        title = cleanTitle(title);
                         let img = $(el).find('img').attr('src') || 'https://i.imgur.com/KxJ4L6J.jpeg'; // Default Neosatsu logo if text link
 
                         if (href && title && href !== 'javascript:void(0)' && title.length > 5) {
@@ -119,7 +135,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                             }
 
                             if (title && linkObj) {
-                                let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '').trim();
+                                let baseTitle = cleanTitle(title);
                                 
                                 // Deteksi Special / V-Cinema dari judul jika feed tipe bukan Movie
                                 let finalTipe = feed.tipe;
@@ -248,7 +264,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                             }
                         }
 
-                        let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '').trim();
+                        let baseTitle = cleanTitle(title);
 
                         let seriesLabel = '';
                         if (entry.category) {
