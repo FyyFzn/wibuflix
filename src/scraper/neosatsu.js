@@ -170,12 +170,42 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
             let localResults = staticAnimeList.filter(item => item.title.toLowerCase().includes(query));
 
             if (typeFilter) {
-                localResults = localResults.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+                const fLow = typeFilter.toLowerCase();
+                if (fLow === 'kamen rider') {
+                    localResults = localResults.filter(item => item.title.toLowerCase().includes('kamen rider'));
+                } else if (fLow === 'super sentai') {
+                    localResults = localResults.filter(item => {
+                        const t = item.title.toLowerCase();
+                        return t.includes('sentai') || t.includes('ranger');
+                    });
+                } else if (fLow === 'ultraman') {
+                    localResults = localResults.filter(item => item.title.toLowerCase().includes('ultraman'));
+                } else if (fLow === 'lainnya') {
+                    localResults = localResults.filter(item => {
+                        const t = item.title.toLowerCase();
+                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('ranger') && !t.includes('ultraman');
+                    });
+                } else {
+                    localResults = localResults.filter(item => item.tipe.toLowerCase() === fLow);
+                }
             }
 
             if (localResults.length > 0) {
                 console.log(`[Neosatsu Scraper] Local Search Hit: Ditemukan ${localResults.length} hasil untuk "${searchParam}"`);
-                return { page: parseInt(page), max_results: 9, anime: localResults.slice((page - 1) * 9, page * 9) };
+                
+                let pageResults = localResults.slice((page - 1) * 9, page * 9);
+                pageResults = await Promise.all(pageResults.map(async (item) => {
+                    try {
+                        const tmdbData = await searchTokusatsu(item.title);
+                        if (tmdbData && tmdbData.image) {
+                            item.thumb = tmdbData.image;
+                            item.skor = tmdbData.score;
+                        }
+                    } catch (e) {}
+                    return item;
+                }));
+
+                return { page: parseInt(page), max_results: 9, anime: pageResults };
             }
 
             // Jika tidak ada di lokal (misal cari Metal Hero), Fallback ke Pencarian Website (Blogger Feed)
@@ -253,18 +283,77 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
 
             let finalAnimeList = animeList;
             if (typeFilter) {
-                finalAnimeList = finalAnimeList.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+                const fLow = typeFilter.toLowerCase();
+                if (fLow === 'kamen rider') {
+                    finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('kamen rider'));
+                } else if (fLow === 'super sentai') {
+                    finalAnimeList = finalAnimeList.filter(item => {
+                        const t = item.title.toLowerCase();
+                        return t.includes('sentai') || t.includes('ranger');
+                    });
+                } else if (fLow === 'ultraman') {
+                    finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('ultraman'));
+                } else if (fLow === 'lainnya') {
+                    finalAnimeList = finalAnimeList.filter(item => {
+                        const t = item.title.toLowerCase();
+                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('ranger') && !t.includes('ultraman');
+                    });
+                } else {
+                    finalAnimeList = finalAnimeList.filter(item => item.tipe.toLowerCase() === fLow);
+                }
             }
 
-            return { page: parseInt(page), max_results: 9, anime: finalAnimeList.slice(0, 9) };
+            let pageResults = finalAnimeList.slice(0, 9);
+            pageResults = await Promise.all(pageResults.map(async (item) => {
+                try {
+                    const tmdbData = await searchTokusatsu(item.title);
+                    if (tmdbData && tmdbData.image) {
+                        item.thumb = tmdbData.image;
+                        item.skor = tmdbData.score;
+                    }
+                } catch (e) {}
+                return item;
+            }));
+
+            return { page: parseInt(page), max_results: 9, anime: pageResults };
 
         } else {
             // 3. Mode Browse Biasa
             let browseDb = staticAnimeList;
             if (typeFilter) {
-                browseDb = browseDb.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
+                const fLow = typeFilter.toLowerCase();
+                if (fLow === 'kamen rider') {
+                    browseDb = browseDb.filter(item => item.title.toLowerCase().includes('kamen rider'));
+                } else if (fLow === 'super sentai') {
+                    browseDb = browseDb.filter(item => {
+                        const t = item.title.toLowerCase();
+                        return t.includes('sentai') || t.includes('ranger');
+                    });
+                } else if (fLow === 'ultraman') {
+                    browseDb = browseDb.filter(item => item.title.toLowerCase().includes('ultraman'));
+                } else if (fLow === 'lainnya') {
+                    browseDb = browseDb.filter(item => {
+                        const t = item.title.toLowerCase();
+                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('ranger') && !t.includes('ultraman');
+                    });
+                } else {
+                    browseDb = browseDb.filter(item => item.tipe.toLowerCase() === fLow);
+                }
             }
-            return { page: parseInt(page), max_results: 9, anime: browseDb.slice((page - 1) * 9, page * 9) };
+            
+            let pageResults = browseDb.slice((page - 1) * 9, page * 9);
+            pageResults = await Promise.all(pageResults.map(async (item) => {
+                try {
+                    const tmdbData = await searchTokusatsu(item.title);
+                    if (tmdbData && tmdbData.image) {
+                        item.thumb = tmdbData.image;
+                        item.skor = tmdbData.score;
+                    }
+                } catch (e) {}
+                return item;
+            }));
+
+            return { page: parseInt(page), max_results: 9, anime: pageResults };
         }
 
     } catch (err) {
@@ -402,6 +491,33 @@ async function getNeosatsuEpisodes(targetUrl) {
                     if (isMovieOrSpecial && !epTitle.toLowerCase().includes('movie') && !epTitle.toLowerCase().includes('special') && !epTitle.toLowerCase().includes('spin-off')) {
                         epTitle = `[Spesial/Movie] ${epTitle}`;
                     }
+
+                    // CLEAN EPISODE TITLE
+                    let cleanTitle = epTitle;
+                    
+                    if (judulSeri && judulSeri.length > 2) {
+                        const regexFranchise = new RegExp(judulSeri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                        cleanTitle = cleanTitle.replace(regexFranchise, '').trim();
+                    }
+
+                    cleanTitle = cleanTitle.replace(/\s*(-|~)?\s*(Tamat|End|Subtitle Indonesia|Sub Indo|Subtitle|Indonesia)\s*/gi, '').trim();
+
+                    if (!isMovieOrSpecial) {
+                        const epMatch = cleanTitle.match(/Episode\s*\d+/i);
+                        if (epMatch) {
+                            cleanTitle = epMatch[0]; 
+                        } else {
+                            const numMatch = cleanTitle.match(/^\s*\d+\s*$/);
+                            if (numMatch) {
+                                cleanTitle = `Episode ${numMatch[0].trim()}`;
+                            }
+                        }
+                    }
+
+                    cleanTitle = cleanTitle.replace(/^[\-\:\s]+|[\-\:\s]+$/g, '');
+                    if (!cleanTitle) cleanTitle = 'Episode ?';
+
+                    epTitle = cleanTitle;
 
                     // Logika Ekstrak Server
                     let hasNestedEpisodes = false;
