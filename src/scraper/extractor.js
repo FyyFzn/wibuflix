@@ -474,19 +474,72 @@ async function extractVideoUrl(embedUrl, req) {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
             });
             
-            const evalRegex = /eval\(function\(p,a,c,k,e,d\).*?\)\)/s;
-            const match = html.match(evalRegex);
+            const vm = require('vm');
+            const packRegex = /eval\((function\(p,a,c,k,e,?[d]?\)[\s\S]*?\.split\('\|'\).*?\))\)/;
+            const match = html.match(packRegex);
             if (match) {
-                let evalCode = match[0];
                 let unpacked = '';
-                evalCode = evalCode.replace(/^eval/, 'unpacked = ');
-                eval(evalCode);
+                try {
+                    unpacked = vm.runInNewContext(`(${match[1]})`, {});
+                } catch(e) {
+                    console.log(`[Acefile] Unpack error: ${e.message}`);
+                }
                 
+                // Coba rute cepat (Google Drive API) jika ada variabel DUAR
+                const duarMatch = unpacked.match(/var\s+[a-zA-Z0-9_]+\s*=\s*\[\{.*?"code"\s*:\s*"([^"]+)".*?\}\]/);
+                let driveId = '';
+                if (duarMatch && duarMatch[1]) {
+                    driveId = Buffer.from(duarMatch[1], 'base64').toString('utf8');
+                }
+                
+                // Cari string atob untuk API key
+                let apiKey = 'AIzaSyBkK04Xe0ZzIRSx1TcZyHvkkTGEtkPgugw'; // default
+                const atobMatches = [...unpacked.matchAll(/atob\("([^"]+)"\)/g)];
+                for (const m of atobMatches) {
+                    try {
+                        const decoded = Buffer.from(m[1], 'base64').toString('utf8');
+                        const keyMatch = decoded.match(/key=(AIza[a-zA-Z0-9_-]+)/);
+                        if (keyMatch) {
+                            apiKey = keyMatch[1];
+                            break;
+                        }
+                    } catch(e){}
+                }
+
+                if (driveId && apiKey) {
+                    const finalUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media&key=${apiKey}`;
+                    console.log(`[Acefile] Fast Route URL ditemukan!`);
+                    return {
+                        url: finalUrl,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    };
+                }
+
+                // Coba rute lambat (Local -> Service Play)
+                let mirrorArr = [];
                 const mirrorMatch = unpacked.match(/\[\{"v":".*?\}\]/);
                 if (mirrorMatch) {
-                    const mirrorArr = JSON.parse(mirrorMatch[0]);
+                    mirrorArr = JSON.parse(mirrorMatch[0]);
+                } else {
+                    const idMatch = unpacked.match(/"id"\s*:\s*"(\d+)"/);
+                    const keyMatch = unpacked.match(/var\s+[a-zA-Z0-9_]+\s*=\s*["']([a-f0-9]{32,})["']/g);
+                    if (idMatch && keyMatch && keyMatch.length > 0) {
+                        let foundKey = '';
+                        for (const k of keyMatch) {
+                            if (k.includes('nfck')) {
+                                foundKey = k.match(/["']([a-f0-9]{32,})["']/)[1];
+                                break;
+                            }
+                        }
+                        if (!foundKey) {
+                            foundKey = keyMatch[keyMatch.length-1].match(/["']([a-f0-9]{32,})["']/)[1];
+                        }
+                        mirrorArr = [{ v: idMatch[1], J: foundKey }];
+                    }
+                }
+                
+                if (mirrorArr.length > 0) {
                     console.log(`[Acefile] Ditemukan ${mirrorArr.length} mirror`);
-                    
                     for (const m of mirrorArr) {
                         const localUrl = `https://acefile.co/local/${m.v}?key=${m.J}`;
                         try {
