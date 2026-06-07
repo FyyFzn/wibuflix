@@ -88,19 +88,108 @@ app.get('/api/hot', async (req, res) => {
 // ============================================================
 app.get('/api/episodes', async (req, res) => {
     const targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
+    const urlSamehadaku = req.query.urlSamehadaku;
+    const urlOtakudesu = req.query.urlOtakudesu;
+    
+    if (!targetUrl && !urlSamehadaku && !urlOtakudesu) {
+        return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
+    }
 
     try {
         let data;
-        if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
-            data = await getNeosatsuEpisodes(targetUrl);
-        } else if (targetUrl.startsWith('/anime/otakudesu:')) {
-            const slug = targetUrl.split(':')[1];
-            data = await otakudesu.getOtakuEpisodesFormatted(slug);
-            if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
-        } else {
-            data = await getEpisodes(targetUrl);
+        
+        // --- LOGIKA MERGE 2 WEB ---
+        if (urlSamehadaku && urlOtakudesu) {
+            const slug = urlOtakudesu.split(':')[1];
+            
+            const [sameRes, otakuRes] = await Promise.all([
+                getEpisodes(urlSamehadaku).catch(() => null),
+                otakudesu.getOtakuEpisodesFormatted(slug).catch(() => null)
+            ]);
+            
+            // Format merge
+            data = {
+                judul_seri: (sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || 'Unknown',
+                daftar_episode: []
+            };
+            
+            // Map berdasarkan angka episode
+            const epMap = new Map();
+            
+            const extractEpNum = (title) => {
+                const match = title.match(/(?:episode|ep|eps)\s*0*(\d+)/i) || title.match(/0*(\d+)/);
+                return match ? parseInt(match[1]) : title;
+            };
+
+            // Masukkan data Samehadaku
+            if (sameRes && sameRes.daftar_episode) {
+                sameRes.daftar_episode.forEach(ep => {
+                    const num = extractEpNum(ep.judul);
+                    epMap.set(num, {
+                        judul: ep.judul, // Pakai judul Samehadaku sbg default
+                        tanggal: ep.tanggal,
+                        urls: { samehadaku: ep.url }
+                    });
+                });
+            }
+            
+            // Gabungkan/Tambahkan data Otakudesu
+            if (otakuRes && otakuRes.daftar_episode) {
+                otakuRes.daftar_episode.forEach(ep => {
+                    const num = extractEpNum(ep.judul);
+                    if (epMap.has(num)) {
+                        const existing = epMap.get(num);
+                        existing.urls.otakudesu = ep.url;
+                    } else {
+                        epMap.set(num, {
+                            judul: ep.judul, // Jika cuma ada di Otaku
+                            tanggal: ep.tanggal,
+                            urls: { otakudesu: ep.url }
+                        });
+                    }
+                });
+            }
+            
+            // Convert Map ke Array dan pastikan terurut menurun (episode terbaru di atas)
+            const mergedEps = Array.from(epMap.values());
+            mergedEps.sort((a, b) => {
+                const numA = extractEpNum(a.judul);
+                const numB = extractEpNum(b.judul);
+                if (typeof numA === 'number' && typeof numB === 'number') return numB - numA;
+                return 0;
+            });
+            
+            data.daftar_episode = mergedEps;
+
+        // --- LOGIKA SINGLE WEB (LAMA) ---
+        } else if (targetUrl) {
+            if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
+                data = await getNeosatsuEpisodes(targetUrl);
+            } else if (targetUrl.startsWith('/anime/otakudesu:')) {
+                const slug = targetUrl.split(':')[1];
+                data = await otakudesu.getOtakuEpisodesFormatted(slug);
+                if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
+                // Normalisasi agar formatnya sama (menggunakan objek `urls`)
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode.map(ep => ({
+                        judul: ep.judul,
+                        tanggal: ep.tanggal,
+                        urls: { otakudesu: ep.url }
+                    }));
+                }
+            } else {
+                data = await getEpisodes(targetUrl);
+                // Normalisasi agar formatnya sama (menggunakan objek `urls`)
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode.map(ep => ({
+                        judul: ep.judul,
+                        tanggal: ep.tanggal,
+                        urls: { samehadaku: ep.url }
+                    }));
+                }
+            }
         }
+        
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Episodes Error]', err.message);
@@ -113,17 +202,60 @@ app.get('/api/episodes', async (req, res) => {
 // ============================================================
 app.get('/api/scrape', async (req, res) => {
     const targetUrl = req.query.url;
+    const urlsParam = req.query.urls;
     const seriesTitle = req.query.series || '';
     const episodeTitle = req.query.episode || '';
-    if (!targetUrl) return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
+    
+    if (!targetUrl && !urlsParam) return res.status(400).json({ error: "Parameter 'url' atau 'urls' wajib diisi!" });
 
     try {
-        let data;
+        let data = {
+            judul: '',
+            servers: [],
+            nav_prev: null,
+            nav_next: null
+        };
+        
+        let urlsObj = null;
+        if (urlsParam) {
+            try {
+                urlsObj = JSON.parse(urlsParam);
+            } catch (e) {}
+        }
+
+        // --- MULTIPLE URLS SCENARIO ---
+        if (urlsObj && urlsObj.samehadaku && urlsObj.otakudesu) {
+            const [sameRes, otakuRes] = await Promise.all([
+                scrapeVideoServers(urlsObj.samehadaku).catch(() => null),
+                otakudesu.getServersInternal(urlsObj.otakudesu).catch(() => null)
+            ]);
+            
+            if (sameRes) {
+                data.judul = sameRes.judul || episodeTitle;
+                data.nav_prev = sameRes.nav_prev;
+                data.nav_next = sameRes.nav_next;
+                if (sameRes.servers) {
+                    data.servers = [...data.servers, ...sameRes.servers.map(s => ({ ...s, source: 'Samehadaku' }))];
+                }
+            }
+            if (otakuRes) {
+                if (!data.judul) data.judul = otakuRes.judul || episodeTitle;
+                // Prefer Samehadaku navigation if available
+                if (!data.nav_prev) data.nav_prev = otakuRes.nav_prev;
+                if (!data.nav_next) data.nav_next = otakuRes.nav_next;
+                if (otakuRes.servers) {
+                    data.servers = [...data.servers, ...otakuRes.servers.map(s => ({ ...s, source: 'Otakudesu' }))];
+                }
+            }
+            
+            return res.json({ status: 'success', data });
+        }
+
+        // --- SINGLE URL SCENARIO (LAMA) ---
         let isOtakudesu = false;
 
         if (targetUrl.startsWith('/api/otakudesu/servers')) {
             isOtakudesu = true;
-            // Parse url parameter
             const urlParam = new URL('http://localhost' + targetUrl).searchParams.get('url');
             if (urlParam) {
                 data = await otakudesu.getServersInternal(urlParam);
@@ -143,13 +275,13 @@ app.get('/api/scrape', async (req, res) => {
                 nav_next: neoData.nav_next,
                 servers: neoData.servers.map(s => ({ ...s, source: 'Neosatsu' }))
             };
-        } else if (!isOtakudesu) {
+        } else if (!isOtakudesu && targetUrl) {
             data = await scrapeVideoServers(targetUrl);
             if (data && data.servers) {
                 data.servers = data.servers.map(s => ({ ...s, source: 'Samehadaku' }));
             }
 
-            // Coba cari alternatif di Otakudesu
+            // Coba cari alternatif di Otakudesu (Fuzzy Search Fallback)
             if (seriesTitle && episodeTitle) {
                 const otakuServers = await otakudesu.getAlternativeServers(seriesTitle, episodeTitle);
                 if (otakuServers && otakuServers.length > 0) {

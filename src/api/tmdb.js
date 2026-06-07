@@ -58,6 +58,32 @@ function normalizeTitle(title) {
 }
 
 /**
+ * Fallback pencarian ke Jikan API (MyAnimeList)
+ */
+async function searchJikan(cleanTitle) {
+    try {
+        const url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(cleanTitle)}&limit=1`;
+        const response = await axios.get(url, { timeout: 10000 });
+        const results = response.data.data;
+        if (results && results.length > 0) {
+            const item = results[0];
+            return {
+                title: item.title_english || item.title, // Prioritaskan judul bahasa Inggris untuk konsistensi
+                image: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
+                score: item.score ? item.score.toString() : '-',
+                synopsis: item.synopsis || 'Sinopsis tidak tersedia di Jikan.',
+                status: item.status === 'Finished Airing' ? 'Completed' : (item.status === 'Currently Airing' ? 'Ongoing' : 'Unknown'),
+                type: item.type || 'Anime'
+            };
+        }
+        return null;
+    } catch (e) {
+        console.error('[Jikan] Gagal mencari:', cleanTitle, e.message);
+        return null;
+    }
+}
+
+/**
  * Mencari data Anime dan Tokusatsu di TMDB berdasarkan judul.
  * Mencari di kategori TV Shows, lalu mencari alternatif di Movies.
  */
@@ -111,30 +137,36 @@ async function searchTMDB(title) {
                     } else if (detailRes.data.status === 'Returning Series') {
                         finalStatus = 'Ongoing';
                     }
-                } else {
-                    const detailRes = await axios.get(`${BASE_URL}/movie/${item.id}?api_key=${TMDB_API_KEY}`);
-                    if (detailRes.data.status === 'Released') {
-                        finalStatus = 'Completed';
-                    } else if (detailRes.data.status === 'In Production' || detailRes.data.status === 'Post Production') {
-                        finalStatus = 'Ongoing';
+                    if (detailRes.data.origin_country && detailRes.data.origin_country.includes('JP')) {
+                        finalType = 'Anime';
                     }
+                } else {
+                    finalStatus = 'Completed';
                 }
-            } catch (detailErr) {
-                console.warn(`[TMDB API] Gagal fetch detail untuk ${item.id}:`, detailErr.message);
+            } catch(e) {
+                // Ignore detail errors
             }
-            
-            const result = {
+
+            const data = {
                 title: item.name || item.title,
-                score: score,
-                image: image,
-                synopsis: synopsis,
+                image,
+                score,
+                synopsis,
                 status: finalStatus,
                 tipe: finalType,
                 source: 'TMDB'
             };
 
-            tmdbCache.set(cacheKey, result);
-            return result;
+            tmdbCache.set(cacheKey, data);
+            return data;
+        } else {
+            // Fallback ke Jikan API
+            const jikanData = await searchJikan(cleanTitle);
+            if (jikanData) {
+                jikanData.source = 'Jikan';
+                tmdbCache.set(cacheKey, jikanData);
+                return jikanData;
+            }
         }
 
         // Simpan cache kosong agar tidak request terus-terusan
@@ -143,6 +175,13 @@ async function searchTMDB(title) {
 
     } catch (err) {
         console.error(`[TMDB API] Error searching "${cleanTitle}":`, err.message);
+        // Fallback jika network TMDB error
+        const jikanData = await searchJikan(cleanTitle);
+        if (jikanData) {
+            jikanData.source = 'Jikan';
+            tmdbCache.set(cacheKey, jikanData);
+            return jikanData;
+        }
         return null;
     }
 }

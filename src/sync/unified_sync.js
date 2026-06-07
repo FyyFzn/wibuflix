@@ -69,10 +69,10 @@ async function syncUnified() {
             
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
-                    title: tmdbData ? tmdbData.title : item.judul,
+                    title: tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.judul,
                     image: tmdbData ? tmdbData.image : item.gambar,
                     score: tmdbData ? tmdbData.score : (item.skor || '-'),
-                    type: tmdbData ? tmdbData.tipe : (item.tipe || 'Anime'),
+                    type: tmdbData ? tmdbData.type : (item.tipe || 'Anime'),
                     status: tmdbData ? tmdbData.status : (item.status || '-'),
                     sources: {
                         samehadaku: {
@@ -105,10 +105,10 @@ async function syncUnified() {
             
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
-                    title: tmdbData ? tmdbData.title : item.title,
+                    title: tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.title,
                     image: tmdbData ? tmdbData.image : 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image',
                     score: tmdbData ? tmdbData.score : '-',
-                    type: tmdbData ? tmdbData.tipe : 'Anime',
+                    type: tmdbData ? tmdbData.type : 'Anime',
                     status: tmdbData ? tmdbData.status : '-',
                     sources: {
                         otakudesu: {
