@@ -400,6 +400,22 @@ app.get('/api/cache-clear', (req, res) => {
     res.json({ status: 'ok', message: 'Cache cleared' });
 });
 
+// ============================================================
+// RUTE 8: GET /api/force-sync  [MANUAL TRIGGER]
+// ============================================================
+app.get('/api/force-sync', (req, res) => {
+    const { syncUnified } = require('./sync/unified_sync');
+    const { runSync } = require('./sync/anime_sync');
+    
+    res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
+    
+    // Jalankan asinkron tanpa memblokir request
+    runSync(true).then(() => {
+        console.log('[ForceSync] Anime Sync selesai. Memulai Unified Sync...');
+        return syncUnified();
+    }).catch(err => console.error('[ForceSync] Error:', err.message));
+});
+
 const { startBackgroundAnimeSync } = require('./sync/anime_sync');
 const { startBackgroundOtakuSync } = require('./scraper/otakudesu_sync');
 const { syncUnified } = require('./sync/unified_sync');

@@ -2,22 +2,31 @@ const path = require('path');
 const fs = require('fs');
 
 function getDataDir() {
-    // Lingkungan Azure Web App (baik Linux maupun Windows) menggunakan variabel HOME.
-    // Di Windows Azure, HOME biasanya menunjuk ke D:\home
-    // Di Linux Azure, HOME menunjuk ke /home
-    // Direktori ini bersifat persisten dan tidak terpengaruh oleh Local Cache atau Git Deployments.
-    if (process.env.HOME && fs.existsSync(process.env.HOME)) {
-        return path.join(process.env.HOME, 'data');
+    // 1. Prioritas Utama: Azure Linux App Service (sesuai tutorial)
+    // Azure mem-mount WEBSITES_ENABLE_APP_SERVICE_STORAGE ke /home
+    const azureLinuxPath = '/home/data';
+    if (fs.existsSync('/home')) {
+        if (!fs.existsSync(azureLinuxPath)) {
+            fs.mkdirSync(azureLinuxPath, { recursive: true });
+        }
+        return azureLinuxPath;
     }
     
-    // Fallback eksplisit untuk Azure Windows jika process.env.HOME tidak terbaca
+    // 2. Azure Windows App Service
+    const azureWindowsPath = 'D:\\home\\data';
     if (fs.existsSync('D:\\home')) {
-        return path.join('D:\\home', 'data');
+        if (!fs.existsSync(azureWindowsPath)) {
+            fs.mkdirSync(azureWindowsPath, { recursive: true });
+        }
+        return azureWindowsPath;
     }
 
-    // Fallback lingkungan lokal (Komputer Anda)
-    // Akan menyimpan di samehadaku-scraper/data
-    return path.join(__dirname, '../../data');
+    // 3. Fallback lingkungan lokal (Komputer Anda)
+    const localPath = path.join(__dirname, '../../data');
+    if (!fs.existsSync(localPath)) {
+        fs.mkdirSync(localPath, { recursive: true });
+    }
+    return localPath;
 }
 
 module.exports = { getDataDir };
