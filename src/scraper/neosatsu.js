@@ -501,27 +501,32 @@ async function getNeosatsuEpisodes(targetUrl) {
                     // CLEAN EPISODE TITLE
                     let cleanTitle = epTitle;
                     
-                    if (judulSeri && judulSeri.length > 2) {
-                        const regexFranchise = new RegExp(judulSeri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-                        cleanTitle = cleanTitle.replace(regexFranchise, '').trim();
-                    }
+                    const isBatchMatch = cleanTitle.match(/Episode\s*\d+\s*(?:[\-\~]|s\/d|sampai|to)\s*\d+/i);
+                    if (isBatchMatch) {
+                        cleanTitle = judulSeri || 'Full Series';
+                    } else {
+                        if (judulSeri && judulSeri.length > 2) {
+                            const regexFranchise = new RegExp(judulSeri.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                            cleanTitle = cleanTitle.replace(regexFranchise, '').trim();
+                        }
 
-                    cleanTitle = cleanTitle.replace(/\s*(-|~)?\s*(Tamat|End|Subtitle Indonesia|Sub Indo|Subtitle|Indonesia)\s*/gi, '').trim();
+                        cleanTitle = cleanTitle.replace(/\s*(-|~)?\s*(Tamat|End|Subtitle Indonesia|Sub Indo|Subtitle|Indonesia)\s*/gi, '').trim();
 
-                    if (!isMovieOrSpecial) {
-                        const epMatch = cleanTitle.match(/Episode\s*\d+/i);
-                        if (epMatch) {
-                            cleanTitle = epMatch[0]; 
-                        } else {
-                            const numMatch = cleanTitle.match(/^\s*\d+\s*$/);
-                            if (numMatch) {
-                                cleanTitle = `Episode ${numMatch[0].trim()}`;
+                        if (!isMovieOrSpecial) {
+                            const epMatch = cleanTitle.match(/Episode\s*\d+/i);
+                            if (epMatch) {
+                                cleanTitle = epMatch[0]; 
+                            } else {
+                                const numMatch = cleanTitle.match(/^\s*\d+\s*$/);
+                                if (numMatch) {
+                                    cleanTitle = `Episode ${numMatch[0].trim()}`;
+                                }
                             }
                         }
-                    }
 
-                    cleanTitle = cleanTitle.replace(/^[\-\:\s]+|[\-\:\s]+$/g, '');
-                    if (!cleanTitle) cleanTitle = 'Episode ?';
+                        cleanTitle = cleanTitle.replace(/^[\-\:\s]+|[\-\:\s]+$/g, '');
+                        if (!cleanTitle) cleanTitle = 'Episode ?';
+                    }
 
                     epTitle = cleanTitle;
 
