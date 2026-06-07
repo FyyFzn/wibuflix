@@ -54,7 +54,8 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                             let finalTipe = tipe;
                             if (tLower.includes('special') || tLower.includes(' sp')) finalTipe = 'Special';
                             else if (tLower.includes('v-cinema') || tLower.includes('returns')) finalTipe = 'V-Cinema';
-                            if (tLower.includes('kamen rider') || tLower.includes('super sentai') || tLower.includes('ultraman')) {
+                            // Super Sentai jarang menggunakan kata "Super Sentai" di judulnya, biasanya hanya "Sentai" atau "Ranger"
+                            if (tLower.includes('kamen rider') || tLower.includes('sentai') || tLower.includes('ranger') || tLower.includes('ultraman') || tLower.includes('garo') || pUrl.includes('super-sentai')) {
                                 let endpoint = href;
                                 let status = 'Completed';
 
