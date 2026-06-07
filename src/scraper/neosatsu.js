@@ -414,7 +414,7 @@ async function getNeosatsuEpisodes(targetUrl) {
                 targetTitle = dataStr;
             }
 
-            judulSeri = targetTitle;
+            judulSeri = cleanTitle(targetTitle);
 
             if (label) {
                 feedUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(label)}?alt=json&max-results=500`;
