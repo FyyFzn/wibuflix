@@ -1,6 +1,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { OtakudesuInstance } = require('otakudesu-scraper');
+const { searchAnime, getAnimeEpisodes } = require('../api/jikan');
 
 const otaku = new OtakudesuInstance('https://otakudesu.blog');
 
@@ -30,18 +31,18 @@ async function getOtakuEpisodesFormatted(slug) {
     
     const finalTitle = details.name || fallbackTitle;
 
-    return {
+    const result = {
         judul: finalTitle,
         judul_seri: finalTitle, // Kompatibilitas frontend
         gambar: details.image || '',
         cover_scraper: details.image || '', // Kompatibilitas frontend
         sinopsis: details.synopsis || '',
-        genre: Array.isArray(details.details.genre) ? details.details.genre.join(', ') : (details.details.genre || ''),
-        rating: details.details.skor || '-',
-        tipe: details.details.tipe || '-',
-        status: details.details.status || 'Completed',
-        total_episode: details.details.total_episode || '?',
-        daftar_episode: details.episodes.map(ep => { // Kompatibilitas frontend
+        genre: Array.isArray(details.details?.genre) ? details.details.genre.join(', ') : (details.details?.genre || ''),
+        rating: details.details?.skor || '-',
+        tipe: details.details?.tipe || '-',
+        status: details.details?.status || 'Completed',
+        total_episode: details.details?.total_episode || '?',
+        daftar_episode: (details.episodes || []).map(ep => { // Kompatibilitas frontend
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
 
@@ -67,7 +68,7 @@ async function getOtakuEpisodesFormatted(slug) {
                 slug: epSlug
             };
         }),
-        episodes: details.episodes.map(ep => { // Original untuk kompatibilitas Web Lama
+        episodes: (details.episodes || []).map(ep => { // Original untuk kompatibilitas Web Lama
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
             return {
@@ -78,6 +79,55 @@ async function getOtakuEpisodesFormatted(slug) {
             };
         })
     };
+
+    // ── MAL Enrichment (Jikan API) ──
+    let mal = null;
+    let malEpisodeMap = {};
+
+    try {
+        console.log(`[Otakudesu-MAL] Mencari data untuk: "${finalTitle}"`);
+        mal = await searchAnime(finalTitle);
+
+        if (mal) {
+            console.log(`[Otakudesu-MAL] Ketemu: score=${mal.malScore}, genres=${mal.genres.join(', ')}`);
+            malEpisodeMap = await getAnimeEpisodes(mal.malId, mal.episodes);
+        } else {
+            console.log(`[Otakudesu-MAL] Tidak ditemukan untuk: "${finalTitle}"`);
+        }
+    } catch (e) {
+        console.warn(`[Otakudesu-MAL] Error:`, e.message);
+    }
+
+    // Inject judul MAL ke tiap episode
+    if (Object.keys(malEpisodeMap).length > 0) {
+        result.daftar_episode.forEach(ep => {
+            const match = ep.judul.match(/(?:episode|eps|ep)\s*(\d+)/i) || ep.judul.match(/(\d+)$/);
+            if (match) {
+                const num = String(parseInt(match[1], 10));
+                const malTitle = malEpisodeMap[num];
+                if (malTitle) ep.malJudul = malTitle;
+            }
+        });
+    }
+
+    // Tambahkan MAL object ke response
+    result.mal = mal ? {
+        malId:    mal.malId,
+        malUrl:   mal.malUrl,
+        malScore: mal.malScore,
+        malRank:  mal.malRank,
+        genres:   mal.genres,
+        synopsis: mal.synopsis,
+        episodes: mal.episodes,
+        status:   mal.status,
+        studios:  mal.studios,
+        year:     mal.year,
+        rating:   mal.rating,
+        cover:    mal.cover || result.cover_scraper,
+        coverWebp: mal.coverWebp || null,
+    } : null;
+
+    return result;
 }
 
 async function getServers(req, res) {
@@ -127,14 +177,18 @@ async function getServersInternal(url) {
                             timeout: 8000
                         });
 
-                        const directUrl = redRes.headers.location;
+                        let directUrl = redRes.headers.location;
+                        // Fallback: jika bukan redirect (status 200), gunakan URL aslinya
+                        if (!directUrl && redRes.status >= 200 && redRes.status < 300) {
+                            directUrl = href;
+                        }
                         if (directUrl) {
                             servers.push({
                                 nama: resText,
                                 namaHost: hostRaw,
                                 iframeUrl: directUrl, // URL yang sudah diresolve, akan dikirim ke client
                                 type: 'direct',
-                                aktif: servers.length === 0
+                                aktif: false
                             });
                         }
                     } catch (e) {
@@ -152,7 +206,14 @@ async function getServersInternal(url) {
         servers[0].aktif = true;
     }
 
-    const judul = $('.venutama h1.posttl').text().trim();
+    // Ambil judul raw dari halaman episode dan bersihkan
+    let judul = $('.venutama h1.posttl').text().trim();
+    if (judul) {
+        judul = judul.replace(/^Nonton\s+/i, '');
+        judul = judul.replace(/\s*Subtitle Indonesia$/i, '');
+        judul = judul.replace(/\s*Sub Indo$/i, '');
+        judul = judul.trim();
+    }
 
     // Parsing Prev / Next Navigation dari elemen HTML (Otakudesu class: flir)
     let nav_prev = null;
@@ -180,8 +241,19 @@ async function getServersInternal(url) {
 
 function extractEpisodeNumber(title) {
     if (!title) return null;
-    const match = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
-    return match ? parseFloat(match[1]) : null;
+    // Prioritas 1: Format standar (Episode/Eps/Ep diikuti angka)
+    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
+    if (stdMatch) return parseFloat(stdMatch[1]);
+
+    // Prioritas 2: Format OVA/Special (OVA 1, Special 3, dll.)
+    const ovaMatch = title.match(/(?:OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
+    if (ovaMatch) return parseFloat(ovaMatch[1]);
+
+    // Prioritas 3: Angka terakhir yang berdiri sendiri dalam judul (fallback)
+    const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    if (fallbackMatch) return parseFloat(fallbackMatch[1]);
+
+    return null;
 }
 
 async function getAlternativeServers(seriesTitle, episodeTitle) {
@@ -202,7 +274,7 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
             const itemTitle = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
             let matches = 0;
             for (const w of queryWords) {
-                if (w.length > 2 && itemTitle.includes(w)) matches++;
+                if (w.length > 2 && new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
             }
             if (matches > maxMatches) {
                 maxMatches = matches;
@@ -256,7 +328,11 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
                                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
                                 timeout: 8000
                             });
-                            const directUrl = redRes.headers.location;
+                            let directUrl = redRes.headers.location;
+                            // Fallback: jika bukan redirect (status 200), gunakan URL aslinya
+                            if (!directUrl && redRes.status >= 200 && redRes.status < 300) {
+                                directUrl = href;
+                            }
                             if (directUrl) {
                                 servers.push({
                                     nama: resText,
