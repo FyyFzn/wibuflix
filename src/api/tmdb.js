@@ -24,10 +24,10 @@ function normalizeTitle(title) {
 }
 
 /**
- * Mencari data Tokusatsu di TMDB berdasarkan judul.
+ * Mencari data Anime dan Tokusatsu di TMDB berdasarkan judul.
  * Mencari di kategori TV Shows, lalu mencari alternatif di Movies.
  */
-async function searchTokusatsu(title) {
+async function searchTMDB(title) {
     if (!title) return null;
     
     const cleanTitle = normalizeTitle(title);
@@ -66,15 +66,36 @@ async function searchTokusatsu(title) {
             // Overview/Synopsis
             const synopsis = item.overview || 'Sinopsis tidak tersedia di TMDB.';
             
-            // Status: (Membutuhkan request ke detail endpoint untuk status akurat TV, tapi kita abaikan untuk hemat limit)
-            // Akan kita set ke "Unknown" atau dari Jikan fallback.
+            let finalStatus = 'Unknown';
+            let finalType = url.includes('/search/tv') ? 'TV' : 'Movie';
+
+            try {
+                if (finalType === 'TV') {
+                    const detailRes = await axios.get(`${BASE_URL}/tv/${item.id}?api_key=${TMDB_API_KEY}`);
+                    if (detailRes.data.status === 'Ended' || detailRes.data.status === 'Canceled') {
+                        finalStatus = 'Completed';
+                    } else if (detailRes.data.status === 'Returning Series') {
+                        finalStatus = 'Ongoing';
+                    }
+                } else {
+                    const detailRes = await axios.get(`${BASE_URL}/movie/${item.id}?api_key=${TMDB_API_KEY}`);
+                    if (detailRes.data.status === 'Released') {
+                        finalStatus = 'Completed';
+                    } else if (detailRes.data.status === 'In Production' || detailRes.data.status === 'Post Production') {
+                        finalStatus = 'Ongoing';
+                    }
+                }
+            } catch (detailErr) {
+                console.warn(`[TMDB API] Gagal fetch detail untuk ${item.id}:`, detailErr.message);
+            }
             
             const result = {
                 title: item.name || item.title,
                 score: score,
                 image: image,
                 synopsis: synopsis,
-                status: 'Unknown',
+                status: finalStatus,
+                tipe: finalType,
                 source: 'TMDB'
             };
 
@@ -92,4 +113,4 @@ async function searchTokusatsu(title) {
     }
 }
 
-module.exports = { searchTokusatsu, normalizeTitle };
+module.exports = { searchTMDB, normalizeTitle };

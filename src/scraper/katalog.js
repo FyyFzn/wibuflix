@@ -5,12 +5,9 @@ const { loadLocalDatabase } = require('../sync/anime_sync');
 const { loadOtakuDatabase } = require('./otakudesu_sync');
 const fs = require('fs');
 const path = require('path');
-const { searchAnime } = require('../api/jikan');
-const { searchTokusatsu } = require('../api/tmdb');
-
+const { searchTMDB } = require('../api/tmdb');
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
-const jikanCache = new NodeCache({ stdTTL: 86400 }); // Jikan cache 24 jam
 
 async function getKatalog(pageParams, searchParam, typeFilter = '') {
     const isSearch = searchParam.trim() !== '';
@@ -53,29 +50,29 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             let finalQuery = query;
             let jikanHit = false;
             
-            // 1. Tanya Jikan API (Smart Alias)
-            const jikanCacheKey = `jikan_${query}`;
-            let jikanTitle = jikanCache.get(jikanCacheKey);
+            // 1. Tanya TMDB API (Smart Alias)
+            const tmdbCacheKey = `tmdb_alias_${query}`;
+            let tmdbTitle = cache.get(tmdbCacheKey);
             
-            if (!jikanTitle) {
+            if (!tmdbTitle) {
                 try {
-                    console.log(`[Jikan API] Mencari alias untuk: "${query}"`);
-                    const jikanRes = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`, { timeout: 10000 });
-                    if (jikanRes.data && jikanRes.data.data && jikanRes.data.data.length > 0) {
-                        jikanTitle = jikanRes.data.data[0].title.toLowerCase();
-                        jikanCache.set(jikanCacheKey, jikanTitle);
-                        console.log(`[Jikan API] Ditemukan judul asli: "${jikanTitle}"`);
+                    console.log(`[TMDB API] Mencari alias untuk: "${query}"`);
+                    const tmdbRes = await searchTMDB(query);
+                    if (tmdbRes && tmdbRes.title) {
+                        tmdbTitle = tmdbRes.title.toLowerCase();
+                        cache.set(tmdbCacheKey, tmdbTitle);
+                        console.log(`[TMDB API] Ditemukan judul asli: "${tmdbTitle}"`);
                     }
                 } catch (e) {
-                    console.error(`[Jikan API Error]`, e.message);
+                    console.error(`[TMDB API Error]`, e.message);
                 }
             } else {
-                console.log(`[Jikan Cache] Alias ditemukan: "${jikanTitle}"`);
+                console.log(`[TMDB Cache] Alias ditemukan: "${tmdbTitle}"`);
             }
             
-            if (jikanTitle) {
-                finalQuery = jikanTitle;
-                jikanHit = true;
+            if (tmdbTitle) {
+                finalQuery = tmdbTitle;
+                jikanHit = true; // Tetap gunakan variabel jikanHit untuk kompatibilitas logika fallback di bawah
             }
 
             // 2. Pencarian di Database Lokal Samehadaku (UTAMA)
@@ -117,28 +114,22 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                         }
                     }
 
-                    // Fallback ke Jikan API atau TMDB API
+                    // Gunakan API TMDB untuk mendapatkan info lengkap
                     let finalSkor = '-';
+                    let finalTipe = 'Anime';
+                    let finalStatus = '-';
+
                     if (!matchedImg) {
                         try {
-                            const titleLow = item.title.toLowerCase();
-                            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice', 'power rangers', 'project red', 'metal hero'].some(kw => titleLow.includes(kw));
-                            
-                            if (isToku) {
-                                const tmdbData = await searchTokusatsu(item.title);
-                                if (tmdbData && tmdbData.image) {
-                                    matchedImg = tmdbData.image;
-                                    finalSkor = tmdbData.score || '-';
-                                }
-                            } else {
-                                const jikanData = await searchAnime(item.title);
-                                if (jikanData && jikanData.cover) {
-                                    matchedImg = jikanData.cover;
-                                    finalSkor = jikanData.score || '-';
-                                }
+                            const tmdbData = await searchTMDB(item.title);
+                            if (tmdbData) {
+                                if (tmdbData.image) matchedImg = tmdbData.image;
+                                finalSkor = tmdbData.score || '-';
+                                finalTipe = tmdbData.tipe || 'Anime';
+                                finalStatus = tmdbData.status || '-';
                             }
                         } catch (e) {
-                            console.warn(`[Katalog-API] Gagal mengambil cover untuk ${item.title}:`, e.message);
+                            console.warn(`[Katalog-API] Gagal mengambil TMDB untuk ${item.title}:`, e.message);
                         }
                     }
 
@@ -150,9 +141,9 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                         url: `/anime/${item.id}`,
                         gambar: finalImg,
                         gambarScraper: finalImg,
-                        tipe: 'Otakudesu',
+                        tipe: finalTipe,
                         skor: finalSkor,
-                        status: '-',
+                        status: finalStatus,
                         id: item.id
                     });
                 }));
@@ -232,8 +223,13 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     
                     if (!matchedImg) {
                         try {
-                            const tmdbRes = await searchTokusatsu(item.judul);
-                            if (tmdbRes && tmdbRes.gambar) matchedImg = tmdbRes.gambar;
+                            const tmdbRes = await searchTMDB(item.judul);
+                            if (tmdbRes) {
+                                if (tmdbRes.image) matchedImg = tmdbRes.image;
+                                item.tipe = tmdbRes.tipe || 'Anime';
+                                item.status = tmdbRes.status || '-';
+                                if (item.skor === '?') item.skor = tmdbRes.score || '-';
+                            }
                         } catch(e) {}
                     }
                     
@@ -242,7 +238,8 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     if (item.skor === '?') {
                         item.skor = (Math.random() * (9.5 - 7.0) + 7.0).toFixed(2);
                     }
-                    return item;
+                    if (item.tipe === 'Otakudesu') item.tipe = 'Anime'; // Fallback jika TMDB gagal
+                    return fixAnimeType(item);
                 }));
 
                 const result = { 
@@ -383,4 +380,4 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
     }
 }
 
-module.exports = { getKatalog, cache, jikanCache };
+module.exports = { getKatalog, cache };
