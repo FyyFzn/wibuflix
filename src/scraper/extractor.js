@@ -488,7 +488,7 @@ async function extractVideoUrl(embedUrl, req) {
                     console.log(`[Acefile] Ditemukan ${mirrorArr.length} mirror`);
                     
                     for (const m of mirrorArr) {
-                        const localUrl = \`https://acefile.co/local/\${m.v}?key=\${m.J}\`;
+                        const localUrl = `https://acefile.co/local/${m.v}?key=${m.J}`;
                         try {
                             const { data: localHtml } = await axios.get(localUrl, {
                                 timeout: 10000,
@@ -501,7 +501,7 @@ async function extractVideoUrl(embedUrl, req) {
                                 const sources = JSON.parse(decoded);
                                 if (sources.length > 0) {
                                     const serviceUrl = 'https://acefile.co' + sources[0].file;
-                                    console.log(\`[Acefile] Menelusuri redirect: \${serviceUrl}\`);
+                                    console.log(`[Acefile] Menelusuri redirect: ${serviceUrl}`);
                                     
                                     const redirectRes = await axios.get(serviceUrl, {
                                         maxRedirects: 0,
@@ -514,7 +514,7 @@ async function extractVideoUrl(embedUrl, req) {
                                     
                                     if (redirectRes.status === 307 || redirectRes.status === 302) {
                                         const directUrl = redirectRes.headers.location;
-                                        console.log(\`[Acefile] Direct URL ditemukan: \${directUrl.substring(0, 50)}...\`);
+                                        console.log(`[Acefile] Direct URL ditemukan: ${directUrl.substring(0, 50)}...`);
                                         return {
                                             url: directUrl,
                                             headers: { 'User-Agent': 'Mozilla/5.0' }
@@ -523,13 +523,13 @@ async function extractVideoUrl(embedUrl, req) {
                                 }
                             }
                         } catch(e) {
-                            console.log(\`[Acefile] Mirror error: \${e.message}\`);
+                            console.log(`[Acefile] Mirror error: ${e.message}`);
                         }
                     }
                 }
             }
         } catch (e) {
-            console.log(\`[Acefile] Axios gagal: \${e.message}, fallback ke WebView\`);
+            console.log(`[Acefile] Axios gagal: ${e.message}, fallback ke WebView`);
         }
         return null;
     }
