@@ -5,6 +5,7 @@ const { loadLocalDatabase } = require('../sync/anime_sync');
 const { loadOtakuDatabase } = require('./otakudesu_sync');
 const fs = require('fs');
 const path = require('path');
+const { searchAnime } = require('../api/jikan');
 
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
@@ -82,7 +83,7 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                 otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
             }
 
-            const otakuFormatted = otakuResults.map(item => {
+            const otakuFormatted = await Promise.all(otakuResults.map(async item => {
                 // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
                 let matchedImg = '';
                 if (localDb && localDb.length > 0) {
@@ -93,6 +94,18 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                             matchedImg = s.gambar;
                             break;
                         }
+                    }
+                }
+
+                // Fallback ke Jikan API jika gambar tidak ada di DB lokal
+                if (!matchedImg) {
+                    try {
+                        const jikanData = await searchAnime(item.title);
+                        if (jikanData && jikanData.cover) {
+                            matchedImg = jikanData.cover;
+                        }
+                    } catch (e) {
+                        console.warn(`[Katalog-Jikan] Gagal mengambil cover untuk ${item.title}:`, e.message);
                     }
                 }
 
@@ -109,7 +122,7 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     status: '-',
                     id: item.id
                 });
-            });
+            }));
 
             let localResults = otakuFormatted;
 

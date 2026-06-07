@@ -27,9 +27,26 @@ async function getOtakuEpisodesFormatted(slug) {
     const { loadOtakuDatabase } = require('./otakudesu_sync');
     const otakuDb = loadOtakuDatabase();
     const found = otakuDb.find(item => item.slug === slug || item.id === `otakudesu:${slug}`);
-    const fallbackTitle = found ? found.title : slug;
+    let fallbackTitle = found ? found.title : slug;
     
-    const finalTitle = details.name || fallbackTitle;
+    // Bersihkan teks status dari judul database (misal: "Anime Title On-Going")
+    fallbackTitle = fallbackTitle.replace(/\s*on-going\s*$/i, '').replace(/\s*completed\s*$/i, '').replace(/\"/g, '').trim();
+    
+    let finalTitle = details.name;
+
+    // Jika library mengembalikan slug, paksa gunakan fallbackTitle
+    if (!finalTitle || finalTitle.toLowerCase() === slug.toLowerCase() || finalTitle.includes('-sub-indo')) {
+        finalTitle = fallbackTitle;
+    }
+
+    // Terakhir, jika entah bagaimana masih berformat slug, percantik secara otomatis:
+    if (finalTitle === slug) {
+        finalTitle = finalTitle.split('-')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ')
+            .replace(/Sub Indo/i, '')
+            .trim();
+    }
 
     const result = {
         judul: finalTitle,
