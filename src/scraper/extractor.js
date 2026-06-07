@@ -441,7 +441,7 @@ async function extractVideoUrl(embedUrl, req) {
     }
 
     // ── 2. Bypass Cepat untuk Server WebView-Only (Mencegah Timeout 25 Detik) ──
-    const webviewOnlyHosts = ['mega.nz', 'mirrorupload', 'acefile', 'gofile'];
+    const webviewOnlyHosts = ['mega.nz', 'mirrorupload', 'gofile'];
     if (webviewOnlyHosts.some(h => embedUrl.toLowerCase().includes(h))) {
         console.log(`[WebView-Only] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
         return null; // Akan langsung memicu fallback WebView di frontend secara instan
@@ -462,6 +462,76 @@ async function extractVideoUrl(embedUrl, req) {
                 }
             };
         }
+    }
+
+    // ── Handler Acefile (Fast Extractor) ────────────────
+    if (embedUrl.includes('acefile')) {
+        const axios = require('axios');
+        try {
+            console.log(`[Acefile] Mengekstrak: ${embedUrl}`);
+            const { data: html } = await axios.get(embedUrl, {
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            });
+            
+            const evalRegex = /eval\(function\(p,a,c,k,e,d\).*?\)\)/s;
+            const match = html.match(evalRegex);
+            if (match) {
+                let evalCode = match[0];
+                let unpacked = '';
+                evalCode = evalCode.replace(/^eval/, 'unpacked = ');
+                eval(evalCode);
+                
+                const mirrorMatch = unpacked.match(/\[\{"v":".*?\}\]/);
+                if (mirrorMatch) {
+                    const mirrorArr = JSON.parse(mirrorMatch[0]);
+                    console.log(`[Acefile] Ditemukan ${mirrorArr.length} mirror`);
+                    
+                    for (const m of mirrorArr) {
+                        const localUrl = \`https://acefile.co/local/\${m.v}?key=\${m.J}\`;
+                        try {
+                            const { data: localHtml } = await axios.get(localUrl, {
+                                timeout: 10000,
+                                headers: { 'User-Agent': 'Mozilla/5.0' }
+                            });
+                            
+                            const sourceMatch = localHtml.match(/sources:\s*JSON\.parse\(atob\("([^"]+)"\)\)/);
+                            if (sourceMatch) {
+                                const decoded = Buffer.from(sourceMatch[1], 'base64').toString('utf8');
+                                const sources = JSON.parse(decoded);
+                                if (sources.length > 0) {
+                                    const serviceUrl = 'https://acefile.co' + sources[0].file;
+                                    console.log(\`[Acefile] Menelusuri redirect: \${serviceUrl}\`);
+                                    
+                                    const redirectRes = await axios.get(serviceUrl, {
+                                        maxRedirects: 0,
+                                        validateStatus: null,
+                                        headers: { 
+                                            'User-Agent': 'Mozilla/5.0',
+                                            'Referer': 'https://acefile.co/'
+                                        }
+                                    });
+                                    
+                                    if (redirectRes.status === 307 || redirectRes.status === 302) {
+                                        const directUrl = redirectRes.headers.location;
+                                        console.log(\`[Acefile] Direct URL ditemukan: \${directUrl.substring(0, 50)}...\`);
+                                        return {
+                                            url: directUrl,
+                                            headers: { 'User-Agent': 'Mozilla/5.0' }
+                                        };
+                                    }
+                                }
+                            }
+                        } catch(e) {
+                            console.log(\`[Acefile] Mirror error: \${e.message}\`);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.log(\`[Acefile] Axios gagal: \${e.message}, fallback ke WebView\`);
+        }
+        return null;
     }
 
     // ── Handler khusus Blogger / Google Video ────────────────
