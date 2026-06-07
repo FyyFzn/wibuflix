@@ -2,9 +2,10 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
+const { getDataDir } = require('../utils/pathUtils');
 
-// Hardcode path yang kebal terhadap perbedaan Environment Azure
-const DB_PATH = path.join(__dirname, '../../data', 'otakudesu_db.json');
+// Gunakan path dari utility
+const DB_PATH = path.join(getDataDir(), 'otakudesu_db.json');
 
 const log = (...args) => {
     if (global.forceLog) {

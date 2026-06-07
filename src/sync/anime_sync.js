@@ -2,9 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
+const { getDataDir } = require('../utils/pathUtils');
 
-// Hardcode path yang kebal terhadap perbedaan Environment Azure
-const DB_PATH = path.join(__dirname, '../../data', 'anime_db.json');
+// Gunakan path dari utility
+const DB_PATH = path.join(getDataDir(), 'anime_db.json');
 let isSyncing = false;
 
 const log = (...args) => {

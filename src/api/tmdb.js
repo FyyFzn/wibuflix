@@ -2,10 +2,11 @@ const axios = require('axios');
 const NodeCache = require('node-cache');
 const fs = require('fs');
 const path = require('path');
+const { getDataDir } = require('../utils/pathUtils');
 
 // TMDB API Cache (24 hours)
 const tmdbCache = new NodeCache({ stdTTL: 86400 });
-const CACHE_FILE = path.join(__dirname, '../../data/tmdb_cache.json');
+const CACHE_FILE = path.join(getDataDir(), 'tmdb_cache.json');
 
 // Muat cache dari disk jika ada
 if (fs.existsSync(CACHE_FILE)) {

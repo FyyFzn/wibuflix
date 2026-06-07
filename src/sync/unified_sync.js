@@ -3,8 +3,9 @@ const path = require('path');
 const { loadLocalDatabase } = require('./anime_sync');
 const { loadOtakuDatabase } = require('../scraper/otakudesu_sync');
 const { searchTMDB, saveTMDBCache } = require('../api/tmdb');
+const { getDataDir } = require('../utils/pathUtils');
 
-const DB_PATH = path.join(__dirname, '../../data', 'unified_db.json');
+const DB_PATH = path.join(getDataDir(), 'unified_db.json');
 
 const log = (...args) => {
     if (global.forceLog) {
@@ -30,7 +31,18 @@ async function syncUnified() {
             // Jeda agar tidak terkena rate limit TMDB (jika tidak dari cache)
             await new Promise(r => setTimeout(r, 50)); 
             
-            const unifiedKey = tmdbData ? tmdbData.title.toLowerCase() : item.judul.toLowerCase();
+            // Smart Season Detector: Pisahkan S1, S2, dsb. agar tidak tergabung oleh TMDB
+            const originalTitle = item.judul.toLowerCase();
+            let suffix = "";
+            const sMatch = originalTitle.match(/season\s*(\d+)/) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/);
+            if (sMatch) suffix = ` s${sMatch[1]}`;
+            const pMatch = originalTitle.match(/part\s*(\d+)/);
+            if (pMatch) suffix += ` p${pMatch[1]}`;
+            if (originalTitle.includes('ova')) suffix += ` ova`;
+            if (originalTitle.includes('movie')) suffix += ` movie`;
+
+            const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
+            const unifiedKey = baseKey + suffix;
             
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
@@ -63,7 +75,18 @@ async function syncUnified() {
             
             await new Promise(r => setTimeout(r, 50));
             
-            const unifiedKey = tmdbData ? tmdbData.title.toLowerCase() : item.title.toLowerCase();
+            // Smart Season Detector: Pisahkan S1, S2, dsb. agar tidak tergabung oleh TMDB
+            const originalTitle = item.title.toLowerCase();
+            let suffix = "";
+            const sMatch = originalTitle.match(/season\s*(\d+)/) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/);
+            if (sMatch) suffix = ` s${sMatch[1]}`;
+            const pMatch = originalTitle.match(/part\s*(\d+)/);
+            if (pMatch) suffix += ` p${pMatch[1]}`;
+            if (originalTitle.includes('ova')) suffix += ` ova`;
+            if (originalTitle.includes('movie')) suffix += ` movie`;
+
+            const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
+            const unifiedKey = baseKey + suffix;
             
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
