@@ -213,5 +213,6 @@ function loadLocalDatabase() {
 
 module.exports = {
     startBackgroundAnimeSync,
-    loadLocalDatabase
+    loadLocalDatabase,
+    runSync
 };
