@@ -45,8 +45,8 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                     $('a').each((i, el) => {
                         const href = $(el).attr('href');
                         let title = $(el).attr('title') || $(el).text().trim();
-                        // Bersihkan kata "Batch" agar TMDB bisa menemukannya
-                        title = title.replace(/\s*Batch\b/gi, '').trim();
+                        // Bersihkan kata "Batch", "(Batch)", "[Batch]", "BD Batch" agar TMDB bisa menemukannya
+                        title = title.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '').trim();
                         let img = $(el).find('img').attr('src') || 'https://i.imgur.com/KxJ4L6J.jpeg'; // Default Neosatsu logo if text link
 
                         if (href && title && href !== 'javascript:void(0)' && title.length > 5) {
@@ -119,7 +119,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                             }
 
                             if (title && linkObj) {
-                                let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').replace(/\s*Batch\b/gi, '').trim();
+                                let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '').trim();
                                 
                                 // Deteksi Special / V-Cinema dari judul jika feed tipe bukan Movie
                                 let finalTipe = feed.tipe;
@@ -248,7 +248,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                             }
                         }
 
-                        let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').replace(/\s*Batch\b/gi, '').trim();
+                        let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '').trim();
 
                         let seriesLabel = '';
                         if (entry.category) {

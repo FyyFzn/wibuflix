@@ -86,12 +86,13 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             
             let localResults = samehadakuResults.map(fixAnimeType);
 
-            // 3. Fallback ke Database Lokal Otakudesu JIKA Samehadaku kosong
-            if (localResults.length === 0) {
-                let otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(finalQuery));
-                if (otakuResults.length === 0 && jikanHit && query !== finalQuery) {
-                    otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
-                }
+            // 3. Pencarian di Database Lokal Otakudesu (DIGABUNG)
+            let otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(finalQuery));
+            if (otakuResults.length === 0 && jikanHit && query !== finalQuery) {
+                otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
+            }
+
+            if (otakuResults.length > 0) {
 
                 const otakuFormatted = await Promise.all(otakuResults.map(async item => {
                     // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
@@ -146,7 +147,8 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                         id: item.id
                     });
                 }));
-                localResults = otakuFormatted;
+                // Gabungkan hasil Samehadaku dan Otakudesu
+                localResults = [...localResults, ...otakuFormatted];
             }
 
             if (typeFilter) {
