@@ -176,14 +176,16 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                 } else if (fLow === 'super sentai') {
                     localResults = localResults.filter(item => {
                         const t = item.title.toLowerCase();
-                        return t.includes('sentai') || t.includes('ranger');
+                        return t.includes('sentai') && !t.includes('power ranger');
                     });
+                } else if (fLow === 'power rangers') {
+                    localResults = localResults.filter(item => item.title.toLowerCase().includes('power ranger'));
                 } else if (fLow === 'ultraman') {
                     localResults = localResults.filter(item => item.title.toLowerCase().includes('ultraman'));
                 } else if (fLow === 'lainnya') {
                     localResults = localResults.filter(item => {
                         const t = item.title.toLowerCase();
-                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('ranger') && !t.includes('ultraman');
+                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('power ranger') && !t.includes('ultraman');
                     });
                 } else {
                     localResults = localResults.filter(item => item.tipe.toLowerCase() === fLow);
@@ -289,14 +291,16 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                 } else if (fLow === 'super sentai') {
                     finalAnimeList = finalAnimeList.filter(item => {
                         const t = item.title.toLowerCase();
-                        return t.includes('sentai') || t.includes('ranger');
+                        return t.includes('sentai') && !t.includes('power ranger');
                     });
+                } else if (fLow === 'power rangers') {
+                    finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('power ranger'));
                 } else if (fLow === 'ultraman') {
                     finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('ultraman'));
                 } else if (fLow === 'lainnya') {
                     finalAnimeList = finalAnimeList.filter(item => {
                         const t = item.title.toLowerCase();
-                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('ranger') && !t.includes('ultraman');
+                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('power ranger') && !t.includes('ultraman');
                     });
                 } else {
                     finalAnimeList = finalAnimeList.filter(item => item.tipe.toLowerCase() === fLow);
@@ -327,14 +331,16 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                 } else if (fLow === 'super sentai') {
                     browseDb = browseDb.filter(item => {
                         const t = item.title.toLowerCase();
-                        return t.includes('sentai') || t.includes('ranger');
+                        return t.includes('sentai') && !t.includes('power ranger');
                     });
+                } else if (fLow === 'power rangers') {
+                    browseDb = browseDb.filter(item => item.title.toLowerCase().includes('power ranger'));
                 } else if (fLow === 'ultraman') {
                     browseDb = browseDb.filter(item => item.title.toLowerCase().includes('ultraman'));
                 } else if (fLow === 'lainnya') {
                     browseDb = browseDb.filter(item => {
                         const t = item.title.toLowerCase();
-                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('ranger') && !t.includes('ultraman');
+                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('power ranger') && !t.includes('ultraman');
                     });
                 } else {
                     browseDb = browseDb.filter(item => item.tipe.toLowerCase() === fLow);
