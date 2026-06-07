@@ -15,6 +15,36 @@ const log = (...args) => {
     }
 };
 
+function extractTitleAndSuffix(rawTitle) {
+    const originalTitle = rawTitle.toLowerCase();
+    let suffix = "";
+    let cleanTitle = rawTitle;
+
+    const sMatch = originalTitle.match(/season\s*(\d+)/i) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/i);
+    if (sMatch) {
+        suffix = ` s${sMatch[1]}`;
+        cleanTitle = cleanTitle.replace(new RegExp(sMatch[0], 'i'), '').trim();
+    }
+    const pMatch = originalTitle.match(/part\s*(\d+)/i);
+    if (pMatch) {
+        suffix += ` p${pMatch[1]}`;
+        cleanTitle = cleanTitle.replace(new RegExp(pMatch[0], 'i'), '').trim();
+    }
+    if (originalTitle.includes('ova')) {
+        suffix += ` ova`;
+        cleanTitle = cleanTitle.replace(/ova/i, '').trim();
+    }
+    if (originalTitle.includes('movie')) {
+        suffix += ` movie`;
+        cleanTitle = cleanTitle.replace(/movie/i, '').trim();
+    }
+    
+    // Clean up trailing dashes or colons
+    cleanTitle = cleanTitle.replace(/[-:]\s*$/, '').trim();
+
+    return { cleanTitle, suffix, originalTitle };
+}
+
 async function syncUnified() {
     log('[UnifiedSync] Memulai pembuatan Unified Database...');
     try {
@@ -26,21 +56,14 @@ async function syncUnified() {
         log(`[UnifiedSync] Memproses ${samehadakuDb.length} data Samehadaku...`);
         for (let i = 0; i < samehadakuDb.length; i++) {
             const item = samehadakuDb[i];
-            const tmdbData = await searchTMDB(item.judul);
+            const { cleanTitle, suffix, originalTitle } = extractTitleAndSuffix(item.judul);
+            
+            // Cari TMDB menggunakan judul bersih tanpa tulisan "Season X"
+            const tmdbData = await searchTMDB(cleanTitle);
             
             // Jeda agar tidak terkena rate limit TMDB (jika tidak dari cache)
             await new Promise(r => setTimeout(r, 50)); 
             
-            // Smart Season Detector: Pisahkan S1, S2, dsb. agar tidak tergabung oleh TMDB
-            const originalTitle = item.judul.toLowerCase();
-            let suffix = "";
-            const sMatch = originalTitle.match(/season\s*(\d+)/) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/);
-            if (sMatch) suffix = ` s${sMatch[1]}`;
-            const pMatch = originalTitle.match(/part\s*(\d+)/);
-            if (pMatch) suffix += ` p${pMatch[1]}`;
-            if (originalTitle.includes('ova')) suffix += ` ova`;
-            if (originalTitle.includes('movie')) suffix += ` movie`;
-
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
             const unifiedKey = baseKey + suffix;
             
@@ -71,20 +94,12 @@ async function syncUnified() {
         log(`[UnifiedSync] Memproses ${otakuDb.length} data Otakudesu...`);
         for (let i = 0; i < otakuDb.length; i++) {
             const item = otakuDb[i];
-            const tmdbData = await searchTMDB(item.title);
+            const { cleanTitle, suffix, originalTitle } = extractTitleAndSuffix(item.title);
+            
+            const tmdbData = await searchTMDB(cleanTitle);
             
             await new Promise(r => setTimeout(r, 50));
             
-            // Smart Season Detector: Pisahkan S1, S2, dsb. agar tidak tergabung oleh TMDB
-            const originalTitle = item.title.toLowerCase();
-            let suffix = "";
-            const sMatch = originalTitle.match(/season\s*(\d+)/) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/);
-            if (sMatch) suffix = ` s${sMatch[1]}`;
-            const pMatch = originalTitle.match(/part\s*(\d+)/);
-            if (pMatch) suffix += ` p${pMatch[1]}`;
-            if (originalTitle.includes('ova')) suffix += ` ova`;
-            if (originalTitle.includes('movie')) suffix += ` movie`;
-
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
             const unifiedKey = baseKey + suffix;
             
