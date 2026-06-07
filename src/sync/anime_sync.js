@@ -177,6 +177,9 @@ async function runSync(isInitial = false) {
             global.anime_db_cache = allAnime;
             
             try {
+                const dbDir = path.dirname(DB_PATH);
+                if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+                
                 fs.writeFileSync(DB_PATH, JSON.stringify(allAnime, null, 2));
                 log(`[Anime Sync] SUKSES! Tersimpan ${allAnime.length} anime ke database lokal.`);
             } catch (fsErr) {
