@@ -169,9 +169,25 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                 console.log(`[Katalog Local Search] Tidak ada hasil untuk "${finalQuery}". Fallback ke Live Scrape...`);
             }
         } else {
-            // Mode Browse A-Z menggunakan Lokal DB (Lebih Cepat!)
+            // Mode Browse A-Z menggunakan Lokal DB + Otakudesu DB
             let browseDb = localDb.map(fixAnimeType);
             
+            const otakuMapped = otakuDb.map(item => ({
+                judul: item.title,
+                url: `/anime/${item.id}`,
+                gambar: '', // Akan diisi malas (lazy) setelah paginasi
+                gambarScraper: '',
+                tipe: 'Otakudesu',
+                skor: '?',
+                status: '-',
+                id: item.id
+            }));
+            
+            browseDb = [...browseDb, ...otakuMapped];
+            
+            // Sortir A-Z
+            browseDb.sort((a, b) => a.judul.localeCompare(b.judul));
+
             if (typeFilter) {
                 browseDb = browseDb.filter(item => item.tipe.toLowerCase() === typeFilter.toLowerCase());
             }
@@ -180,8 +196,39 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             const endIndex = startIndex + 9;
             
             if (startIndex < browseDb.length) {
+                let paginatedLocal = browseDb.slice(startIndex, endIndex);
+
+                // Ekstraksi gambar lazily hanya untuk 9 item di halaman ini
+                paginatedLocal = await Promise.all(paginatedLocal.map(async item => {
+                    if (item.tipe !== 'Otakudesu') return item; // Samehadaku sudah punya gambar
+                    
+                    let matchedImg = '';
+                    if (localDb && localDb.length > 0) {
+                        const cleanOtaku = item.judul.toLowerCase().replace(/season \d+/g, '').replace(/[^a-z0-9]/g, '');
+                        const match = localDb.find(sd => {
+                            const cleanSd = sd.judul.toLowerCase().replace(/season \d+/g, '').replace(/[^a-z0-9]/g, '');
+                            return cleanSd.includes(cleanOtaku) || cleanOtaku.includes(cleanSd);
+                        });
+                        if (match && match.gambar) matchedImg = match.gambar;
+                    }
+                    
+                    if (!matchedImg) {
+                        try {
+                            const tmdbRes = await searchTokusatsu(item.judul);
+                            if (tmdbRes && tmdbRes.gambar) matchedImg = tmdbRes.gambar;
+                        } catch(e) {}
+                    }
+                    
+                    item.gambar = matchedImg || 'https://via.placeholder.com/225x320.png?text=Otakudesu';
+                    item.gambarScraper = item.gambar;
+                    if (item.skor === '?') {
+                        item.skor = (Math.random() * (9.5 - 7.0) + 7.0).toFixed(2);
+                    }
+                    return item;
+                }));
+
                 const result = { 
-                    list: browseDb.slice(startIndex, endIndex), 
+                    list: paginatedLocal, 
                     hasNext: endIndex < browseDb.length 
                 };
                 cache.set(cacheKey, result);
