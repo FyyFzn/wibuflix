@@ -521,16 +521,16 @@ async function extractVideoUrl(embedUrl, req) {
                             timeout: 5000 
                         });
                         
-                        if (checkRes.status === 403) {
-                            console.log(`[Acefile] Rute cepat 403 Forbidden (Rate Limited). Menunggu 1 detik untuk retry...`);
+                        if (checkRes.status >= 400) {
+                            console.log(`[Acefile] Rute cepat error ${checkRes.status}. Menunggu 1 detik untuk retry...`);
                             await new Promise(r => setTimeout(r, 1000));
                             const checkRes2 = await axios.get(finalUrl, { 
                                 headers: { Range: 'bytes=0-0' },
                                 validateStatus: () => true,
                                 timeout: 5000 
                             });
-                            if (checkRes2.status === 403) {
-                                console.log(`[Acefile] Rute cepat TETAP 403. Mencoba rute lambat (Local Mirror)...`);
+                            if (checkRes2.status >= 400) {
+                                console.log(`[Acefile] Rute cepat TETAP error ${checkRes2.status}. Mencoba rute lambat (Local Mirror)...`);
                             } else {
                                 console.log(`[Acefile] Retry Health Check Lulus! Menggunakan rute cepat.`);
                                 return {

@@ -181,7 +181,16 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             // Mode Browse A-Z menggunakan Lokal DB + Otakudesu DB
             let browseDb = localDb.map(fixAnimeType);
             
-            const otakuMapped = otakuDb.map(item => ({
+            const otakuFiltered = otakuDb.filter(item => {
+                const oTitle = item.title.toLowerCase();
+                const isDuplicate = localDb.some(s => {
+                    const sTitle = s.judul.toLowerCase();
+                    return sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5);
+                });
+                return !isDuplicate;
+            });
+            
+            const otakuMapped = otakuFiltered.map(item => ({
                 judul: item.title,
                 url: `/anime/${item.id}`,
                 gambar: '', // Akan diisi malas (lazy) setelah paginasi
