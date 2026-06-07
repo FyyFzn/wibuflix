@@ -127,6 +127,9 @@ app.get('/api/scrape', async (req, res) => {
             const urlParam = new URL('http://localhost' + targetUrl).searchParams.get('url');
             if (urlParam) {
                 data = await otakudesu.getServersInternal(urlParam);
+                if (data && data.servers) {
+                    data.servers = data.servers.map(s => ({ ...s, source: 'Otakudesu' }));
+                }
             }
         }
 

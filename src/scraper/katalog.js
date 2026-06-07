@@ -77,62 +77,62 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                 jikanHit = true;
             }
 
-            // 2. Pencarian di Database Lokal Otakudesu (UTAMA)
-            let otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(finalQuery));
-            if (otakuResults.length === 0 && jikanHit && query !== finalQuery) {
-                otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
+            // 2. Pencarian di Database Lokal Samehadaku (UTAMA)
+            let samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(finalQuery));
+            if (samehadakuResults.length === 0 && jikanHit && query !== finalQuery) {
+                samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(query));
             }
+            
+            let localResults = samehadakuResults.map(fixAnimeType);
 
-            const otakuFormatted = await Promise.all(otakuResults.map(async item => {
-                // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
-                let matchedImg = '';
-                if (localDb && localDb.length > 0) {
-                    for (const s of localDb) {
-                        const sTitle = s.judul.toLowerCase();
-                        const oTitle = item.title.toLowerCase();
-                        if (sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5)) {
-                            matchedImg = s.gambar;
-                            break;
-                        }
-                    }
-                }
-
-                // Fallback ke Jikan API jika gambar tidak ada di DB lokal
-                if (!matchedImg) {
-                    try {
-                        const jikanData = await searchAnime(item.title);
-                        if (jikanData && jikanData.cover) {
-                            matchedImg = jikanData.cover;
-                        }
-                    } catch (e) {
-                        console.warn(`[Katalog-Jikan] Gagal mengambil cover untuk ${item.title}:`, e.message);
-                    }
-                }
-
-                // Gunakan placeholder modern jika gambar tidak ditemukan
-                const finalImg = matchedImg || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image';
-
-                return fixAnimeType({
-                    judul: item.title,
-                    url: `/anime/${item.id}`,
-                    gambar: finalImg,
-                    gambarScraper: finalImg,
-                    tipe: 'Otakudesu',
-                    skor: '-',
-                    status: '-',
-                    id: item.id
-                });
-            }));
-
-            let localResults = otakuFormatted;
-
-            // 3. Fallback ke Database Lokal Samehadaku JIKA Otakudesu kosong
+            // 3. Fallback ke Database Lokal Otakudesu JIKA Samehadaku kosong
             if (localResults.length === 0) {
-                let samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(finalQuery));
-                if (samehadakuResults.length === 0 && jikanHit && query !== finalQuery) {
-                    samehadakuResults = localDb.filter(item => item.judul.toLowerCase().includes(query));
+                let otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(finalQuery));
+                if (otakuResults.length === 0 && jikanHit && query !== finalQuery) {
+                    otakuResults = otakuDb.filter(item => item.title.toLowerCase().includes(query));
                 }
-                localResults = samehadakuResults.map(fixAnimeType);
+
+                const otakuFormatted = await Promise.all(otakuResults.map(async item => {
+                    // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
+                    let matchedImg = '';
+                    if (localDb && localDb.length > 0) {
+                        for (const s of localDb) {
+                            const sTitle = s.judul.toLowerCase();
+                            const oTitle = item.title.toLowerCase();
+                            if (sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5)) {
+                                matchedImg = s.gambar;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Fallback ke Jikan API jika gambar tidak ada di DB lokal
+                    if (!matchedImg) {
+                        try {
+                            const jikanData = await searchAnime(item.title);
+                            if (jikanData && jikanData.cover) {
+                                matchedImg = jikanData.cover;
+                            }
+                        } catch (e) {
+                            console.warn(`[Katalog-Jikan] Gagal mengambil cover untuk ${item.title}:`, e.message);
+                        }
+                    }
+
+                    // Gunakan placeholder modern jika gambar tidak ditemukan
+                    const finalImg = matchedImg || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image';
+
+                    return fixAnimeType({
+                        judul: item.title,
+                        url: `/anime/${item.id}`,
+                        gambar: finalImg,
+                        gambarScraper: finalImg,
+                        tipe: 'Otakudesu',
+                        skor: '-',
+                        status: '-',
+                        id: item.id
+                    });
+                }));
+                localResults = otakuFormatted;
             }
 
             if (typeFilter) {
