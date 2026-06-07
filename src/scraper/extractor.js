@@ -604,7 +604,10 @@ async function extractVideoUrl(embedUrl, req) {
         } catch (e) {
             console.log(`[Acefile] Axios gagal: ${e.message}, fallback ke WebView`);
         }
-        return null;
+        return {
+            url: embedUrl,
+            webviewOnly: true
+        };
     }
 
     // ── Handler khusus Blogger / Google Video ────────────────

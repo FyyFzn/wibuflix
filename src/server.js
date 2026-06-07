@@ -214,7 +214,8 @@ app.get('/api/extract-video', async (req, res) => {
         res.json({
             success: true,
             url: finalUrl,
-            headers: data?.headers || undefined
+            headers: data?.headers || undefined,
+            webviewOnly: data?.webviewOnly || false
         });
     } catch (err) {
         console.error(`[Extractor Error] URL: ${embedUrl} | STACK:`, err.stack);
