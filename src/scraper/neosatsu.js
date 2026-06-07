@@ -28,7 +28,8 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                 'https://www.neosatsu.com/p/super-sentai-series.html',
                 'https://www.neosatsu.com/p/super-sentai-movie.html',
                 'https://www.neosatsu.com/p/ultraman-series.html',
-                'https://www.neosatsu.com/p/ultraman-movie.html'
+                'https://www.neosatsu.com/p/ultraman-movie.html',
+                'https://www.neosatsu.com/p/power-rangers-series.html'
             ];
 
             const uniqueCheck = new Set();
@@ -88,6 +89,68 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                     });
                 } catch (e) {
                     console.error(`[Neosatsu Scraper] Failed to fetch static page ${pUrl}: ${e.message}`);
+                }
+            }
+
+            // 1.5 Fetch dari JSON Feed untuk Label tertentu (Project RED, Toku Lain, Movie)
+            const labelFeeds = [
+                { label: 'Project RED', tipe: 'Series' },
+                { label: 'Toku Lain', tipe: 'Series' },
+                { label: 'Movie', tipe: 'Movie' }
+            ];
+
+            for (const feed of labelFeeds) {
+                try {
+                    console.log(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
+                    const fUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
+                    const { data } = await axios.get(fUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+                    
+                    if (data && data.feed && data.feed.entry) {
+                        data.feed.entry.forEach(entry => {
+                            let title = entry.title.$t;
+                            const linkObj = entry.link.find(l => l.rel === 'alternate');
+                            let thumb = '';
+                            if (entry.media$thumbnail) {
+                                thumb = entry.media$thumbnail.url.replace(/\/s\d+-c\//, '/s1600/');
+                            } else {
+                                thumb = 'https://i.imgur.com/KxJ4L6J.jpeg';
+                            }
+
+                            if (title && linkObj) {
+                                let baseTitle = title.replace(/Subtitle Indonesia.*$/i, '').replace(/Episode.*$/i, '').trim();
+                                
+                                // Deteksi Special / V-Cinema dari judul jika feed tipe bukan Movie
+                                let finalTipe = feed.tipe;
+                                const tLower = baseTitle.toLowerCase();
+                                if (finalTipe !== 'Movie') {
+                                    if (tLower.includes('movie')) finalTipe = 'Movie';
+                                    else if (tLower.includes('special') || tLower.includes(' sp')) finalTipe = 'Special';
+                                    else if (tLower.includes('v-cinema') || tLower.includes('returns')) finalTipe = 'V-Cinema';
+                                }
+
+                                let endpoint = linkObj.href;
+                                let status = 'Completed';
+                                if (tLower.includes('episode') && !tLower.includes('end') && !tLower.includes('batch')) {
+                                    status = 'Ongoing';
+                                }
+
+                                // Cek deduplikasi: jika URL sudah ada di halaman statis, diabaikan
+                                if (!uniqueCheck.has(endpoint)) {
+                                    uniqueCheck.add(endpoint);
+                                    staticAnimeList.push({
+                                        title: baseTitle,
+                                        endpoint: endpoint,
+                                        thumb: thumb,
+                                        tipe: finalTipe,
+                                        skor: '-',
+                                        status: status
+                                    });
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error(`[Neosatsu Scraper] Failed to fetch JSON feed for ${feed.label}: ${e.message}`);
                 }
             }
 

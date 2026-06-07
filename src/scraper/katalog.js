@@ -112,7 +112,7 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
                     if (!matchedImg) {
                         try {
                             const titleLow = item.title.toLowerCase();
-                            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice'].some(kw => titleLow.includes(kw));
+                            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice', 'power rangers', 'project red', 'metal hero'].some(kw => titleLow.includes(kw));
                             
                             if (isToku) {
                                 const tmdbData = await searchTokusatsu(item.title);

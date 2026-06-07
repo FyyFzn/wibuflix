@@ -71,7 +71,7 @@ async function getEpisodes(targetUrl) {
 
         try {
             const titleLow = result.judul_seri.toLowerCase();
-            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice'].some(kw => titleLow.includes(kw));
+            const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice', 'power rangers', 'project red', 'metal hero'].some(kw => titleLow.includes(kw));
 
             if (isToku) {
                 console.log(`[TMDB] Mencari data untuk Tokusatsu: "${result.judul_seri}"`);

@@ -103,14 +103,33 @@ async function getOtakuEpisodesFormatted(slug) {
     let malEpisodeMap = {};
 
     try {
-        console.log(`[Otakudesu-MAL] Mencari data untuk: "${finalTitle}"`);
-        mal = await searchAnime(finalTitle);
+        const titleLow = finalTitle.toLowerCase();
+        const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice', 'power rangers', 'project red', 'metal hero'].some(kw => titleLow.includes(kw));
 
-        if (mal) {
-            console.log(`[Otakudesu-MAL] Ketemu: score=${mal.malScore}, genres=${mal.genres.join(', ')}`);
-            malEpisodeMap = await getAnimeEpisodes(mal.malId, mal.episodes);
+        if (isToku) {
+            console.log(`[TMDB] Mencari metadata untuk: "${finalTitle}"`);
+            const tmdbData = await searchTokusatsu(finalTitle);
+            if (tmdbData) {
+                console.log(`[TMDB] Ketemu: score=${tmdbData.score}`);
+                mal = {
+                    malScore: tmdbData.score,
+                    synopsis: tmdbData.synopsis,
+                    cover: tmdbData.image || details.thumb,
+                    status: tmdbData.status || 'Unknown',
+                    genres: ['Tokusatsu'],
+                    source: 'TMDB'
+                };
+            }
         } else {
-            console.log(`[Otakudesu-MAL] Tidak ditemukan untuk: "${finalTitle}"`);
+            console.log(`[Otakudesu-MAL] Mencari data untuk: "${finalTitle}"`);
+            mal = await searchAnime(finalTitle);
+
+            if (mal) {
+                console.log(`[Otakudesu-MAL] Ketemu: score=${mal.malScore}, genres=${mal.genres.join(', ')}`);
+                malEpisodeMap = await getAnimeEpisodes(mal.malId, mal.episodes);
+            } else {
+                console.log(`[Otakudesu-MAL] Tidak ditemukan untuk: "${finalTitle}"`);
+            }
         }
     } catch (e) {
         console.warn(`[Otakudesu-MAL] Error:`, e.message);
