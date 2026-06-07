@@ -67,13 +67,23 @@ async function searchJikan(cleanTitle) {
         const results = response.data.data;
         if (results && results.length > 0) {
             const item = results[0];
+            
+            const aliases = [];
+            if (item.title) aliases.push(item.title);
+            if (item.title_english) aliases.push(item.title_english);
+            if (item.title_japanese) aliases.push(item.title_japanese);
+            if (item.title_synonyms && Array.isArray(item.title_synonyms)) {
+                aliases.push(...item.title_synonyms);
+            }
+
             return {
                 title: item.title_english || item.title, // Prioritaskan judul bahasa Inggris untuk konsistensi
                 image: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
                 score: item.score ? item.score.toString() : '-',
                 synopsis: item.synopsis || 'Sinopsis tidak tersedia di Jikan.',
                 status: item.status === 'Finished Airing' ? 'Completed' : (item.status === 'Currently Airing' ? 'Ongoing' : 'Unknown'),
-                type: item.type || 'Anime'
+                type: item.type || 'Anime',
+                aliases: [...new Set(aliases.filter(Boolean))]
             };
         }
         return null;
@@ -114,6 +124,12 @@ async function searchTMDB(title) {
             // Ambil hasil pertama yang paling relevan
             const item = results[0];
             
+            const aliases = [];
+            if (item.name) aliases.push(item.name);
+            if (item.original_name) aliases.push(item.original_name);
+            if (item.title) aliases.push(item.title);
+            if (item.original_title) aliases.push(item.original_title);
+            
             // Format skor: TMDB scale is 0-10, Jikan is 0-10
             const score = item.vote_average ? item.vote_average.toFixed(2) : '-';
             
@@ -127,6 +143,9 @@ async function searchTMDB(title) {
                     const jikanFallback = await searchJikan(cleanTitle);
                     if (jikanFallback && jikanFallback.image) {
                         image = jikanFallback.image;
+                    }
+                    if (jikanFallback && jikanFallback.aliases) {
+                        aliases.push(...jikanFallback.aliases);
                     }
                 } catch(e) {}
             }
@@ -162,6 +181,7 @@ async function searchTMDB(title) {
                 synopsis,
                 status: finalStatus,
                 tipe: finalType,
+                aliases: [...new Set(aliases.filter(Boolean))],
                 source: 'TMDB'
             };
 
@@ -194,4 +214,4 @@ async function searchTMDB(title) {
     }
 }
 
-module.exports = { searchTMDB, normalizeTitle, saveTMDBCache };
+module.exports = { searchTMDB, searchTokusatsu: searchTMDB, normalizeTitle, saveTMDBCache };

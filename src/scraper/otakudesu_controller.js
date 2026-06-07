@@ -60,7 +60,14 @@ async function getOtakuEpisodesFormatted(slug) {
         tipe: details.details?.tipe || '-',
         status: details.details?.status || 'Completed',
         total_episode: details.details?.total_episode || '?',
-        daftar_episode: (details.episodes || []).map(ep => { // Kompatibilitas frontend
+        daftar_episode: (details.episodes && details.episodes.length > 0 ? details.episodes : [{
+            title: finalTitle || 'Full Movie / Episode Spesial',
+            url: `https://otakudesu.blog/episode/${slug}/`,
+            date: '-'
+        }]).filter((ep, index, self) => {
+            if (ep.title.toLowerCase().includes('batch')) return false;
+            return index === self.findIndex((t) => t.url === ep.url);
+        }).map(ep => { // Kompatibilitas frontend
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
 
@@ -86,7 +93,10 @@ async function getOtakuEpisodesFormatted(slug) {
                 slug: epSlug
             };
         }),
-        episodes: (details.episodes || []).map(ep => { // Original untuk kompatibilitas Web Lama
+        episodes: (details.episodes || []).filter((ep, index, self) => {
+            if (ep.title.toLowerCase().includes('batch')) return false;
+            return index === self.findIndex((t) => t.url === ep.url);
+        }).map(ep => { // Original untuk kompatibilitas Web Lama
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
             return {

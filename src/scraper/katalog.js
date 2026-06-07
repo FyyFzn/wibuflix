@@ -30,7 +30,13 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
         // 1. Pencarian
         if (isSearch) {
             const query = searchParam.toLowerCase().trim();
-            results = results.filter(item => item.title.toLowerCase().includes(query));
+            results = results.filter(item => {
+                if (item.title.toLowerCase().includes(query)) return true;
+                if (item.aliases && Array.isArray(item.aliases)) {
+                    return item.aliases.some(alias => alias.toLowerCase().includes(query));
+                }
+                return false;
+            });
         }
 
         // 2. Filter Tipe

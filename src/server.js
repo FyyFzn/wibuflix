@@ -124,6 +124,7 @@ app.get('/api/episodes', async (req, res) => {
             // Masukkan data Samehadaku
             if (sameRes && sameRes.daftar_episode) {
                 sameRes.daftar_episode.forEach(ep => {
+                    if (ep.judul.toLowerCase().includes('batch')) return;
                     const num = extractEpNum(ep.judul);
                     epMap.set(num, {
                         judul: ep.judul, // Pakai judul Samehadaku sbg default
@@ -136,6 +137,7 @@ app.get('/api/episodes', async (req, res) => {
             // Gabungkan/Tambahkan data Otakudesu
             if (otakuRes && otakuRes.daftar_episode) {
                 otakuRes.daftar_episode.forEach(ep => {
+                    if (ep.judul.toLowerCase().includes('batch')) return;
                     const num = extractEpNum(ep.judul);
                     if (epMap.has(num)) {
                         const existing = epMap.get(num);

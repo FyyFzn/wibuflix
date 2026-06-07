@@ -51,17 +51,46 @@ async function getEpisodes(targetUrl) {
             $('meta[property="og:image"]').attr('content') ||
             $('.thumb img, .thumbook img').attr('src') || '';
 
-        $('.lstepsiode ul li, .episodelist ul li').each((_, el) => {
+        const seenUrls = new Set();
+        $('.lstepsiode ul li, .episodelist ul li, .listeps ul li').each((_, el) => {
             const epLink = $(el).find('.epsleft a, a').first();
             const epDate = $(el).find('.epsright, .date').first();
             if (epLink.length && epLink.attr('href')) {
-                daftar_episode.push({
-                    judul: epLink.text().trim(),
-                    url: epLink.attr('href'),
-                    tanggal: epDate.length ? epDate.text().trim() : '',
-                });
+                const title = epLink.text().trim();
+                const url = epLink.attr('href');
+                
+                // Abaikan episode batch
+                if (title.toLowerCase().includes('batch')) return;
+                
+                if (!seenUrls.has(url)) {
+                    seenUrls.add(url);
+                    daftar_episode.push({
+                        judul: title,
+                        url: url,
+                        tanggal: epDate.length ? epDate.text().trim() : ''
+                    });
+                }
             }
         });
+
+        // Fallback untuk Movie/Spesial (jika daftar episode kosong, tetapi ada tombol download)
+        if (daftar_episode.length === 0) {
+            const downloadLink = $('.download-eps a, .dl-box a, .soraddlx a').first();
+            if (downloadLink.length && downloadLink.attr('href')) {
+                daftar_episode.push({
+                    judul: rawTitle || 'Full Movie / Episode Spesial',
+                    url: targetUrl, // Kirim URL saat ini, server akan parsing iframenya
+                    tanggal: '-',
+                });
+            } else if ($('.player-area iframe, #player iframe, .pd-expand iframe').length > 0) {
+                // Ada iframe video langsung
+                daftar_episode.push({
+                    judul: rawTitle || 'Full Movie / Episode Spesial',
+                    url: targetUrl,
+                    tanggal: '-',
+                });
+            }
+        }
 
         const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
 

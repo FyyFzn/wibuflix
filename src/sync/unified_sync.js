@@ -67,13 +67,17 @@ async function syncUnified() {
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
             const unifiedKey = baseKey + suffix;
             
+            const finalTitle = tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.judul;
+            const finalImage = (suffix && item.gambar) ? item.gambar : ((tmdbData && tmdbData.image) ? tmdbData.image : item.gambar);
+
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
-                    title: tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.judul,
-                    image: (tmdbData && tmdbData.image) ? tmdbData.image : item.gambar,
+                    title: finalTitle,
+                    image: finalImage,
                     score: tmdbData ? tmdbData.score : (item.skor || '-'),
                     type: tmdbData ? tmdbData.type : (item.tipe || 'Anime'),
                     status: tmdbData ? tmdbData.status : (item.status || '-'),
+                    aliases: tmdbData && tmdbData.aliases ? tmdbData.aliases : [],
                     sources: {
                         samehadaku: {
                             url: item.url,
@@ -103,13 +107,17 @@ async function syncUnified() {
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
             const unifiedKey = baseKey + suffix;
             
+            const finalTitle = tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.title;
+            const finalImage = (suffix && item.gambar) ? item.gambar : ((tmdbData && tmdbData.image) ? tmdbData.image : (item.gambar || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image'));
+
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
-                    title: tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.title,
-                    image: (tmdbData && tmdbData.image) ? tmdbData.image : (item.gambar || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image'),
+                    title: finalTitle,
+                    image: finalImage,
                     score: tmdbData ? tmdbData.score : '-',
                     type: tmdbData ? tmdbData.type : 'Anime',
                     status: tmdbData ? tmdbData.status : '-',
+                    aliases: tmdbData && tmdbData.aliases ? tmdbData.aliases : [],
                     sources: {
                         otakudesu: {
                             url: item.url,
