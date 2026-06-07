@@ -243,7 +243,7 @@ async function getServersInternal(url) {
     const uniqueServers = [];
     const seenServers = new Set();
     for (const s of servers) {
-        const key = `${s.nama}-${s.namaHost}-${s.iframeUrl}`;
+        const key = `${s.nama}-${s.namaHost}`;
         if (!seenServers.has(key)) {
             seenServers.add(key);
             uniqueServers.push(s);

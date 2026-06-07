@@ -93,6 +93,15 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
             }
 
             if (otakuResults.length > 0) {
+                // Filter silang: Abaikan hasil Otakudesu jika anime tersebut sudah ada di Samehadaku
+                otakuResults = otakuResults.filter(item => {
+                    const oTitle = item.title.toLowerCase();
+                    const isDuplicate = samehadakuResults.some(s => {
+                        const sTitle = s.judul.toLowerCase();
+                        return sTitle === oTitle || (oTitle.includes(sTitle) && sTitle.length > 5) || (sTitle.includes(oTitle) && oTitle.length > 5);
+                    });
+                    return !isDuplicate;
+                });
 
                 const otakuFormatted = await Promise.all(otakuResults.map(async item => {
                     // Smart Image Matching: Pinjam gambar dari Samehadaku DB jika judulnya mirip
