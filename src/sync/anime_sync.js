@@ -3,12 +3,8 @@ const path = require('path');
 const cheerio = require('cheerio');
 const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
 
-// Gunakan direktori yang persisten
-const isAzure = !!process.env.WEBSITE_SITE_NAME;
-const azureHome = process.env.HOME_EXPANDED || process.env.HOME || '/home';
-const DB_PATH = isAzure 
-    ? path.join(azureHome, 'data', 'anime_db.json') 
-    : path.join(process.cwd(), 'data', 'anime_db.json');
+// Hardcode path yang kebal terhadap perbedaan Environment Azure
+const DB_PATH = path.join(__dirname, '../../data', 'anime_db.json');
 let isSyncing = false;
 
 const log = (...args) => {

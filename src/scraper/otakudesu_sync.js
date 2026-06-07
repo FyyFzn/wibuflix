@@ -3,11 +3,8 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
 
-const isAzure = !!process.env.WEBSITE_SITE_NAME;
-const azureHome = process.env.HOME_EXPANDED || process.env.HOME || '/home';
-const DB_PATH = isAzure 
-    ? path.join(azureHome, 'data', 'otakudesu_db.json') 
-    : path.join(process.cwd(), 'data', 'otakudesu_db.json');
+// Hardcode path yang kebal terhadap perbedaan Environment Azure
+const DB_PATH = path.join(__dirname, '../../data', 'otakudesu_db.json');
 
 const log = (...args) => {
     if (global.forceLog) {
