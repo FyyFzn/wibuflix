@@ -82,31 +82,35 @@ async function initPagePool() {
     poolReady = true;
     const browser = await getBrowser();
     
-    // Init regular pool
-    for (let i = 0; i < PAGE_POOL_SIZE; i++) {
-        const page = await buatPageBaru(browser);
-        try {
-            await page.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await tungguCF(page);
-            console.log(`[PagePool] Page ${i + 1} siap`);
-        } catch (e) {
-            console.warn(`[PagePool] Warm-up page ${i + 1} gagal:`, e.message);
-        }
-        pagePool.push({ page, busy: false, type: 'regular' });
+    // ── Fase 1: Warm-up 1 page untuk bypass Cloudflare ──
+    // Cookie cf_clearance akan tersimpan di browser instance dan di-share ke semua tab
+    const firstPage = await buatPageBaru(browser);
+    try {
+        console.log(`[PagePool] Warming up CF cookie...`);
+        await firstPage.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await tungguCF(firstPage);
+        console.log(`[PagePool] CF cookie berhasil didapat ✓`);
+    } catch (e) {
+        console.warn(`[PagePool] CF warm-up gagal (akan dicoba ulang saat request):`, e.message);
     }
+    pagePool.push({ page: firstPage, busy: false, type: 'regular' });
 
-    // Init extractor pool
-    for (let i = 0; i < EXTRACTOR_POOL_SIZE; i++) {
-        const page = await buatPageExtractor(browser);
-        try {
-            await page.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await tungguCF(page);
-            console.log(`[ExtractorPool] Page ${i + 1} siap`);
-        } catch (e) {
-            console.warn(`[ExtractorPool] Warm-up page ${i + 1} gagal:`, e.message);
-        }
-        extractorPool.push({ page, busy: false, type: 'extractor' });
+    // ── Fase 2: Buat sisa page tanpa navigasi (cookie CF sudah di-share) ──
+    const remainingPages = [];
+    for (let i = 1; i < PAGE_POOL_SIZE; i++) {
+        remainingPages.push(buatPageBaru(browser).then(page => {
+            pagePool.push({ page, busy: false, type: 'regular' });
+            console.log(`[PagePool] Page ${i + 1} siap`);
+        }));
     }
+    for (let i = 0; i < EXTRACTOR_POOL_SIZE; i++) {
+        remainingPages.push(buatPageExtractor(browser).then(page => {
+            extractorPool.push({ page, busy: false, type: 'extractor' });
+            console.log(`[ExtractorPool] Page ${i + 1} siap`);
+        }));
+    }
+    await Promise.all(remainingPages);
+    console.log(`[Pool] Semua ${PAGE_POOL_SIZE + EXTRACTOR_POOL_SIZE} page siap ✓`);
 }
 
 async function ambilDariPool() {
