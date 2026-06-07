@@ -83,8 +83,20 @@ function loadOtakuDatabase() {
 }
 
 function startBackgroundOtakuSync() {
-    // Jalankan segera saat start
-    syncOtakudesu();
+    let shouldSyncNow = true;
+    if (fs.existsSync(DB_PATH)) {
+        const stats = fs.statSync(DB_PATH);
+        const ageInMs = Date.now() - stats.mtimeMs;
+        const sixHours = 6 * 60 * 60 * 1000;
+        if (ageInMs < sixHours) {
+            shouldSyncNow = false;
+            log(`[OtakuSync] Database masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
+        }
+    }
+
+    if (shouldSyncNow) {
+        syncOtakudesu();
+    }
 
     // Jalankan ulang setiap 6 jam
     setInterval(() => {

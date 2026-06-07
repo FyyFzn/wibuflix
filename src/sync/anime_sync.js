@@ -26,9 +26,16 @@ async function startBackgroundAnimeSync() {
         log("[Anime Sync] Database lokal tidak ditemukan. Memulai sinkronisasi awal...");
         runSync(true); // true = initial sync (don't block server startup)
     } else {
-        log("[Anime Sync] Database ditemukan. Menjalankan sinkronisasi pembaruan di latar belakang (Delay 1 menit)...");
-        // Tunggu 1 menit sebelum sync agar tidak memberatkan CPU saat startup
-        setTimeout(() => runSync(false), 60000);
+        const stats = fs.statSync(DB_PATH);
+        const ageInMs = Date.now() - stats.mtimeMs;
+        const twelveHours = 12 * 60 * 60 * 1000;
+        
+        if (ageInMs > twelveHours) {
+            log(`[Anime Sync] Database sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan (Delay 1 menit)...`);
+            setTimeout(() => runSync(false), 60000);
+        } else {
+            log(`[Anime Sync] Database masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
+        }
     }
 
     // Schedule every 12 hours (43200000 ms)
