@@ -16,16 +16,20 @@ const log = (...args) => {
 };
 
 function extractTitleAndSuffix(rawTitle) {
+    // Normalisasi kurung jepang ke kurung siku biasa agar lebih seragam
+    rawTitle = rawTitle.replace(/【/g, '[').replace(/】/g, ']');
     const originalTitle = rawTitle.toLowerCase();
     let suffix = "";
     let cleanTitle = rawTitle;
 
-    const sMatch = originalTitle.match(/season\s*(\d+)/i) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/i);
+    // Tambahkan deteksi \bs\s*(\d+)\b untuk mendeteksi "S2", "S3"
+    const sMatch = originalTitle.match(/season\s*(\d+)/i) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || originalTitle.match(/\bs\s*(\d+)\b/i);
     if (sMatch) {
         suffix = ` s${sMatch[1]}`;
         cleanTitle = cleanTitle.replace(new RegExp(sMatch[0], 'i'), '').trim();
     }
-    const pMatch = originalTitle.match(/part\s*(\d+)/i);
+    // Tambahkan deteksi \bp\s*(\d+)\b untuk mendeteksi "P2", "Part 2"
+    const pMatch = originalTitle.match(/part\s*(\d+)/i) || originalTitle.match(/\bp\s*(\d+)\b/i);
     if (pMatch) {
         suffix += ` p${pMatch[1]}`;
         cleanTitle = cleanTitle.replace(new RegExp(pMatch[0], 'i'), '').trim();
@@ -61,14 +65,16 @@ async function syncUnified() {
             // Cari TMDB menggunakan judul bersih tanpa tulisan "Season X"
             const tmdbData = await searchTMDB(cleanTitle);
             
-            // Jeda agar tidak terkena rate limit TMDB (jika tidak dari cache)
-            await new Promise(r => setTimeout(r, 50)); 
-            
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
             const unifiedKey = baseKey + suffix;
             
             const finalTitle = tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.judul;
             const finalImage = (suffix && item.gambar) ? item.gambar : ((tmdbData && tmdbData.image) ? tmdbData.image : item.gambar);
+
+            let finalAliases = tmdbData && tmdbData.aliases ? [...tmdbData.aliases] : [];
+            if (item.judul) finalAliases.push(item.judul);
+            if (cleanTitle) finalAliases.push(cleanTitle);
+            finalAliases = [...new Set(finalAliases.filter(Boolean))];
 
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
@@ -77,7 +83,7 @@ async function syncUnified() {
                     score: tmdbData ? tmdbData.score : (item.skor || '-'),
                     type: tmdbData ? tmdbData.type : (item.tipe || 'Anime'),
                     status: tmdbData ? tmdbData.status : (item.status || '-'),
-                    aliases: tmdbData && tmdbData.aliases ? tmdbData.aliases : [],
+                    aliases: finalAliases,
                     sources: {
                         samehadaku: {
                             url: item.url,
@@ -102,13 +108,11 @@ async function syncUnified() {
             
             const tmdbData = await searchTMDB(cleanTitle);
             
-            await new Promise(r => setTimeout(r, 50));
-            
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
             let unifiedKey = baseKey + suffix;
             
             // FUZZY MATCH FALLBACK (Bug Fix Card Kosong)
-            // Jika pencarian TMDB gagal, dan exact match key tidak ada, cari yang mirip > 80%
+            // Jika pencarian TMDB gagal, dan exact match key tidak ada, cari yang mirip > 70%
             if (!tmdbData && !unifiedMap.has(unifiedKey)) {
                 const existingKeys = Array.from(unifiedMap.keys());
                 if (existingKeys.length > 0) {
@@ -117,7 +121,7 @@ async function syncUnified() {
                     if (sameSuffixKeys.length > 0) {
                         const stringSimilarity = require('string-similarity');
                         const matches = stringSimilarity.findBestMatch(unifiedKey, sameSuffixKeys);
-                        if (matches.bestMatch.rating > 0.8) {
+                        if (matches.bestMatch.rating > 0.7) {
                             unifiedKey = matches.bestMatch.target;
                             log(`[UnifiedSync] Merged by fuzzy match: "${originalTitle}" -> "${unifiedKey}" (${(matches.bestMatch.rating*100).toFixed(1)}%)`);
                         }
@@ -128,6 +132,11 @@ async function syncUnified() {
             const finalTitle = tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.title;
             const finalImage = (suffix && item.gambar) ? item.gambar : ((tmdbData && tmdbData.image) ? tmdbData.image : (item.gambar || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image'));
 
+            let finalAliases = tmdbData && tmdbData.aliases ? [...tmdbData.aliases] : [];
+            if (item.title) finalAliases.push(item.title);
+            if (cleanTitle) finalAliases.push(cleanTitle);
+            finalAliases = [...new Set(finalAliases.filter(Boolean))];
+
             if (!unifiedMap.has(unifiedKey)) {
                 unifiedMap.set(unifiedKey, {
                     title: finalTitle,
@@ -135,7 +144,7 @@ async function syncUnified() {
                     score: tmdbData ? tmdbData.score : '-',
                     type: tmdbData ? tmdbData.type : 'Anime',
                     status: tmdbData ? tmdbData.status : '-',
-                    aliases: tmdbData && tmdbData.aliases ? tmdbData.aliases : [],
+                    aliases: finalAliases,
                     sources: {
                         otakudesu: {
                             url: item.url,

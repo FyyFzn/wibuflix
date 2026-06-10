@@ -42,19 +42,23 @@ function saveTMDBCache() {
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '13e71c6778f9fd4a2f67ff77238002df';
 const BASE_URL = 'https://api.themoviedb.org/3';
 
+function isJapanese(text) {
+    return /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
+}
+
 /**
  * Normalisasi judul untuk mempermudah pencarian.
  */
 function normalizeTitle(title) {
     if (!title) return '';
     let t = title.toLowerCase();
-    // Hapus tag seperti [Batch], (BD), dll
-    t = t.replace(/\[.*?\]|\(.*?\)/g, '');
-    // Hapus embel-embel umum
-    t = t.replace(/subtitle indonesia|sub indo/gi, '');
+    // Hapus embel-embel umum tanpa menghapus isi di dalamnya (kasus [Oshi No Ko])
+    t = t.replace(/subtitle indonesia|sub indo|batch|bd/gi, '');
+    // Ganti kurung menjadi spasi agar isinya tetap bisa dicari TMDB
+    t = t.replace(/[\[\]【】()]/g, ' ');
     // Hapus season
     t = t.replace(/season \d+|s\d+/gi, '');
-    return t.trim();
+    return t.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -69,11 +73,13 @@ async function searchJikan(cleanTitle) {
             const item = results[0];
             
             const aliases = [];
-            if (item.title) aliases.push(item.title);
-            if (item.title_english) aliases.push(item.title_english);
-            if (item.title_japanese) aliases.push(item.title_japanese);
+            const addAlias = (val) => { if (val && !isJapanese(val)) aliases.push(val); };
+            
+            addAlias(item.title);
+            addAlias(item.title_english);
+            addAlias(item.title_japanese); // Will be skipped by isJapanese
             if (item.title_synonyms && Array.isArray(item.title_synonyms)) {
-                aliases.push(...item.title_synonyms);
+                item.title_synonyms.forEach(addAlias);
             }
 
             return {
@@ -107,6 +113,9 @@ async function searchTMDB(title) {
     const cached = tmdbCache.get(cacheKey);
     if (cached !== undefined) return cached; // Returns null if previously not found
 
+    // Beri jeda HANYA jika tidak ada di cache (mencegah rate limit TMDB)
+    await new Promise(r => setTimeout(r, 50));
+
     try {
         // Coba cari di TV Shows terlebih dahulu
         let url = `${BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}&language=en-US&page=1`;
@@ -125,10 +134,12 @@ async function searchTMDB(title) {
             const item = results[0];
             
             const aliases = [];
-            if (item.name) aliases.push(item.name);
-            if (item.original_name) aliases.push(item.original_name);
-            if (item.title) aliases.push(item.title);
-            if (item.original_title) aliases.push(item.original_title);
+            const addAlias = (val) => { if (val && !isJapanese(val)) aliases.push(val); };
+            
+            addAlias(item.name);
+            addAlias(item.original_name);
+            addAlias(item.title);
+            addAlias(item.original_title);
             
             // Format skor: TMDB scale is 0-10, Jikan is 0-10
             const score = item.vote_average ? item.vote_average.toFixed(2) : '-';
