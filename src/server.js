@@ -227,9 +227,15 @@ app.get('/api/scrape', async (req, res) => {
 
         // --- MULTIPLE URLS SCENARIO ---
         if (urlsObj && urlsObj.samehadaku && urlsObj.otakudesu) {
+            // urlsObj.otakudesu is often in the format: /api/otakudesu/servers?url=https...
+            let realOtakuUrl = urlsObj.otakudesu;
+            if (realOtakuUrl.startsWith('/api/otakudesu/servers')) {
+                realOtakuUrl = new URL('http://localhost' + realOtakuUrl).searchParams.get('url') || realOtakuUrl;
+            }
+
             const [sameRes, otakuRes] = await Promise.all([
                 scrapeVideoServers(urlsObj.samehadaku).catch(() => null),
-                otakudesu.getServersInternal(urlsObj.otakudesu).catch(() => null)
+                otakudesu.getServersInternal(realOtakuUrl).catch(() => null)
             ]);
             
             if (sameRes) {
