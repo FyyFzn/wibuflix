@@ -65,6 +65,8 @@ function normalizeTitle(title) {
  * Fallback pencarian ke Jikan API (MyAnimeList)
  */
 async function searchJikan(cleanTitle) {
+    // Beri jeda 1 detik khusus untuk Jikan agar tidak terkena limit (maks 3 req/detik)
+    await new Promise(r => setTimeout(r, 1000));
     try {
         const url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(cleanTitle)}&limit=1`;
         const response = await axios.get(url, { timeout: 10000 });
