@@ -117,8 +117,8 @@ app.get('/api/episodes', async (req, res) => {
             const epMap = new Map();
             
             const extractEpNum = (title) => {
-                const match = title.match(/(?:episode|ep|eps)\s*0*(\d+)/i) || title.match(/0*(\d+)/);
-                return match ? parseInt(match[1]) : title;
+                const match = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i) || title.match(/0*(\d+(?:\.\d+)?)/);
+                return match ? parseFloat(match[1]) : title;
             };
 
             // Masukkan data Samehadaku

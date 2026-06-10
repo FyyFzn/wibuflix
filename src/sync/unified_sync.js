@@ -105,7 +105,25 @@ async function syncUnified() {
             await new Promise(r => setTimeout(r, 50));
             
             const baseKey = tmdbData ? tmdbData.title.toLowerCase() : originalTitle;
-            const unifiedKey = baseKey + suffix;
+            let unifiedKey = baseKey + suffix;
+            
+            // FUZZY MATCH FALLBACK (Bug Fix Card Kosong)
+            // Jika pencarian TMDB gagal, dan exact match key tidak ada, cari yang mirip > 80%
+            if (!tmdbData && !unifiedMap.has(unifiedKey)) {
+                const existingKeys = Array.from(unifiedMap.keys());
+                if (existingKeys.length > 0) {
+                    // Hanya bandingkan dengan kunci yang memiliki suffix yang sama agar tidak salah merge beda season
+                    const sameSuffixKeys = existingKeys.filter(k => k.endsWith(suffix));
+                    if (sameSuffixKeys.length > 0) {
+                        const stringSimilarity = require('string-similarity');
+                        const matches = stringSimilarity.findBestMatch(unifiedKey, sameSuffixKeys);
+                        if (matches.bestMatch.rating > 0.8) {
+                            unifiedKey = matches.bestMatch.target;
+                            log(`[UnifiedSync] Merged by fuzzy match: "${originalTitle}" -> "${unifiedKey}" (${(matches.bestMatch.rating*100).toFixed(1)}%)`);
+                        }
+                    }
+                }
+            }
             
             const finalTitle = tmdbData ? (tmdbData.title + (suffix ? ' ' + suffix.trim().toUpperCase() : '')) : item.title;
             const finalImage = (suffix && item.gambar) ? item.gambar : ((tmdbData && tmdbData.image) ? tmdbData.image : (item.gambar || 'https://placehold.co/300x450/1a1a2e/ffffff?text=No+Image'));
@@ -132,6 +150,10 @@ async function syncUnified() {
                     url: item.url,
                     id: item.id
                 };
+                // Timpa gambar jika saat ini masih menggunakan placeholder / kosong
+                if ((!existing.image || existing.image.includes('placehold.co')) && item.gambar) {
+                    existing.image = item.gambar;
+                }
             }
         }
         
