@@ -47,12 +47,9 @@ RUN npm ci --omit=dev
 COPY src/ ./src/
 COPY index.js ./
 COPY server-prod.js ./
-COPY css/ ./css/
-COPY js/ ./js/
-COPY index.html ./
 # Copy local databases to avoid starting from zero
 COPY jikan_cache.json ./
-COPY data/ ./data/
+RUN mkdir -p data
 
 # Expose port
 EXPOSE 3000
