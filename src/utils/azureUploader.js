@@ -46,7 +46,7 @@ async function ensureContainerExists() {
             access: 'blob'
         });
         isContainerInitialized = true;
-        console.log(`[Azure Uploader] Container "${containerName}" is ready.`);
+        console.info(`[Azure Uploader] Container "${containerName}" is ready.`);
     } catch (err) {
         console.error(`[Azure Uploader] Failed to ensure container exists:`, err.message);
     }
@@ -104,7 +104,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
     await ensureContainerExists();
     uploadCache.set(blobPath, 'UPLOADING');
-    console.log(`[Azure Uploader] Starting upload for ${blobPath} from ${videoUrl}`);
+    console.info(`[Azure Uploader] Starting upload for ${blobPath} from ${videoUrl}`);
 
     // Run the upload in background
     (async () => {
@@ -138,17 +138,17 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 }
             );
 
-            console.log(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
+            console.info(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
         } catch (err) {
-            console.error(`[Azure Uploader] Failed to upload ${blobPath}:`, err.message);
+            console.error(`[Azure Uploader] Failed to upload ${blobPath} from URL ${videoUrl}:`, err.message);
             uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes
             
             // Cleanup partial upload if it exists
             try {
                 const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
                 await blockBlobClient.deleteIfExists();
-                console.log(`[Azure Uploader] Cleaned up partial/failed blob: ${blobPath}`);
+                console.info(`[Azure Uploader] Cleaned up partial/failed blob: ${blobPath}`);
             } catch (cleanupErr) {
                 console.error(`[Azure Uploader] Failed to clean up failed blob ${blobPath}:`, cleanupErr.message);
             }

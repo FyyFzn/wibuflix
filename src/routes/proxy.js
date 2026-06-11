@@ -17,6 +17,10 @@ router.get('/api/proxy/filedon', async (req, res) => {
         headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
         if (videoUrl.includes('filedon') || videoUrl.includes('pucuk')) {
             headers['Referer'] = 'https://filedon.co/';
+        } else if (videoUrl.includes('filemoon')) {
+            headers['Referer'] = 'https://filemoon.sx/';
+        } else if (videoUrl.includes('filelions') || videoUrl.includes('moonplayer')) {
+            headers['Referer'] = 'https://filelions.live/';
         }
 
         const client = videoUrl.startsWith('https') ? https : http;

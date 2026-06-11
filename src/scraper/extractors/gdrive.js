@@ -8,7 +8,7 @@ export function match(url) {
 
 export async function extract(embedUrl, req) {
     try {
-        console.log(`[GDrive] Mencoba ekstrak direct URL dari: ${embedUrl}`);
+        console.info(`[GDrive] Mencoba ekstrak direct URL dari: ${embedUrl}`);
         let fileId = '';
         
         const urlObj = new URL(embedUrl);
@@ -41,6 +41,10 @@ export async function extract(embedUrl, req) {
                     validateStatus: (status) => status >= 200 && status < 400,
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                 });
+                let gdriveCookies = '';
+                if (res2.headers && res2.headers['set-cookie']) {
+                    gdriveCookies = res2.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
+                }
                 
                 if (res2.status === 302 || res2.status === 303) {
                     directUrl = res2.headers.location;
@@ -60,15 +64,18 @@ export async function extract(embedUrl, req) {
             }
             
             if (directUrl) {
-                console.log(`[GDrive] Direct URL berhasil diekstrak: ${directUrl}`);
+                console.info(`[GDrive] Direct URL berhasil diekstrak: ${directUrl}`);
                 return {
                     url: directUrl,
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        ...(gdriveCookies ? { 'Cookie': gdriveCookies } : {})
+                    }
                 };
             }
         }
     } catch (e) {
-        console.error(`[GDrive] Gagal ekstrak:`, e.message);
+        console.error(`[GDrive] Error mengekstrak URL ${embedUrl}:`, e.message);
     }
     throw new Error('Gagal mengekstrak video dari GDrive');
 }

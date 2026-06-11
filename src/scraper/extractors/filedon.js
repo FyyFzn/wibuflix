@@ -3,7 +3,7 @@ import axios from 'axios';
 export const name = 'filedon';
 
 export function match(url) {
-    return url.includes('filedon') || url.includes('pucuk') || url.includes('filemoon') || url.includes('filelions') || url.includes('moonplayer') || url.includes('pucukmovie');
+    return url.includes('filedon') || url.includes('pucuk') || url.includes('pucukmovie');
 }
 
 export async function extract(embedUrl, req) {

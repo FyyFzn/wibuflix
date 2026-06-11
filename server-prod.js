@@ -7,10 +7,10 @@ const originalLog = console.log;
 // Membuka akses untuk log penting saat startup
 global.forceLog = originalLog;
 
-// Mematikan log standar
+// Mematikan log standar untuk mengurangi I/O
 console.log = function () { };
 console.debug = function () { };
-console.info = function () { };
+// console.info tetap menyala untuk log informatif aplikasi kita
 
 // Catatan: console.error dan console.warn sengaja TIDAK dimatikan 
 // agar jika terjadi error kritis di server, Anda tetap bisa melihat log-nya.

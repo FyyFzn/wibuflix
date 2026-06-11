@@ -16,7 +16,10 @@ export function namaServer(url) {
         if (host.includes('mp4upload')) return 'mp4upload';
         if (host.includes('gdrive') || host.includes('google')) return 'gdrive';
         if (host.includes('vidhide')) return 'vidhide';
-        if (host.includes('filemoon') || host.includes('filelions') || host.includes('moonplayer') || host.includes('filedon')) return 'pucuk';
+        if (host.includes('filemoon')) return 'filemoon';
+        if (host.includes('filelions')) return 'filelions';
+        if (host.includes('moonplayer')) return 'moonplayer';
+        if (host.includes('filedon') || host.includes('pucuk')) return 'pucuk';
         
         return host.replace('www.', '').split('.')[0];
     } catch {

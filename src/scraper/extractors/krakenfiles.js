@@ -8,7 +8,7 @@ export function match(url) {
 }
 
 export async function extract(embedUrl, req) {
-    console.log(`[Kraken] Extracting: ${embedUrl}`);
+    console.info(`[Kraken] Extracting: ${embedUrl}`);
     
     const controller = new AbortController();
     if (req) req.on('close', () => controller.abort());
@@ -62,7 +62,7 @@ export async function extract(embedUrl, req) {
         
         throw new Error('Gagal mengekstrak video dari Krakenfiles');
     } catch (err) {
-        console.error('[Kraken] Error:', err.message);
+        console.error(`[Kraken] Error mengekstrak URL ${embedUrl}:`, err.message);
         return null;
     }
 }

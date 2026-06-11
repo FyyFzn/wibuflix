@@ -5,6 +5,8 @@ import * as acefile from './acefile.js';
 import * as vidhide from './vidhide.js';
 import * as wibufile from './wibufile.js';
 import * as filedon from './filedon.js';
+import * as filemoon from './filemoon.js';
+import * as filelions from './filelions.js';
 import * as gdrive from './gdrive.js';
 import * as generic from './generic.js';
 
@@ -16,6 +18,8 @@ const extractors = [
     vidhide,
     wibufile,
     filedon,
+    filemoon,
+    filelions,
     gdrive
 ];
 

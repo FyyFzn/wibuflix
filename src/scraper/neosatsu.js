@@ -41,7 +41,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
         if (global[cacheKey] && Date.now() - global[cacheKey].timestamp < CACHE_TTL) {
             staticAnimeList = global[cacheKey].data;
         } else {
-            console.log(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
+            console.info(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
             const staticPages = [
                 'https://www.neosatsu.com/p/kamen-rider-series.html',
                 'https://www.neosatsu.com/p/kamen-rider-movie.html',
@@ -123,7 +123,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
 
             for (const feed of labelFeeds) {
                 try {
-                    console.log(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
+                    console.info(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
                     const fUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
                     const { data } = await axios.get(fUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                     
@@ -191,7 +191,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             localResults = filterByTokuType(localResults, typeFilter);
 
             if (localResults.length > 0) {
-                console.log(`[Neosatsu Scraper] Local Search Hit: Ditemukan ${localResults.length} hasil untuk "${searchParam}"`);
+                console.info(`[Neosatsu Scraper] Local Search Hit: Ditemukan ${localResults.length} hasil untuk "${searchParam}"`);
                 
                 let pageResults = localResults.slice((page - 1) * 9, page * 9);
                 pageResults = await Promise.all(pageResults.map(async (item) => {
@@ -210,7 +210,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
 
             // Jika tidak ada di lokal (misal cari Metal Hero), Fallback ke Pencarian Website (Blogger Feed)
             const feedUrl = `https://www.neosatsu.com/feeds/posts/default?q=${encodeURIComponent(searchParam)}&alt=json&max-results=${maxResults}&start-index=${startIndex}`;
-            console.log(`[Neosatsu Scraper] Local Miss. Fallback API (Search): ${feedUrl}`);
+            console.info(`[Neosatsu Scraper] Local Miss. Fallback API (Search): ${feedUrl}`);
 
             const { data } = await axios.get(feedUrl, {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -328,7 +328,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
  */
 export async function getNeosatsuEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
-    console.log(`\n[Neosatsu Scraper] Mengambil post/label dari: ${targetUrl}`);
+    console.info(`\n[Neosatsu Scraper] Mengambil post/label dari: ${targetUrl}`);
 
     try {
         let feedUrl = '';
@@ -358,7 +358,7 @@ export async function getNeosatsuEpisodes(targetUrl) {
                 feedUrl = `https://www.neosatsu.com/feeds/posts/default?q=${encodeURIComponent(targetTitle)}&alt=json&max-results=500`;
             }
 
-            console.log(`[Neosatsu Scraper] Fetching Label/Search Feed: ${feedUrl}`);
+            console.info(`[Neosatsu Scraper] Fetching Label/Search Feed: ${feedUrl}`);
 
             const { data: feedData } = await axios.get(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
             if (feedData && feedData.feed && feedData.feed.entry) {
@@ -393,7 +393,7 @@ export async function getNeosatsuEpisodes(targetUrl) {
 
             if (seriesLabel) {
                 feedUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(seriesLabel)}?alt=json&max-results=500`;
-                console.log(`[Neosatsu Scraper] Fallback Merging via Label: ${feedUrl}`);
+                console.info(`[Neosatsu Scraper] Fallback Merging via Label: ${feedUrl}`);
                 const { data } = await axios.get(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                 if (data && data.feed && data.feed.entry) {
                     allEntries = data.feed.entry;
@@ -657,7 +657,7 @@ export async function getNeosatsuServers(fakeUrl) {
         }
     }
 
-    console.log("[Neosatsu Servers] Cache tidak ditemukan, mengambil ulang post...");
+    console.info("[Neosatsu Servers] Cache tidak ditemukan, mengambil ulang post...");
     const data = await getNeosatsuEpisodes(targetUrl);
     const episodeList = data.daftar_episode;
     const idx = episodeList.findIndex(e => e.judul === titleTarget);

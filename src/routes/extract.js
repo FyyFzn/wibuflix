@@ -84,16 +84,16 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
         
         const status = await checkUploadStatus(seriesSlug, nextEpisodeSlug);
         if (status === 'READY' || status === 'UPLOADING' || status === 'FAILED') {
-            console.log(`[Prefetch] Episode selanjutnya (${nextEpisodeSlug}) sudah ${status}.`);
+            console.info(`[Prefetch] Episode selanjutnya (${nextEpisodeSlug}) sudah ${status}.`);
             return;
         }
 
         if (activeExtractions.has(nextBlobPath)) {
-            console.log(`[Prefetch] Skip: Ekstraksi untuk ${nextBlobPath} sudah berjalan.`);
+            console.info(`[Prefetch] Skip: Ekstraksi untuk ${nextBlobPath} sudah berjalan.`);
             return;
         }
 
-        console.log(`[Prefetch] Memulai prefetch untuk: ${nextEpisodeSlug}`);
+        console.info(`[Prefetch] Memulai prefetch untuk: ${nextEpisodeSlug}`);
         
         activeExtractions.add(nextBlobPath);
         let matchedSource = null;
@@ -125,7 +125,7 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
             const servers = [...taggedPrimary, ...taggedAlternative];
 
             if (!servers || servers.length === 0) {
-                console.log(`[Prefetch] Tidak ada server ditemukan untuk prefetch ${nextEpisodeSlug}`);
+                console.info(`[Prefetch] Tidak ada server ditemukan untuk prefetch ${nextEpisodeSlug}`);
                 markUploadFailed(seriesSlug, nextEpisodeSlug);
                 return;
             }
@@ -143,7 +143,7 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
             const resolutions = [1080, 720, 480, 360];
             for (const res of resolutions) {
                 for (const srv of groups[res]) {
-                    console.log(`[Prefetch] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source || 'Primary'}`);
+                    console.info(`[Prefetch] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source || 'Primary'}`);
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl);
                         if (extracted && extracted.url) {
@@ -153,7 +153,7 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
                                     url: extracted.url,
                                     headers: extracted.headers || {}
                                 };
-                                console.log(`[Prefetch] Menemukan source MP4 (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
+                                console.info(`[Prefetch] Menemukan source MP4 (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
                                 break;
                             }
                         }
@@ -188,7 +188,7 @@ router.get('/api/extract-video', async (req, res) => {
         const data = await extractVideoUrl(embedUrl, req);
 
         if (!data || !data.url) {
-            console.log(`[Extract-Video] Ekstraksi gagal/WebView-only: ${embedUrl}`);
+            console.info(`[Extract-Video] Ekstraksi gagal/WebView-only: ${embedUrl}`);
             return res.json({ success: false, webviewOnly: true, message: 'Server ini hanya bisa diputar lewat WebView' });
         }
 
@@ -197,7 +197,7 @@ router.get('/api/extract-video', async (req, res) => {
         if (data?.headers?.token && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(data.url)}&token=${encodeURIComponent(data.headers.token)}&referer=${encodeURIComponent(data.headers.Referer || '')}`;
-        } else if ((embedUrl.includes('filedon') || embedUrl.includes('pucuk') || embedUrl.includes('pixeldrain.com')) && data?.url) {
+        } else if ((embedUrl.includes('filedon') || embedUrl.includes('pucuk') || embedUrl.includes('pixeldrain.com') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer')) && data?.url) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             finalUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(data.url)}`;
         }
@@ -228,7 +228,7 @@ router.get('/api/smart-play', async (req, res) => {
         const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
 
         const status = await checkUploadStatus(seriesSlug, episodeSlug);
-        console.log(`[Smart-Play] Status check untuk ${seriesSlug}/${episodeSlug}: ${status}`);
+        console.info(`[Smart-Play] Status check untuk ${seriesSlug}/${episodeSlug}: ${status}`);
 
         if (status === 'READY') {
             if (nextEpisodeUrl) {
@@ -262,7 +262,7 @@ router.get('/api/smart-play', async (req, res) => {
 
         const blobPath = getBlobPath(seriesSlug, episodeSlug);
         if (activeExtractions.has(blobPath)) {
-            console.log(`[Smart-Play] Ekstraksi untuk ${blobPath} sedang berjalan di request lain. Mengembalikan status UPLOADING.`);
+            console.info(`[Smart-Play] Ekstraksi untuk ${blobPath} sedang berjalan di request lain. Mengembalikan status UPLOADING.`);
             return res.json({
                 success: true,
                 status: 'UPLOADING',
@@ -271,7 +271,7 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         // Status is FAILED or null -> Start extraction and upload process
-        console.log(`[Smart-Play] Mulai ekstraksi server untuk: ${episodeUrl}`);
+        console.info(`[Smart-Play] Mulai ekstraksi server untuk: ${episodeUrl}`);
 
         activeExtractions.add(blobPath);
         let matchedSource = null;
@@ -283,10 +283,10 @@ router.get('/api/smart-play', async (req, res) => {
 
             if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
                 if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-                    console.log(`[Smart-Play] Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    console.info(`[Smart-Play] Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
                     alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
                 } else {
-                    console.log(`[Smart-Play] Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    console.info(`[Smart-Play] Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
                     alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle);
                 }
             }
@@ -333,7 +333,7 @@ router.get('/api/smart-play', async (req, res) => {
 
             for (const resVal of resolutions) {
                 for (const srv of groups[resVal]) {
-                    console.log(`[Smart-Play] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source}`);
+                    console.info(`[Smart-Play] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source}`);
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl, req);
                         if (extracted && extracted.url) {
@@ -343,7 +343,7 @@ router.get('/api/smart-play', async (req, res) => {
                                     url: extracted.url,
                                     headers: extracted.headers || {}
                                 };
-                                console.log(`[Smart-Play] Menemukan source MP4 (${resVal}p) dari ${srv.source}: ${extracted.url}`);
+                                console.info(`[Smart-Play] Menemukan source MP4 (${resVal}p) dari ${srv.source}: ${extracted.url}`);
                                 break;
                             }
                         }
