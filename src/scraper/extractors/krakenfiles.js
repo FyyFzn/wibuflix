@@ -55,7 +55,8 @@ export async function extract(embedUrl, req) {
             if (src.startsWith('//')) src = 'https:' + src;
             
             const reqHeaders = {
-                'Referer': viewUrl
+                'Referer': viewUrl,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             };
             if (token) reqHeaders['token'] = token;
             if (cookieStr) reqHeaders['Cookie'] = cookieStr;
