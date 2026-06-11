@@ -331,6 +331,23 @@ router.get('/api/smart-play', async (req, res) => {
 
             for (const resVal of resolutions) {
                 if (groups[resVal].length > 0) {
+                    // Urutkan server berdasarkan prioritas kecepatan dan keandalan (Mega, Wibufile > Krakenfiles)
+                    groups[resVal].sort((a, b) => {
+                        const score = (host) => {
+                            if (!host) return 0;
+                            const h = host.toLowerCase();
+                            if (h.includes('mega')) return 100;
+                            if (h.includes('wibufile')) return 90;
+                            if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
+                            if (h.includes('pixeldrain')) return 70;
+                            if (h.includes('acefile')) return 60;
+                            if (h.includes('vidhide')) return 50;
+                            if (h.includes('kraken')) return -100; // Super lambat 125 KB/s, jadikan last resort
+                            return 0;
+                        };
+                        return score(b.namaHost) - score(a.namaHost);
+                    });
+
                     const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
                     console.info(`[Smart-Play] Menguji server ${resVal}p: ${serverNames}`);
                 }
