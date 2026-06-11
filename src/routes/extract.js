@@ -189,8 +189,8 @@ router.get('/api/extract-video', async (req, res) => {
         const data = await extractVideoUrl(embedUrl, req);
 
         if (!data || !data.url) {
-            console.info(`[Extract-Video] Ekstraksi gagal/WebView-only: ${embedUrl}`);
-            return res.json({ success: false, webviewOnly: true, message: 'Server ini hanya bisa diputar lewat WebView' });
+            console.info(`[Extract-Video] Ekstraksi gagal untuk: ${embedUrl}`);
+            return res.json({ success: false, message: 'Ekstraksi URL video gagal. Sistem hanya mendukung pemutaran MP4 (Blob).' });
         }
 
         let finalUrl = data.url;
@@ -206,8 +206,7 @@ router.get('/api/extract-video', async (req, res) => {
         res.json({
             success: true,
             url: finalUrl,
-            headers: data?.headers || undefined,
-            webviewOnly: data?.webviewOnly || false
+            headers: data?.headers || undefined
         });
     } catch (err) {
         console.error(`[Extractor Error] URL: ${embedUrl} | STACK:`, err.stack);

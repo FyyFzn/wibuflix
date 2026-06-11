@@ -280,11 +280,11 @@ export async function extractVideoUrl(embedUrl, req) {
         };
     }
 
-    // ── 2. Bypass Cepat untuk Server WebView-Only (Mencegah Timeout 25 Detik) ──
-    const webviewOnlyHosts = ['mirrorupload', 'gofile'];
-    if (webviewOnlyHosts.some(h => embedUrl.toLowerCase().includes(h))) {
-        console.log(`[WebView-Only] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
-        return null; // Akan langsung memicu fallback WebView di frontend secara instan
+    // ── 2. Bypass Cepat untuk Server yang Tidak Didukung (Mencegah Timeout 25 Detik) ──
+    const unsupportedHosts = ['mirrorupload', 'gofile'];
+    if (unsupportedHosts.some(h => embedUrl.toLowerCase().includes(h))) {
+        console.log(`[Unsupported] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
+        return null; // Akan langsung gagal karena sistem hanya menggunakan Blob
     }
 
     // ── 3. Delegasikan ke modular extractors ──
