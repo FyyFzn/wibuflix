@@ -147,7 +147,7 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl);
                         if (extracted && extracted.url) {
-                            const isMp4 = extracted.url.includes('.mp4') && !extracted.url.includes('.m3u8');
+                            const isMp4 = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
                             if (isMp4) {
                                 matchedSource = {
                                     url: extracted.url,
@@ -337,7 +337,7 @@ router.get('/api/smart-play', async (req, res) => {
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl, req);
                         if (extracted && extracted.url) {
-                            const isMp4 = extracted.url.includes('.mp4') && !extracted.url.includes('.m3u8');
+                            const isMp4 = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
                             if (isMp4) {
                                 matchedSource = {
                                     url: extracted.url,

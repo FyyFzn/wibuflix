@@ -12,12 +12,12 @@ export const extract = async (url, req) => {
         
         const proxyUrl = `${req.protocol}://${req.get('host')}/api/proxy/mega?url=${encodeURIComponent(cleanUrl)}`;
         
-        return [{
+        return {
             url: proxyUrl,
             isM3U8: false
-        }];
+        };
     } catch (error) {
         console.error('[Mega Extractor Error]', error.message);
-        return [];
+        return null;
     }
 };
