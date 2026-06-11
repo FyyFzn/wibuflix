@@ -162,4 +162,49 @@ router.get('/api/proxy/kraken', async (req, res) => {
     }
 });
 
+// ============================================================
+// RUTE 7: GET /api/proxy/mega
+// ============================================================
+router.get('/api/proxy/mega', async (req, res) => {
+    const videoUrl = req.query.url;
+    if (!videoUrl) return res.status(400).send('URL required');
+    
+    try {
+        const { File } = await import('megajs');
+        const file = File.fromURL(videoUrl);
+        await file.loadAttributes();
+
+        const fileSize = file.size;
+        const range = req.headers.range;
+        const ext = file.name ? file.name.split('.').pop().toLowerCase() : 'mp4';
+        const contentType = ext === 'mkv' ? 'video/x-matroska' : 'video/mp4';
+
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
+            
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': contentType
+            });
+            const stream = file.download({ start, end });
+            stream.pipe(res);
+        } else {
+            res.writeHead(200, {
+                'Content-Length': fileSize,
+                'Content-Type': contentType
+            });
+            const stream = file.download();
+            stream.pipe(res);
+        }
+    } catch (err) {
+        console.error('[Mega Proxy Error]', err.message);
+        if (!res.headersSent) res.status(500).send('Proxy error: ' + err.message);
+    }
+});
+
 export default router;

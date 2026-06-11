@@ -8,6 +8,7 @@ import * as filedon from './filedon.js';
 import * as filemoon from './filemoon.js';
 import * as filelions from './filelions.js';
 import * as gdrive from './gdrive.js';
+import * as mega from './mega.js';
 import * as generic from './generic.js';
 
 const extractors = [
@@ -20,7 +21,8 @@ const extractors = [
     filedon,
     filemoon,
     filelions,
-    gdrive
+    gdrive,
+    mega
 ];
 
 export function resolveExtractor(embedUrl) {
