@@ -115,9 +115,9 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 ...headers
             };
 
-            // Set up a 10-minute hard timeout for the entire upload process
+            // Set up a 30-minute hard timeout because Krakenfiles limits speed to ~150KB/s (takes 15-20 mins)
             const abortController = new AbortController();
-            const timeoutId = setTimeout(() => abortController.abort(), 10 * 60 * 1000);
+            const timeoutId = setTimeout(() => abortController.abort(), 30 * 60 * 1000);
 
             // Download stream from source URL
             const response = await axios({
@@ -131,7 +131,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             // Progress tracking
             let downloadedBytes = 0;
-            const logInterval = 50 * 1024 * 1024; // 50MB
+            const logInterval = 10 * 1024 * 1024; // Log setiap 10MB (butuh waktu ~80 detik di 125KB/s)
             let nextLogThreshold = logInterval;
 
             response.data.on('data', (chunk) => {
