@@ -262,7 +262,6 @@ router.get('/api/smart-play', async (req, res) => {
 
         const blobPath = getBlobPath(seriesSlug, episodeSlug);
         if (activeExtractions.has(blobPath)) {
-            console.info(`[Smart-Play] Ekstraksi untuk ${blobPath} sedang berjalan di request lain. Mengembalikan status UPLOADING.`);
             return res.json({
                 success: true,
                 status: 'UPLOADING',
