@@ -160,26 +160,24 @@ export async function scrapeVideoServers(targetUrl) {
             });
         });
 
-        // Jika tidak ada link download (episode lama), gunakan cara lama (side-by-side dimatikan jika download ada)
-        if (servers.length === 0) {
-            const rawServers = [];
-            $('.east_player_option').each((_, el) => {
-                rawServers.push({
-                    nama: $(el).find('span').text().trim() || $(el).text().trim() || 'Server',
-                    post: $(el).attr('data-post') || '',
-                    nume: $(el).attr('data-nume') || '',
-                    type: $(el).attr('data-type') || 'schtml',
-                    aktif: $(el).hasClass('on')
-                });
+        // Selalu gunakan cara lama (mengambil server iframe bawaan web) untuk menghindari link shortener
+        const rawServers = [];
+        $('.east_player_option').each((_, el) => {
+            rawServers.push({
+                nama: $(el).find('span').text().trim() || $(el).text().trim() || 'Server',
+                post: $(el).attr('data-post') || '',
+                nume: $(el).attr('data-nume') || '',
+                type: $(el).attr('data-type') || 'schtml',
+                aktif: servers.length === 0 && $(el).hasClass('on')
             });
+        });
 
-            const seen = new Set();
-            for (const s of rawServers) {
-                const key = `${s.post}-${s.nume}`;
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    servers.push(s);
-                }
+        const seen = new Set();
+        for (const s of rawServers) {
+            const key = `${s.post}-${s.nume}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                servers.push(s);
             }
         }
 
