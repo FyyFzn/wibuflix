@@ -84,12 +84,10 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
         
         const status = await checkUploadStatus(seriesSlug, nextEpisodeSlug);
         if (status === 'READY' || status === 'UPLOADING' || status === 'FAILED') {
-            console.info(`[Prefetch] Episode selanjutnya (${nextEpisodeSlug}) sudah ${status}.`);
             return;
         }
 
         if (activeExtractions.has(nextBlobPath)) {
-            console.info(`[Prefetch] Skip: Ekstraksi untuk ${nextBlobPath} sudah berjalan.`);
             return;
         }
 
@@ -142,8 +140,11 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
             // Try extracting in priority order
             const resolutions = [1080, 720, 480, 360];
             for (const res of resolutions) {
+                if (groups[res].length > 0) {
+                    const serverNames = groups[res].map(s => s.namaHost).join(', ');
+                    console.info(`[Prefetch] Menguji server ${res}p: ${serverNames}`);
+                }
                 for (const srv of groups[res]) {
-                    console.info(`[Prefetch] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source || 'Primary'}`);
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl);
                         if (extracted && extracted.url && !extracted.webviewOnly) {
@@ -228,7 +229,6 @@ router.get('/api/smart-play', async (req, res) => {
         const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
 
         const status = await checkUploadStatus(seriesSlug, episodeSlug);
-        console.info(`[Smart-Play] Status check untuk ${seriesSlug}/${episodeSlug}: ${status}`);
 
         if (status === 'READY') {
             if (nextEpisodeUrl) {
@@ -332,8 +332,11 @@ router.get('/api/smart-play', async (req, res) => {
             const resolutions = [1080, 720, 480, 360];
 
             for (const resVal of resolutions) {
+                if (groups[resVal].length > 0) {
+                    const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
+                    console.info(`[Smart-Play] Menguji server ${resVal}p: ${serverNames}`);
+                }
                 for (const srv of groups[resVal]) {
-                    console.info(`[Smart-Play] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source}`);
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl, req);
                         if (extracted && extracted.url && !extracted.webviewOnly) {
