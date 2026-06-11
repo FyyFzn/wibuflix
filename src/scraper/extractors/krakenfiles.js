@@ -19,7 +19,7 @@ export async function extract(embedUrl, req) {
             viewUrl = embedUrl.replace('/embed-video/', '/view/') + '/file.html';
         }
         
-        const { data } = await axios.get(viewUrl, {
+        const response = await axios.get(viewUrl, {
             signal: controller.signal,
             headers: {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -27,6 +27,11 @@ export async function extract(embedUrl, req) {
                 "Accept": "*/*"
             }
         });
+        
+        const data = response.data;
+        const resHeaders = response.headers;
+        const cookies = resHeaders['set-cookie'] || [];
+        const cookieStr = cookies.map(c => c.split(';')[0]).join('; ');
         
         const $ = cheerio.load(data);
         const token = $("#dl-token").val();
@@ -49,14 +54,15 @@ export async function extract(embedUrl, req) {
         if (src) {
             if (src.startsWith('//')) src = 'https:' + src;
             
+            const reqHeaders = {
+                'Referer': viewUrl
+            };
+            if (token) reqHeaders['token'] = token;
+            if (cookieStr) reqHeaders['Cookie'] = cookieStr;
+            
             return {
                 url: src,
-                headers: token ? { 
-                    'token': token,
-                    'Referer': viewUrl
-                } : {
-                    'Referer': viewUrl
-                }
+                headers: reqHeaders
             };
         }
         
