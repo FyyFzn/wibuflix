@@ -16,5 +16,5 @@ console.info = function () { };
 // agar jika terjadi error kritis di server, Anda tetap bisa melihat log-nya.
 
 // Mulai aplikasi utama persis seperti biasa
-const { startServer } = require('./src/server');
+import { startServer } from './src/server.js';
 startServer();
