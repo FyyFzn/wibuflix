@@ -1,12 +1,12 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { OtakudesuInstance } = require('otakudesu-scraper');
-const { searchAnime, getAnimeEpisodes } = require('../api/jikan');
-const { searchTokusatsu } = require('../api/tmdb');
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { OtakudesuInstance } from 'otakudesu-scraper';
+import { loadOtakuDatabase } from './otakudesu_sync.js';
+import { enrichWithMAL } from '../utils/malEnrichment.js';
 
 const otaku = new OtakudesuInstance('https://otakudesu.blog');
 
-async function getEpisodes(req, res) {
+export async function getEpisodes(req, res) {
     try {
         const slug = req.params.slug;
         const data = await getOtakuEpisodesFormatted(slug);
@@ -18,14 +18,13 @@ async function getEpisodes(req, res) {
     }
 }
 
-async function getOtakuEpisodesFormatted(slug) {
+export async function getOtakuEpisodesFormatted(slug) {
     console.log(`[Otakudesu] Fetching episodes for: ${slug}`);
     const details = await otaku.getExtraAnime(slug);
 
     if (!details) return null;
 
     // Fallback title dari database lokal jika parser scraper gagal mendapatkan nama
-    const { loadOtakuDatabase } = require('./otakudesu_sync');
     const otakuDb = loadOtakuDatabase();
     const found = otakuDb.find(item => item.slug === slug || item.id === `otakudesu:${slug}`);
     let fallbackTitle = found ? found.title : slug;
@@ -43,141 +42,35 @@ async function getOtakuEpisodesFormatted(slug) {
     // Terakhir, jika entah bagaimana masih berformat slug, percantik secara otomatis:
     if (finalTitle === slug) {
         finalTitle = finalTitle.split('-')
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' ')
-            .replace(/Sub Indo/i, '')
-            .trim();
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
     }
 
     const result = {
-        judul: finalTitle,
-        judul_seri: finalTitle, // Kompatibilitas frontend
-        gambar: details.image || '',
-        cover_scraper: details.image || '', // Kompatibilitas frontend
-        sinopsis: details.synopsis || '',
-        genre: Array.isArray(details.details?.genre) ? details.details.genre.join(', ') : (details.details?.genre || ''),
-        rating: details.details?.skor || '-',
-        tipe: details.details?.tipe || '-',
-        status: details.details?.status || 'Completed',
-        total_episode: details.details?.total_episode || '?',
-        daftar_episode: (details.episodes && details.episodes.length > 0 ? details.episodes : [{
-            title: finalTitle || 'Full Movie / Episode Spesial',
-            url: `https://otakudesu.blog/episode/${slug}/`,
-            date: '-'
-        }]).filter((ep, index, self) => {
-            if (ep.title.toLowerCase().includes('batch')) return false;
-            return index === self.findIndex((t) => t.url === ep.url);
-        }).map(ep => { // Kompatibilitas frontend
+        judul_seri: finalTitle,
+        cover_scraper: details.thumb || '',
+        daftar_episode: details.episodes.map(ep => {
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
-
-            // Smart Extraction untuk Judul Episode
-            let cleanTitle = ep.title;
-            const match = ep.title.match(/(?:Episode|Eps|Ep|OVA|Special|SP)\s*\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?\s*(\(End\))?/i);
-
-            if (match) {
-                cleanTitle = match[0];
-            } else {
-                // Fallback pembersih string jika regex tidak cocok
-                if (details.name) cleanTitle = cleanTitle.replace(details.name, '').trim();
-                cleanTitle = cleanTitle.replace(/subtitle indonesia/ig, '').trim();
-                cleanTitle = cleanTitle.replace(/sub indo/ig, '').trim();
-                cleanTitle = cleanTitle.replace(/^[:-]/, '').trim();
-                if (!cleanTitle) cleanTitle = ep.title;
-            }
-
             return {
-                judul: cleanTitle,
+                judul: ep.title,
                 url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
                 tanggal: ep.date || '',
-                slug: epSlug
-            };
-        }),
-        episodes: (details.episodes || []).filter((ep, index, self) => {
-            if (ep.title.toLowerCase().includes('batch')) return false;
-            return index === self.findIndex((t) => t.url === ep.url);
-        }).map(ep => { // Original untuk kompatibilitas Web Lama
-            const epParts = ep.url.split('/').filter(Boolean);
-            const epSlug = epParts[epParts.length - 1];
-            return {
-                title: ep.title,
-                url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
-                date: ep.date || '',
                 slug: epSlug
             };
         })
     };
 
-    // ── MAL Enrichment (Jikan API) ──
-    let mal = null;
-    let malEpisodeMap = {};
+    // ── MAL Enrichment ──
+    const { mal, enrichedEpisodes } = await enrichWithMAL(finalTitle, result.daftar_episode, details.thumb);
 
-    try {
-        const titleLow = finalTitle.toLowerCase();
-        const isToku = ['kamen rider', 'ultraman', 'super sentai', 'garo', 'boonboomger', 'gotchard', 'geats', 'revice', 'power rangers', 'project red', 'metal hero'].some(kw => titleLow.includes(kw));
-
-        if (isToku) {
-            console.log(`[TMDB] Mencari metadata untuk: "${finalTitle}"`);
-            const tmdbData = await searchTokusatsu(finalTitle);
-            if (tmdbData) {
-                console.log(`[TMDB] Ketemu: score=${tmdbData.score}`);
-                mal = {
-                    malScore: tmdbData.score,
-                    synopsis: tmdbData.synopsis,
-                    cover: tmdbData.image || details.thumb,
-                    status: tmdbData.status || 'Unknown',
-                    genres: ['Tokusatsu'],
-                    source: 'TMDB'
-                };
-            }
-        } else {
-            console.log(`[Otakudesu-MAL] Mencari data untuk: "${finalTitle}"`);
-            mal = await searchAnime(finalTitle);
-
-            if (mal) {
-                console.log(`[Otakudesu-MAL] Ketemu: score=${mal.malScore}, genres=${mal.genres.join(', ')}`);
-                malEpisodeMap = await getAnimeEpisodes(mal.malId, mal.episodes);
-            } else {
-                console.log(`[Otakudesu-MAL] Tidak ditemukan untuk: "${finalTitle}"`);
-            }
-        }
-    } catch (e) {
-        console.warn(`[Otakudesu-MAL] Error:`, e.message);
-    }
-
-    // Inject judul MAL ke tiap episode
-    if (Object.keys(malEpisodeMap).length > 0) {
-        result.daftar_episode.forEach(ep => {
-            const match = ep.judul.match(/(?:episode|eps|ep)\s*(\d+)/i) || ep.judul.match(/(\d+)$/);
-            if (match) {
-                const num = String(parseInt(match[1], 10));
-                const malTitle = malEpisodeMap[num];
-                if (malTitle) ep.malJudul = malTitle;
-            }
-        });
-    }
-
-    // Tambahkan MAL object ke response
-    result.mal = mal ? {
-        malId:    mal.malId,
-        malUrl:   mal.malUrl,
-        malScore: mal.malScore,
-        malRank:  mal.malRank,
-        genres:   mal.genres,
-        synopsis: mal.synopsis,
-        episodes: mal.episodes,
-        status:   mal.status,
-        studios:  mal.studios,
-        year:     mal.year,
-        rating:   mal.rating,
-        cover:    mal.cover || result.cover_scraper,
-        coverWebp: mal.coverWebp || null,
-    } : null;
+    result.daftar_episode = enrichedEpisodes;
+    result.mal = mal;
 
     return result;
 }
 
-async function getServers(req, res) {
+export async function getServers(req, res) {
     try {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: "Parameter url wajib diisi" });
@@ -190,18 +83,8 @@ async function getServers(req, res) {
     }
 }
 
-async function getServersInternal(url) {
-    console.log(`[Otakudesu] Fetching servers from: ${url}`);
-
-    // Fetch raw HTML of the episode
-    const { data } = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        timeout: 10000
-    });
-
-    const $ = cheerio.load(data);
+async function resolveOtakuServers($) {
     const servers = [];
-
     const promises = [];
     const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega'];
 
@@ -216,7 +99,6 @@ async function getServersInternal(url) {
                 promises.push((async () => {
                     try {
                         // Resolve the desustream.com redirect link
-                        // e.g. https://link.desustream.com/?id=...
                         const redRes = await axios.get(href, {
                             maxRedirects: 0,
                             validateStatus: () => true,
@@ -233,7 +115,7 @@ async function getServersInternal(url) {
                             servers.push({
                                 nama: resText,
                                 namaHost: hostRaw,
-                                iframeUrl: directUrl, // URL yang sudah diresolve, akan dikirim ke client
+                                iframeUrl: directUrl,
                                 type: 'direct',
                                 aktif: false
                             });
@@ -246,10 +128,9 @@ async function getServersInternal(url) {
         });
     });
 
-    // Tunggu semua resolve selesai
     await Promise.all(promises);
 
-    // Deduplikasi server (Otakudesu sering menampilkan tombol mirror ganda yang mengarah ke link sama)
+    // Deduplikasi server
     const uniqueServers = [];
     const seenServers = new Set();
     for (const s of servers) {
@@ -265,6 +146,20 @@ async function getServersInternal(url) {
     if (uniqueServers.length > 0) {
         uniqueServers[0].aktif = true;
     }
+    return uniqueServers;
+}
+
+export async function getServersInternal(url) {
+    console.log(`[Otakudesu] Fetching servers from: ${url}`);
+
+    // Fetch raw HTML of the episode
+    const { data } = await axios.get(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        timeout: 10000
+    });
+
+    const $ = cheerio.load(data);
+    const uniqueServers = await resolveOtakuServers($);
 
     // Ambil judul raw dari halaman episode dan bersihkan
     let judul = $('.venutama h1.posttl').text().trim();
@@ -293,7 +188,7 @@ async function getServersInternal(url) {
 
     return {
         judul,
-        servers,
+        servers: uniqueServers,
         nav_prev,
         nav_next
     };
@@ -316,11 +211,10 @@ function extractEpisodeNumber(title) {
     return null;
 }
 
-async function getAlternativeServers(seriesTitle, episodeTitle) {
+export async function getAlternativeServers(seriesTitle, episodeTitle) {
     if (!seriesTitle || !episodeTitle) return [];
 
     try {
-        const { loadOtakuDatabase } = require('./otakudesu_sync');
         const otakuDb = loadOtakuDatabase();
         if (!otakuDb || otakuDb.length === 0) return [];
 
@@ -368,58 +262,10 @@ async function getAlternativeServers(seriesTitle, episodeTitle) {
         });
 
         const $ = cheerio.load(data);
-        const servers = [];
-        const promises = [];
-        const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega'];
-
-        $('.download ul li').each((i, el) => {
-            const resText = $(el).find('strong').text().trim();
-            $(el).find('a').each((j, a) => {
-                const hostRaw = $(a).text().trim();
-                const hostLower = hostRaw.toLowerCase();
-                const href = $(a).attr('href');
-
-                if (allowedHosts.some(h => hostLower.includes(h))) {
-                    promises.push((async () => {
-                        try {
-                            const redRes = await axios.get(href, {
-                                maxRedirects: 0,
-                                validateStatus: () => true,
-                                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                                timeout: 8000
-                            });
-                            let directUrl = redRes.headers.location;
-                            // Fallback: jika bukan redirect (status 200), gunakan URL aslinya
-                            if (!directUrl && redRes.status >= 200 && redRes.status < 300) {
-                                directUrl = href;
-                            }
-                            if (directUrl) {
-                                servers.push({
-                                    nama: resText,
-                                    namaHost: hostRaw,
-                                    iframeUrl: directUrl,
-                                    type: 'direct',
-                                    aktif: false
-                                });
-                            }
-                        } catch (e) { }
-                    })());
-                }
-            });
-        });
-
-        await Promise.all(promises);
+        const servers = await resolveOtakuServers($);
         return servers;
     } catch (e) {
         console.error("[Otakudesu Alternative Error]", e.message);
         return [];
     }
 }
-
-module.exports = {
-    getEpisodes,
-    getServers,
-    getServersInternal,
-    getAlternativeServers,
-    getOtakuEpisodesFormatted
-};

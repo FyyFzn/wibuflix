@@ -1,5 +1,9 @@
-const path = require('path');
-const fs = require('fs');
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function migrateOldData(oldDir, newDir) {
     if (!fs.existsSync(oldDir)) return;
@@ -18,7 +22,7 @@ function migrateOldData(oldDir, newDir) {
     });
 }
 
-function getDataDir() {
+export function getDataDir() {
     const localPath = path.join(__dirname, '../../data');
 
     // 1. Prioritas Utama: Azure Linux App Service (sesuai tutorial)
@@ -48,5 +52,3 @@ function getDataDir() {
     }
     return localPath;
 }
-
-module.exports = { getDataDir };

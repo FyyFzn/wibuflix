@@ -1,8 +1,9 @@
-const fs = require('fs');
-const path = require('path');
-const cheerio = require('cheerio');
-const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
-const { getDataDir } = require('../utils/pathUtils');
+import fs from 'fs';
+import path from 'path';
+import * as cheerio from 'cheerio';
+import { releaseToPool } from '../puppeteer/pool.js';
+import { fetchWithCF } from '../utils/scrapeHelper.js';
+import { getDataDir } from '../utils/pathUtils.js';
 
 // Gunakan path dari utility
 const DB_PATH = path.join(getDataDir(), 'anime_db.json');
@@ -17,7 +18,7 @@ async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function startBackgroundAnimeSync() {
+export async function startBackgroundAnimeSync() {
     // Run immediately if DB doesn't exist
     if (!fs.existsSync(DB_PATH)) {
         log("[Anime Sync] Database lokal tidak ditemukan. Memulai sinkronisasi awal...");
@@ -41,7 +42,7 @@ async function startBackgroundAnimeSync() {
     }, 43200000);
 }
 
-async function runSync(isInitial = false) {
+export async function runSync(isInitial = false) {
     if (isSyncing) return;
     isSyncing = true;
     
@@ -59,61 +60,38 @@ async function runSync(isInitial = false) {
     let hasNext = true;
     let consecutiveFails = 0;
 
-    let slot;
     try {
-        slot = await ambilDariPool();
-        const browserPage = slot.page;
-
         while (hasNext) {
             const url = page === 1 ? `https://v2.samehadaku.how/daftar-anime-2/` : `https://v2.samehadaku.how/daftar-anime-2/page/${page}/`;
             log(`[Anime Sync] Scraping Halaman ${page}...`);
 
-            let html = await browserPage.evaluate(async (targetUrl) => {
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 10000);
-                    const res = await fetch(targetUrl, { signal: controller.signal });
-                    clearTimeout(timeoutId);
-                    if (res.status === 404) return '404_NOT_FOUND';
-                    return await res.text();
-                } catch(e) {
-                    return '';
-                }
-            }, url);
-
-            if (html === '404_NOT_FOUND') {
-                log(`[Anime Sync] Halaman ${page} mengembalikan 404. Akhir dari katalog dicapai.`);
-                hasNext = false;
-                break;
+            let fetchRes;
+            try {
+                fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+            } catch (e) {
+                console.error(`[Anime Sync] Gagal memuat halaman ${page}:`, e.message);
             }
 
-            const isCloudflare = html.includes('Just a moment') || html.includes('cloudflare') || html.includes('cf-browser-verification') || html.includes('Ray ID:');
-            if (!html || html.trim() === '' || isCloudflare) {
-                log(`[Anime Sync] Fetch gagal/terblokir. Menggunakan page.goto...`);
-                try {
-                    const response = await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                    if (response.status() === 404) {
-                        console.log(`[Anime Sync] Halaman ${page} mengembalikan 404 (Goto). Akhir dari katalog dicapai.`);
-                        hasNext = false;
+            if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+                if (fetchRes && fetchRes.html === '404_NOT_FOUND') {
+                    log(`[Anime Sync] Halaman ${page} mengembalikan 404. Akhir dari katalog dicapai.`);
+                    hasNext = false;
+                } else {
+                    consecutiveFails++;
+                    if (consecutiveFails >= 3) {
+                        console.error(`[Anime Sync] Gagal berturut-turut 3 kali. Menghentikan sinkronisasi.`);
                         break;
                     }
-                    html = await browserPage.content();
-                } catch (e) {
-                    console.error(`[Anime Sync] Gagal memuat halaman ${page}:`, e.message);
+                    await delay(8000);
                 }
+                if (fetchRes && fetchRes.slot) {
+                    releaseToPool(fetchRes.slot);
+                }
+                continue; // Retry/break
             }
 
-            if (!html) {
-                consecutiveFails++;
-                if (consecutiveFails >= 3) {
-                    console.error(`[Anime Sync] Gagal berturut-turut 3 kali. Menghentikan sinkronisasi.`);
-                    break;
-                }
-                await delay(8000);
-                continue; // Retry same page
-            }
-
-            const $ = cheerio.load(html);
+            const $ = fetchRes.$;
+            const slot = fetchRes.slot;
             let itemCount = 0;
 
             $('.animepost').each((_, el) => {
@@ -154,6 +132,9 @@ async function runSync(isInitial = false) {
 
             console.log(`[Anime Sync] -> Berhasil mengambil ${itemCount} anime dari Halaman ${page}`);
             consecutiveFails = 0; // reset fails on success
+
+            // Release slot as early as possible so other concurrent tasks can use it
+            releaseToPool(slot);
 
             // Check if there's a next page
             let hasNextPage = false;
@@ -196,13 +177,12 @@ async function runSync(isInitial = false) {
     } catch (e) {
         console.error(`[Anime Sync] Error fatal selama sinkronisasi:`, e.message);
     } finally {
-        if (slot) kembalikanKePool(slot);
         isSyncing = false;
     }
 }
 
 // Fungsi pembantu untuk load DB agar cepat
-function loadLocalDatabase() {
+export function loadLocalDatabase() {
     if (global.anime_db_cache) return global.anime_db_cache;
     
     if (fs.existsSync(DB_PATH)) {
@@ -217,9 +197,3 @@ function loadLocalDatabase() {
     }
     return [];
 }
-
-module.exports = {
-    startBackgroundAnimeSync,
-    loadLocalDatabase,
-    runSync
-};

@@ -1,0 +1,29 @@
+import * as blogger from './blogger.js';
+import * as krakenfiles from './krakenfiles.js';
+import * as pixeldrain from './pixeldrain.js';
+import * as acefile from './acefile.js';
+import * as vidhide from './vidhide.js';
+import * as wibufile from './wibufile.js';
+import * as filedon from './filedon.js';
+import * as gdrive from './gdrive.js';
+import * as generic from './generic.js';
+
+const extractors = [
+    blogger,
+    krakenfiles,
+    pixeldrain,
+    acefile,
+    vidhide,
+    wibufile,
+    filedon,
+    gdrive
+];
+
+export function resolveExtractor(embedUrl) {
+    for (const extractor of extractors) {
+        if (extractor.match(embedUrl)) {
+            return extractor;
+        }
+    }
+    return generic;
+}

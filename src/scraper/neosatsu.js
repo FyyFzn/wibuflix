@@ -1,6 +1,8 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { searchTokusatsu } = require('../api/tmdb');
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { searchTokusatsu } from '../api/tmdb.js';
+import { filterByTokuType, decryptNeosatsuLink, normalizeGDriveUrl } from '../utils/neosatsuUtils.js';
+import { enrichWithMAL } from '../utils/malEnrichment.js';
 
 const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kamen rider', 'super sentai', 'ultraman', 'metal hero', 'tokusatsu', 'spesial', 'spin-off', 'hyper battle dvd', 'project red', 'dvd', 'tv series', 'series'];
 
@@ -26,7 +28,7 @@ function cleanTitle(title) {
  * [TAHAP 1] Mengambil katalog dari Neosatsu. 
  * Kita akan mengelompokkan post yang memiliki judul seri yang sama.
  */
-async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
+export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
     const maxResults = 100;
     const startIndex = (page - 1) * maxResults + 1;
 
@@ -186,29 +188,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
 
             // Pencarian Lokal (Lebih Cepat dan Bersih)
             let localResults = staticAnimeList.filter(item => item.title.toLowerCase().includes(query));
-
-            if (typeFilter) {
-                const fLow = typeFilter.toLowerCase();
-                if (fLow === 'kamen rider') {
-                    localResults = localResults.filter(item => item.title.toLowerCase().includes('kamen rider'));
-                } else if (fLow === 'super sentai') {
-                    localResults = localResults.filter(item => {
-                        const t = item.title.toLowerCase();
-                        return t.includes('sentai') && !t.includes('power ranger');
-                    });
-                } else if (fLow === 'power rangers') {
-                    localResults = localResults.filter(item => item.title.toLowerCase().includes('power ranger'));
-                } else if (fLow === 'ultraman') {
-                    localResults = localResults.filter(item => item.title.toLowerCase().includes('ultraman'));
-                } else if (fLow === 'lainnya') {
-                    localResults = localResults.filter(item => {
-                        const t = item.title.toLowerCase();
-                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('power ranger') && !t.includes('ultraman');
-                    });
-                } else {
-                    localResults = localResults.filter(item => item.tipe.toLowerCase() === fLow);
-                }
-            }
+            localResults = filterByTokuType(localResults, typeFilter);
 
             if (localResults.length > 0) {
                 console.log(`[Neosatsu Scraper] Local Search Hit: Ditemukan ${localResults.length} hasil untuk "${searchParam}"`);
@@ -301,29 +281,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
                 uniqueAnimeMap.forEach(anime => animeList.push(anime));
             }
 
-            let finalAnimeList = animeList;
-            if (typeFilter) {
-                const fLow = typeFilter.toLowerCase();
-                if (fLow === 'kamen rider') {
-                    finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('kamen rider'));
-                } else if (fLow === 'super sentai') {
-                    finalAnimeList = finalAnimeList.filter(item => {
-                        const t = item.title.toLowerCase();
-                        return t.includes('sentai') && !t.includes('power ranger');
-                    });
-                } else if (fLow === 'power rangers') {
-                    finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('power ranger'));
-                } else if (fLow === 'ultraman') {
-                    finalAnimeList = finalAnimeList.filter(item => item.title.toLowerCase().includes('ultraman'));
-                } else if (fLow === 'lainnya') {
-                    finalAnimeList = finalAnimeList.filter(item => {
-                        const t = item.title.toLowerCase();
-                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('power ranger') && !t.includes('ultraman');
-                    });
-                } else {
-                    finalAnimeList = finalAnimeList.filter(item => item.tipe.toLowerCase() === fLow);
-                }
-            }
+            let finalAnimeList = filterByTokuType(animeList, typeFilter);
 
             let pageResults = finalAnimeList.slice(0, 9);
             pageResults = await Promise.all(pageResults.map(async (item) => {
@@ -341,29 +299,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
 
         } else {
             // 3. Mode Browse Biasa
-            let browseDb = staticAnimeList;
-            if (typeFilter) {
-                const fLow = typeFilter.toLowerCase();
-                if (fLow === 'kamen rider') {
-                    browseDb = browseDb.filter(item => item.title.toLowerCase().includes('kamen rider'));
-                } else if (fLow === 'super sentai') {
-                    browseDb = browseDb.filter(item => {
-                        const t = item.title.toLowerCase();
-                        return t.includes('sentai') && !t.includes('power ranger');
-                    });
-                } else if (fLow === 'power rangers') {
-                    browseDb = browseDb.filter(item => item.title.toLowerCase().includes('power ranger'));
-                } else if (fLow === 'ultraman') {
-                    browseDb = browseDb.filter(item => item.title.toLowerCase().includes('ultraman'));
-                } else if (fLow === 'lainnya') {
-                    browseDb = browseDb.filter(item => {
-                        const t = item.title.toLowerCase();
-                        return !t.includes('kamen rider') && !t.includes('sentai') && !t.includes('power ranger') && !t.includes('ultraman');
-                    });
-                } else {
-                    browseDb = browseDb.filter(item => item.tipe.toLowerCase() === fLow);
-                }
-            }
+            let browseDb = filterByTokuType(staticAnimeList, typeFilter);
             
             let pageResults = browseDb.slice((page - 1) * 9, page * 9);
             pageResults = await Promise.all(pageResults.map(async (item) => {
@@ -390,7 +326,7 @@ async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter = '') {
  * [TAHAP 2 & 3] Mengambil daftar episode DAN server.
  * Mendukung ekstraksi dari Label Feed (menggabungkan semua episode & movie) ATAU URL satuan.
  */
-async function getNeosatsuEpisodes(targetUrl) {
+export async function getNeosatsuEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
     console.log(`\n[Neosatsu Scraper] Mengambil post/label dari: ${targetUrl}`);
 
@@ -561,32 +497,15 @@ async function getNeosatsuEpisodes(targetUrl) {
                                 if (resGroup.link && Array.isArray(resGroup.link)) {
                                     resGroup.link.forEach(serverObj => {
                                         const serverName = serverObj.name || '';
-                                        const encryptedId = serverObj.ids;
-                                        if (encryptedId && encryptedId.length > 13) {
-                                            const b64 = encryptedId.substring(10, encryptedId.length - 3);
-                                            try {
-                                                const decryptedPath = Buffer.from(b64, 'base64').toString('utf8');
-                                                const fullUrl = `https:/${decryptedPath}`;
-
-                                                let finalIframeUrl = fullUrl;
-                                                if (finalIframeUrl.includes('drive.google.com')) {
-                                                    finalIframeUrl = finalIframeUrl.replace(/\/view(\?.*)?$/, '/preview');
-                                                    try {
-                                                        const urlObj = new URL(finalIframeUrl);
-                                                        if (urlObj.pathname === '/open' || urlObj.pathname === '/uc') {
-                                                            const id = urlObj.searchParams.get('id');
-                                                            if (id) finalIframeUrl = `https://drive.google.com/file/d/${id}/preview`;
-                                                        }
-                                                    } catch (e) { }
-                                                }
-
-                                                nestedServers.push({
-                                                    nama: `HD ${serverName}`,
-                                                    namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
-                                                    urlAsli: fullUrl,
-                                                    iframeUrl: finalIframeUrl
-                                                });
-                                            } catch (e) { }
+                                        const fullUrl = decryptNeosatsuLink(serverObj.ids);
+                                        if (fullUrl) {
+                                            const finalIframeUrl = normalizeGDriveUrl(fullUrl);
+                                            nestedServers.push({
+                                                nama: `HD ${serverName}`,
+                                                namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
+                                                urlAsli: fullUrl,
+                                                iframeUrl: finalIframeUrl
+                                            });
                                         }
                                     });
                                 }
@@ -620,32 +539,15 @@ async function getNeosatsuEpisodes(targetUrl) {
                                 if (resGroup.link && Array.isArray(resGroup.link)) {
                                     resGroup.link.forEach(serverObj => {
                                         const serverName = serverObj.name || '';
-                                        const encryptedId = serverObj.ids;
-                                        if (encryptedId && encryptedId.length > 13) {
-                                            const b64 = encryptedId.substring(10, encryptedId.length - 3);
-                                            try {
-                                                const decryptedPath = Buffer.from(b64, 'base64').toString('utf8');
-                                                const fullUrl = `https:/${decryptedPath}`;
-
-                                                let finalIframeUrl = fullUrl;
-                                                if (finalIframeUrl.includes('drive.google.com')) {
-                                                    finalIframeUrl = finalIframeUrl.replace(/\/view(\?.*)?$/, '/preview');
-                                                    try {
-                                                        const urlObj = new URL(finalIframeUrl);
-                                                        if (urlObj.pathname === '/open' || urlObj.pathname === '/uc') {
-                                                            const id = urlObj.searchParams.get('id');
-                                                            if (id) finalIframeUrl = `https://drive.google.com/file/d/${id}/preview`;
-                                                        }
-                                                    } catch (e) { }
-                                                }
-
-                                                resolutions.push({
-                                                    nama: `${resolusi} ${serverName}`.trim(),
-                                                    namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
-                                                    urlAsli: fullUrl,
-                                                    iframeUrl: finalIframeUrl
-                                                });
-                                            } catch (e) { }
+                                        const fullUrl = decryptNeosatsuLink(serverObj.ids);
+                                        if (fullUrl) {
+                                            const finalIframeUrl = normalizeGDriveUrl(fullUrl);
+                                            resolutions.push({
+                                                nama: `${resolusi} ${serverName}`.trim(),
+                                                namaHost: serverName.toLowerCase().includes('drive') ? 'gdrive' : serverName.toLowerCase(),
+                                                urlAsli: fullUrl,
+                                                iframeUrl: finalIframeUrl
+                                            });
                                         }
                                     });
                                 }
@@ -655,9 +557,9 @@ async function getNeosatsuEpisodes(targetUrl) {
                         if (resolutions.length > 0) {
                             const fakeEpUrl = `${targetUrl}___neosatsu_ep___${epTitle.replace(/\s+/g, '_')}`;
                             daftar_episode.push({
-                                judul: epTitle,
-                                url: fakeEpUrl,
-                                _servers: resolutions
+                                    judul: epTitle,
+                                    url: fakeEpUrl,
+                                    _servers: resolutions
                             });
                         }
                     }
@@ -665,15 +567,14 @@ async function getNeosatsuEpisodes(targetUrl) {
             }
         }
 
-        // Sorting Pintar: Karena uploader Neosatsu terkadang tidak konsisten (ada yang Ep 1 di atas, ada yang Ep 50 di atas),
-        // Kita harus memastikan urutan selalu 1 -> 50 agar tombol Next selalu menuju episode selanjutnya yang benar.
+        // Sorting Pintar
         if (daftar_episode.length > 1) {
             const getEpNum = (title) => {
                 const match = title.match(/Episode\s*(\d+)/i) || title.match(/Ep\s*(\d+)/i);
                 return match ? parseInt(match[1]) : -1;
             };
 
-            // Deduplikasi: Hapus duplikat jika ada 2 episode dengan nomor yang sama (misal dari post satuan & post batch)
+            // Deduplikasi
             const seenEpNums = new Set();
             const seenTitles = new Set();
             const uniqueEpisodes = [];
@@ -699,7 +600,6 @@ async function getNeosatsuEpisodes(targetUrl) {
             daftar_episode.splice(0, daftar_episode.length, ...uniqueEpisodes);
 
             // Mengurutkan secara numerik agar Episode 1 selalu di atas
-            // Jika tidak ada nomor (Movie/Spesial), letakkan di paling bawah
             daftar_episode.sort((a, b) => {
                 const numA = getEpNum(a.judul);
                 const numB = getEpNum(b.judul);
@@ -711,25 +611,8 @@ async function getNeosatsuEpisodes(targetUrl) {
             });
         }
 
-        // Fetch metadata dari TMDB
-        let mal = null;
-        try {
-            console.log(`[TMDB] Mencari metadata untuk: "${judulSeri}"`);
-            const tmdbData = await searchTokusatsu(judulSeri);
-            if (tmdbData) {
-                console.log(`[TMDB] Ketemu: score=${tmdbData.score}`);
-                mal = {
-                    malScore: tmdbData.score,
-                    synopsis: tmdbData.synopsis,
-                    cover: tmdbData.image || cover,
-                    status: tmdbData.status || 'Unknown',
-                    genres: ['Tokusatsu'],
-                    source: 'TMDB'
-                };
-            }
-        } catch (e) {
-            console.warn(`[TMDB Fallback] Error:`, e.message);
-        }
+        // Fetch metadata dari TMDB/MAL Enrichment
+        const { mal } = await enrichWithMAL(judulSeri, [], cover);
 
         // Simpan cache
         global.neosatsuCache = global.neosatsuCache || {};
@@ -751,7 +634,7 @@ async function getNeosatsuEpisodes(targetUrl) {
 /**
  * [TAHAP 3] Mengambil server dari cache yang sudah di-scrape di Tahap 2
  */
-async function getNeosatsuServers(fakeUrl) {
+export async function getNeosatsuServers(fakeUrl) {
     const [targetUrl, epId] = fakeUrl.split('___neosatsu_ep___');
     if (!targetUrl || !epId) return { judul: '', servers: [], nav_prev: null, nav_next: null };
 
@@ -792,9 +675,3 @@ async function getNeosatsuServers(fakeUrl) {
 
     return { judul: titleTarget, servers: [], nav_prev: null, nav_next: null };
 }
-
-module.exports = {
-    getNeosatsuCatalog,
-    getNeosatsuEpisodes,
-    getNeosatsuServers
-};

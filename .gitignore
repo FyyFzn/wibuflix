@@ -3,3 +3,8 @@ FYYStreamApp/
 .env
 
 debug/
+
+data/
+*.log
+jikan_cache.json
+otakudesu_test.json

@@ -1,15 +1,16 @@
-const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
-const cheerio = require('cheerio');
-const axios = require('axios');
-const { loadLocalDatabase } = require('../sync/anime_sync');
-const { loadOtakuDatabase } = require('./otakudesu_sync');
-const { loadUnifiedDatabase } = require('../sync/unified_sync');
-const fs = require('fs');
-const path = require('path');
-const NodeCache = require('node-cache');
-const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
+import { releaseToPool } from '../puppeteer/pool.js';
+import { fetchWithCF } from '../utils/scrapeHelper.js';
+import * as cheerio from 'cheerio';
+import axios from 'axios';
+import { loadLocalDatabase } from '../sync/anime_sync.js';
+import { loadOtakuDatabase } from './otakudesu_sync.js';
+import { loadUnifiedDatabase } from '../sync/unified_sync.js';
+import fs from 'fs';
+import path from 'path';
+import { getCache } from '../utils/cacheManager.js';
+const cache = getCache('katalog', 3600);
 
-async function getKatalog(pageParams, searchParam, typeFilter = '') {
+export async function getKatalog(pageParams, searchParam, typeFilter = '') {
     const isSearch = searchParam.trim() !== '';
     const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}`;
     
@@ -107,31 +108,14 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
 
     let slot;
     try {
-        slot = await ambilDariPool();
-        const page = slot.page;
+        const fetchRes = await fetchWithCF(url, { fetchTimeout: 6000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
 
-        let html = await page.evaluate(async (targetUrl) => {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(targetUrl, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                return await res.text();
-            } catch(e) {
-                return '';
-            }
-        }, url);
-
-        const isCloudflare = html.includes('Just a moment') || html.includes('cloudflare') || html.includes('cf-browser-verification') || html.includes('Ray ID:');
-        if (!html || html.trim() === '' || isCloudflare) {
-            console.log(`[Katalog] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            html = await page.content();
+        if (html === '404_NOT_FOUND') {
+            return { list: [], hasNext: false };
         }
-
-        if (!html) throw new Error("Gagal mengambil HTML dari target");
-
-        const $ = cheerio.load(html);
         const list = [];
         let hasNext = false;
         
@@ -216,8 +200,8 @@ async function getKatalog(pageParams, searchParam, typeFilter = '') {
     } catch (err) {
         throw err;
     } finally {
-        if (slot) kembalikanKePool(slot);
+        if (slot) releaseToPool(slot);
     }
 }
 
-module.exports = { getKatalog, cache };
+export { cache };

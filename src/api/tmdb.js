@@ -1,8 +1,8 @@
-const axios = require('axios');
-const NodeCache = require('node-cache');
-const fs = require('fs');
-const path = require('path');
-const { getDataDir } = require('../utils/pathUtils');
+import axios from 'axios';
+import NodeCache from 'node-cache';
+import fs from 'fs';
+import path from 'path';
+import { getDataDir } from '../utils/pathUtils.js';
 
 // TMDB API Cache (24 hours)
 const tmdbCache = new NodeCache({ stdTTL: 86400 });
@@ -22,7 +22,7 @@ if (fs.existsSync(CACHE_FILE)) {
     }
 }
 
-function saveTMDBCache() {
+export function saveTMDBCache() {
     try {
         const dir = path.dirname(CACHE_FILE);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -49,7 +49,7 @@ function isJapanese(text) {
 /**
  * Normalisasi judul untuk mempermudah pencarian.
  */
-function normalizeTitle(title) {
+export function normalizeTitle(title) {
     if (!title) return '';
     let t = title.toLowerCase();
     // Hapus embel-embel umum tanpa menghapus isi di dalamnya (kasus [Oshi No Ko])
@@ -105,7 +105,7 @@ async function searchJikan(cleanTitle) {
  * Mencari data Anime dan Tokusatsu di TMDB berdasarkan judul.
  * Mencari di kategori TV Shows, lalu mencari alternatif di Movies.
  */
-async function searchTMDB(title) {
+export async function searchTMDB(title) {
     if (!title) return null;
     
     const cleanTitle = normalizeTitle(title);
@@ -227,4 +227,4 @@ async function searchTMDB(title) {
     }
 }
 
-module.exports = { searchTMDB, searchTokusatsu: searchTMDB, normalizeTitle, saveTMDBCache };
+export { searchTMDB as searchTokusatsu };

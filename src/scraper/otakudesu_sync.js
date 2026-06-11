@@ -1,8 +1,9 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs');
-const path = require('path');
-const { getDataDir } = require('../utils/pathUtils');
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { getDataDir } from '../utils/pathUtils.js';
 
 // Gunakan path dari utility
 const DB_PATH = path.join(getDataDir(), 'otakudesu_db.json');
@@ -15,7 +16,7 @@ const log = (...args) => {
     }
 };
 
-async function syncOtakudesu() {
+export async function syncOtakudesu() {
     log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu...');
     try {
         const { data } = await axios.get('https://otakudesu.blog/anime-list/', {
@@ -64,7 +65,7 @@ async function syncOtakudesu() {
     }
 }
 
-function loadOtakuDatabase() {
+export function loadOtakuDatabase() {
     if (global.otakudesu_db_cache) return global.otakudesu_db_cache;
     
     if (fs.existsSync(DB_PATH)) {
@@ -80,7 +81,7 @@ function loadOtakuDatabase() {
     return [];
 }
 
-function startBackgroundOtakuSync() {
+export function startBackgroundOtakuSync() {
     let shouldSyncNow = true;
     if (fs.existsSync(DB_PATH)) {
         const stats = fs.statSync(DB_PATH);
@@ -103,8 +104,6 @@ function startBackgroundOtakuSync() {
 }
 
 // Jika dijalankan langsung
-if (require.main === module) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
     syncOtakudesu();
 }
-
-module.exports = { syncOtakudesu, loadOtakuDatabase, startBackgroundOtakuSync };

@@ -1,5 +1,5 @@
-const axios = require('axios');
-const NodeCache = require('node-cache');
+import axios from 'axios';
+import NodeCache from 'node-cache';
 
 // Cache MAL data 24 jam di memory
 const malCache     = new NodeCache({ stdTTL: 86400 });
@@ -157,7 +157,7 @@ function findBestMatch(results, query) {
 }
 
 // ── searchAnime ──────────────────────────────────────────────
-async function searchAnime(title) {
+export async function searchAnime(title) {
     if (!title) return null;
 
     const normalized = normalizeTitle(title);
@@ -209,7 +209,7 @@ async function searchAnime(title) {
 }
 
 // ── getAnimeEpisodes ─────────────────────────────────────────
-async function getAnimeEpisodes(malId, totalEps) {
+export async function getAnimeEpisodes(malId, totalEps) {
     if (!malId) return {};
 
     const cacheKey = `mal_eps|${malId}`;
@@ -273,5 +273,3 @@ async function getAnimeEpisodes(malId, totalEps) {
     inFlight.set(cacheKey, promise);
     return promise;
 }
-
-module.exports = { searchAnime, getAnimeEpisodes };

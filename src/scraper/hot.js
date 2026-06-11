@@ -1,9 +1,11 @@
-const { ambilDariPool, kembalikanKePool } = require('../puppeteer/pool');
-const cheerio = require('cheerio');
-const NodeCache = require('node-cache');
-const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 jam
+import { releaseToPool } from '../puppeteer/pool.js';
+import { fetchWithCF } from '../utils/scrapeHelper.js';
+import * as cheerio from 'cheerio';
+import { getCache } from '../utils/cacheManager.js';
 
-async function getHotAnime() {
+const cache = getCache('hot', 3600);
+
+export async function getHotAnime() {
     const cacheKey = 'hot_anime_top10';
     
     const cachedData = cache.get(cacheKey);
@@ -17,31 +19,15 @@ async function getHotAnime() {
 
     let slot;
     try {
-        slot = await ambilDariPool();
-        const page = slot.page;
+        const fetchRes = await fetchWithCF(url, { fetchTimeout: 6000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
 
-        // Fetch HTML of homepage
-        let html = await page.evaluate(async (targetUrl) => {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(targetUrl, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                return await res.text();
-            } catch(e) {
-                return '';
-            }
-        }, url);
-
-        if (!html || html.trim() === '') {
-            console.log(`[Hot] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            html = await page.content();
+        if (html === '404_NOT_FOUND') {
+            return { list: [] };
         }
 
-        if (!html) throw new Error("Gagal mengambil HTML dari target");
-
-        const $ = cheerio.load(html);
         const list = [];
 
         $('.widgetseries ul li a.series').each((_, el) => {
@@ -79,10 +65,6 @@ async function getHotAnime() {
     } catch (err) {
         throw err;
     } finally {
-        if (slot) kembalikanKePool(slot);
+        if (slot) releaseToPool(slot);
     }
 }
-
-module.exports = {
-    getHotAnime
-};

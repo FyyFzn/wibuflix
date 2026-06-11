@@ -1,9 +1,11 @@
-const fs = require('fs');
-const path = require('path');
-const { loadLocalDatabase } = require('./anime_sync');
-const { loadOtakuDatabase } = require('../scraper/otakudesu_sync');
-const { searchTMDB, saveTMDBCache } = require('../api/tmdb');
-const { getDataDir } = require('../utils/pathUtils');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import stringSimilarity from 'string-similarity';
+import { loadLocalDatabase } from './anime_sync.js';
+import { loadOtakuDatabase } from '../scraper/otakudesu_sync.js';
+import { searchTMDB, saveTMDBCache } from '../api/tmdb.js';
+import { getDataDir } from '../utils/pathUtils.js';
 
 const DB_PATH = path.join(getDataDir(), 'unified_db.json');
 
@@ -49,7 +51,7 @@ function extractTitleAndSuffix(rawTitle) {
     return { cleanTitle, suffix, originalTitle };
 }
 
-async function syncUnified() {
+export async function syncUnified() {
     log('[UnifiedSync] Memulai pembuatan Unified Database...');
     try {
         const samehadakuDb = loadLocalDatabase();
@@ -119,7 +121,6 @@ async function syncUnified() {
                     // Hanya bandingkan dengan kunci yang memiliki suffix yang sama agar tidak salah merge beda season
                     const sameSuffixKeys = existingKeys.filter(k => k.endsWith(suffix));
                     if (sameSuffixKeys.length > 0) {
-                        const stringSimilarity = require('string-similarity');
                         const matches = stringSimilarity.findBestMatch(unifiedKey, sameSuffixKeys);
                         if (matches.bestMatch.rating > 0.7) {
                             unifiedKey = matches.bestMatch.target;
@@ -184,7 +185,7 @@ async function syncUnified() {
     }
 }
 
-function loadUnifiedDatabase() {
+export function loadUnifiedDatabase() {
     if (fs.existsSync(DB_PATH)) {
         try {
             const raw = fs.readFileSync(DB_PATH, 'utf-8');
@@ -198,8 +199,6 @@ function loadUnifiedDatabase() {
 }
 
 // Jika dijalankan langsung
-if (require.main === module) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
     syncUnified().then(() => process.exit(0));
 }
-
-module.exports = { syncUnified, loadUnifiedDatabase };
