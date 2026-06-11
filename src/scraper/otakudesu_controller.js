@@ -210,7 +210,7 @@ function extractEpisodeNumber(title) {
     return null;
 }
 
-export async function getAlternativeServers(seriesTitle, episodeTitle) {
+export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl = null) {
     if (!seriesTitle || !episodeTitle) return [];
 
     try {
@@ -218,7 +218,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle) {
         if (!otakuDb || otakuDb.length === 0) return [];
 
         const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-        const queryWords = query.split(' ');
+        const queryWords = query.split(' ').filter(w => w.length > 2);
 
         let bestMatch = null;
         let maxMatches = 0;
@@ -227,7 +227,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle) {
             const itemTitle = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
             let matches = 0;
             for (const w of queryWords) {
-                if (w.length > 2 && new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
+                if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
             }
             if (matches > maxMatches) {
                 maxMatches = matches;
@@ -237,11 +237,41 @@ export async function getAlternativeServers(seriesTitle, episodeTitle) {
 
         if (!bestMatch || maxMatches < queryWords.length / 2) return [];
 
-        const targetEpNum = extractEpisodeNumber(episodeTitle);
-        if (targetEpNum === null) return [];
+        const targetEpNumRaw = extractEpisodeNumber(episodeTitle);
+        if (targetEpNumRaw === null) return [];
 
         const details = await otaku.getExtraAnime(bestMatch.slug);
         if (!details || !details.episodes) return [];
+
+        let offsetOtaku = 0;
+        if (seriesUrl) {
+            try {
+                // To avoid circular dependency with episodes.js, we assume the caller passes the offset, 
+                // but since we don't have it, we'll try to import dynamically and fetch
+                const episodesModule = await import('./episodes.js');
+                const sameRes = await episodesModule.getEpisodes(seriesUrl);
+                
+                if (sameRes && sameRes.daftar_episode) {
+                    const sameEps = sameRes.daftar_episode.map(ep => extractEpisodeNumber(ep.judul)).filter(n => n !== null);
+                    const otakuEps = details.episodes.map(ep => extractEpisodeNumber(ep.title)).filter(n => n !== null);
+                    
+                    if (sameEps.length > 0 && otakuEps.length > 0) {
+                        const minSame = Math.min(...sameEps);
+                        const minOtaku = Math.min(...otakuEps);
+                        const sameSet = new Set(sameEps);
+                        if (!otakuEps.some(num => sameSet.has(num))) {
+                            if (minOtaku === 1 && minSame > 1) {
+                                offsetOtaku = minSame - 1;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("[Otakudesu Alternative Offset Error]", e.message);
+            }
+        }
+
+        const targetEpNum = targetEpNumRaw - offsetOtaku;
 
         let targetEpUrl = null;
         for (const ep of details.episodes) {

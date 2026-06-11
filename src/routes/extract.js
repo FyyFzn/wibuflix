@@ -287,7 +287,7 @@ router.get('/api/smart-play', async (req, res) => {
                     alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
                 } else {
                     console.info(`[Smart-Play] Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                    alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle);
+                    alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, seriesUrl);
                 }
             }
 
