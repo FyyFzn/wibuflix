@@ -2,6 +2,9 @@ import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import { extractIframeSrc, namaServer } from './extractors/utils.js';
 import { resolveExtractor } from './extractors/index.js';
+import { loadLocalDatabase } from '../sync/anime_sync.js';
+import { loadUnifiedDatabase } from '../sync/unified_sync.js';
+import { getEpisodes } from './episodes.js';
 
 export { extractIframeSrc, namaServer };
 
@@ -287,4 +290,130 @@ export async function extractVideoUrl(embedUrl, req) {
     // ── 3. Delegasikan ke modular extractors ──
     const extractor = resolveExtractor(embedUrl);
     return await extractor.extract(embedUrl, req);
+}
+
+function extractEpisodeNumber(title) {
+    if (!title) return null;
+    // Standard episode matching (Episode/Eps/Ep followed by digits)
+    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
+    if (stdMatch) return parseFloat(stdMatch[1]);
+
+    // OVA / Special matching (OVA 1, Special 3, SP 2, etc.)
+    const ovaMatch = title.match(/(?:OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
+    if (ovaMatch) return parseFloat(ovaMatch[1]);
+
+    // Standalone trailing digit matching
+    const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    if (fallbackMatch) return parseFloat(fallbackMatch[1]);
+
+    return null;
+}
+
+export async function getAlternativeServersSamehadaku(seriesTitle, episodeTitle) {
+    if (!seriesTitle || !episodeTitle) return [];
+
+    try {
+        let samehadakuUrl = null;
+
+        // 1. Try unified database first for mapping
+        const unifiedDb = loadUnifiedDatabase();
+        if (unifiedDb && unifiedDb.length > 0) {
+            const query = seriesTitle.toLowerCase().trim();
+            // Try exact title / alias match
+            let matchedEntry = unifiedDb.find(item => 
+                item.title.toLowerCase() === query || 
+                (item.aliases && item.aliases.some(a => a.toLowerCase() === query))
+            );
+
+            // Fuzzy match in unified_db if exact match not found
+            if (!matchedEntry) {
+                const queryWords = query.replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
+                let bestMatch = null;
+                let maxMatches = 0;
+                for (const item of unifiedDb) {
+                    const titlesToTry = [item.title, ...(item.aliases || [])];
+                    for (const t of titlesToTry) {
+                        const itemTitle = t.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+                        let matches = 0;
+                        for (const w of queryWords) {
+                            if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
+                        }
+                        if (matches > maxMatches) {
+                            maxMatches = matches;
+                            bestMatch = item;
+                        }
+                    }
+                }
+                if (bestMatch && maxMatches >= queryWords.length / 2) {
+                    matchedEntry = bestMatch;
+                }
+            }
+
+            if (matchedEntry && matchedEntry.sources && matchedEntry.sources.samehadaku) {
+                samehadakuUrl = matchedEntry.sources.samehadaku.url;
+            }
+        }
+
+        // 2. Fallback to local anime database (samehadaku)
+        if (!samehadakuUrl) {
+            const samehadakuDb = loadLocalDatabase();
+            if (samehadakuDb && samehadakuDb.length > 0) {
+                const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                const queryWords = query.split(' ').filter(w => w.length > 2);
+
+                let bestMatch = null;
+                let maxMatches = 0;
+
+                for (const item of samehadakuDb) {
+                    const itemTitle = item.judul.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+                    let matches = 0;
+                    for (const w of queryWords) {
+                        if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
+                    }
+                    if (matches > maxMatches) {
+                        maxMatches = matches;
+                        bestMatch = item;
+                    }
+                }
+
+                if (bestMatch && maxMatches >= queryWords.length / 2) {
+                    samehadakuUrl = bestMatch.url;
+                }
+            }
+        }
+
+        if (!samehadakuUrl) {
+            console.log(`[Samehadaku Alt] Tidak menemukan kecocokan seri untuk: "${seriesTitle}"`);
+            return [];
+        }
+
+        console.log(`[Samehadaku Alt] Menemukan kecocokan seri Samehadaku: "${samehadakuUrl}"`);
+
+        const targetEpNum = extractEpisodeNumber(episodeTitle);
+        if (targetEpNum === null) return [];
+
+        const details = await getEpisodes(samehadakuUrl);
+        if (!details || !details.daftar_episode) return [];
+
+        let targetEpUrl = null;
+        for (const ep of details.daftar_episode) {
+            const epNum = extractEpisodeNumber(ep.judul);
+            if (epNum === targetEpNum) {
+                targetEpUrl = ep.url;
+                break;
+            }
+        }
+
+        if (!targetEpUrl) {
+            console.log(`[Samehadaku Alt] Tidak menemukan episode ${targetEpNum} di Samehadaku`);
+            return [];
+        }
+
+        console.log(`[Samehadaku Alt] Menemukan episode URL alternatif: "${targetEpUrl}"`);
+        const scrapeResult = await scrapeVideoServers(targetEpUrl);
+        return scrapeResult.servers || [];
+    } catch (e) {
+        console.error("[Samehadaku Alternative Error]", e.message);
+        return [];
+    }
 }
