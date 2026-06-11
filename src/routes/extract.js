@@ -146,7 +146,7 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
                     console.info(`[Prefetch] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source || 'Primary'}`);
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl);
-                        if (extracted && extracted.url) {
+                        if (extracted && extracted.url && !extracted.webviewOnly) {
                             const isMp4 = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
                             if (isMp4) {
                                 matchedSource = {
@@ -336,7 +336,7 @@ router.get('/api/smart-play', async (req, res) => {
                     console.info(`[Smart-Play] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source}`);
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl, req);
-                        if (extracted && extracted.url) {
+                        if (extracted && extracted.url && !extracted.webviewOnly) {
                             const isMp4 = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
                             if (isMp4) {
                                 matchedSource = {
