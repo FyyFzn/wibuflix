@@ -107,7 +107,7 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
                     if (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) {
                         alternativeServers = await getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
                     } else {
-                        alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle);
+                        alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle, nextEpisodeUrl);
                     }
                 } catch (altErr) {
                     console.error(`[Prefetch Alt Error] Gagal mengambil server alternatif:`, altErr.message);
