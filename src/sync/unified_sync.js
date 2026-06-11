@@ -18,19 +18,17 @@ const log = (...args) => {
 };
 
 function extractTitleAndSuffix(rawTitle) {
-    // Normalisasi kurung jepang ke kurung siku biasa agar lebih seragam
-    rawTitle = rawTitle.replace(/【/g, '[').replace(/】/g, ']');
     const originalTitle = rawTitle.toLowerCase();
+    
+    // Normalisasi ekstrim: buang semua kurung siku, kurung biasa, dan simbol
+    let cleanTitle = rawTitle.replace(/[\[\]【】()]/g, '');
     let suffix = "";
-    let cleanTitle = rawTitle;
 
-    // Tambahkan deteksi \bs\s*(\d+)\b untuk mendeteksi "S2", "S3"
     const sMatch = originalTitle.match(/season\s*(\d+)/i) || originalTitle.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || originalTitle.match(/\bs\s*(\d+)\b/i);
     if (sMatch) {
         suffix = ` s${sMatch[1]}`;
         cleanTitle = cleanTitle.replace(new RegExp(sMatch[0], 'i'), '').trim();
     }
-    // Tambahkan deteksi \bp\s*(\d+)\b untuk mendeteksi "P2", "Part 2"
     const pMatch = originalTitle.match(/part\s*(\d+)/i) || originalTitle.match(/\bp\s*(\d+)\b/i);
     if (pMatch) {
         suffix += ` p${pMatch[1]}`;
@@ -45,7 +43,6 @@ function extractTitleAndSuffix(rawTitle) {
         cleanTitle = cleanTitle.replace(/movie/i, '').trim();
     }
     
-    // Clean up trailing dashes or colons
     cleanTitle = cleanTitle.replace(/[-:]\s*$/, '').trim();
 
     return { cleanTitle, suffix, originalTitle };
@@ -74,42 +71,35 @@ async function processInBatches(items, batchSize, processor) {
     return results;
 }
 
+const normalizeForMatch = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 export async function syncUnified() {
     log('[UnifiedSync] Memulai pembuatan/update Unified Database...');
     try {
         const samehadakuDb = loadLocalDatabase();
         const otakuDb = loadOtakuDatabase();
         
-        // Load existing database to enable Delta Sync
         const existingDb = loadUnifiedDatabase();
         const unifiedMap = new Map();
         
-        // Populate map with existing entries
-        existingDb.forEach(item => {
-            // Kita butuh key asli, karena struktur DB akhir tidak menyimpan key secara eksplisit, 
-            // kita gunakan title lowercase + suffix sebagai pendekatan. 
-            // Namun, saat iterasi Samehadaku/Otaku nanti, jika ditemukan, kita akan perbarui.
-            // Paling aman: kita inisialisasi Map dengan entry yang sudah ada.
-            // Key yang tepat adalah yang dihasilkan dari proses ekstrak.
-            // Kita akan cocokkan berdasarkan 'aliases' atau 'title' nanti.
-        });
-        
-        // Helper: Find existing entry
-        const findExistingEntry = (title, aliases, suffix) => {
-            const searchTerms = [title.toLowerCase(), ...(aliases || []).map(a => a.toLowerCase())];
+        const findExistingEntry = (title, aliases, targetSuffix) => {
+            const searchTerms = [title, ...(aliases || [])].map(normalizeForMatch).filter(Boolean);
             for (const existing of existingDb) {
-                const existingTerms = [existing.title.toLowerCase(), ...(existing.aliases || []).map(a => a.toLowerCase())];
+                const { suffix: existingSuffix } = extractTitleAndSuffix(existing.title);
+                if (existingSuffix !== targetSuffix) continue; // Pastikan beda season TIDAK menimpa satu sama lain
+
+                const existingTerms = [existing.title, ...(existing.aliases || [])].map(normalizeForMatch).filter(Boolean);
                 const hasIntersection = searchTerms.some(term => existingTerms.includes(term));
                 if (hasIntersection) {
-                    return existing; // Return referensi ke objek existing
+                    return existing;
                 }
             }
             return null;
         };
 
-        // Karena struktur key sebelumnya dinamis, kita bangun ulang unifiedMap dengan data existing
         for (const item of existingDb) {
-            const key = item.title.toLowerCase(); 
+            const { cleanTitle, suffix } = extractTitleAndSuffix(item.title);
+            const key = normalizeForMatch(cleanTitle) + suffix; 
             unifiedMap.set(key, item);
         }
 
