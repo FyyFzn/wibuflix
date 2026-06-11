@@ -147,7 +147,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             // Progress tracking
             let downloadedBytes = 0;
-            const logInterval = 10 * 1024 * 1024; // Log setiap 10MB (butuh waktu ~80 detik di 125KB/s)
+            const logInterval = 50 * 1024 * 1024; // Log setiap 50MB agar console tidak penuh
             let nextLogThreshold = logInterval;
 
             response.data.on('data', (chunk) => {

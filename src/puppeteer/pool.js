@@ -4,11 +4,14 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
 let browserInstance = null;
-const PAGE_POOL_SIZE = 4;
-const EXTRACTOR_POOL_SIZE = 2;
+const PAGE_POOL_SIZE = 2; // Dikurangi dari 4 untuk menghemat RAM Azure B1
+const EXTRACTOR_POOL_SIZE = 1; // Dikurangi dari 2 untuk menghemat RAM
 const pagePool = [];
 const extractorPool = [];
 let poolReady = false;
+
+export let globalCfCookie = '';
+export const globalUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 export async function getBrowser() {
     if (browserInstance) {
@@ -36,7 +39,7 @@ export async function getBrowser() {
 
 export async function createPage(browser) {
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
         const type = req.resourceType();
@@ -51,7 +54,7 @@ export async function createPage(browser) {
 
 export async function createExtractorPage(browser) {
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
         const type = req.resourceType();
@@ -76,6 +79,26 @@ export async function waitForCloudflare(page) {
     }
 }
 
+export async function refreshCfCookie() {
+    const browser = await getBrowser();
+    const page = await createPage(browser);
+    try {
+        console.log(`[PagePool] Me-refresh CF cookie...`);
+        await page.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await waitForCloudflare(page);
+        const cookies = await page.cookies();
+        const cfClearance = cookies.find(c => c.name === 'cf_clearance');
+        if (cfClearance) {
+            globalCfCookie = `cf_clearance=${cfClearance.value};`;
+            console.log(`[PagePool] cf_clearance cookie berhasil diperbarui ✓`);
+        }
+    } catch (e) {
+        console.warn(`[PagePool] Gagal me-refresh CF cookie:`, e.message);
+    } finally {
+        await page.close().catch(() => {});
+    }
+}
+
 export async function initPagePool() {
     if (poolReady) return;
     poolReady = true;
@@ -87,7 +110,13 @@ export async function initPagePool() {
         console.log(`[PagePool] Warming up CF cookie...`);
         await firstPage.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await waitForCloudflare(firstPage);
-        console.log(`[PagePool] CF cookie berhasil didapat ✓`);
+        const cookies = await firstPage.cookies();
+        const cfClearance = cookies.find(c => c.name === 'cf_clearance');
+        if (cfClearance) {
+            globalCfCookie = `cf_clearance=${cfClearance.value};`;
+            console.log(`[PagePool] cf_clearance cookie berhasil didapat untuk Axios ✓`);
+        }
+        console.log(`[PagePool] CF warm-up selesai ✓`);
     } catch (e) {
         console.warn(`[PagePool] CF warm-up gagal (akan dicoba ulang saat request):`, e.message);
     }

@@ -1,5 +1,6 @@
-import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
+import { acquireFromPool, releaseToPool, globalCfCookie, globalUserAgent, refreshCfCookie } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
+import axios from 'axios';
 import { extractIframeSrc, namaServer } from './extractors/utils.js';
 import { resolveExtractor } from './extractors/index.js';
 import { loadLocalDatabase } from '../sync/anime_sync.js';
@@ -71,26 +72,29 @@ export async function scrapeVideoServers(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
     console.log(`\n[Scrape Fast] ${targetUrl}`);
 
+    let html = '';
+    try {
+        const response = await axios.get(targetUrl, {
+            headers: {
+                'User-Agent': globalUserAgent,
+                'Cookie': globalCfCookie
+            },
+            timeout: 8000
+        });
+        html = response.data;
+    } catch (err) {
+        console.log(`[Scrape Fast] Axios gagal (${err.message}). Fallback...`);
+        if (err.response && (err.response.status === 403 || err.response.status === 503)) {
+            await refreshCfCookie();
+        }
+    }
+
     let slot;
     try {
-        slot = await acquireFromPool();
-        const page = slot.page;
-
-        // Fetch HTML text directly via Puppeteer's fetch to bypass CF quickly
-        let html = await page.evaluate(async (url) => {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                return await res.text();
-            } catch(e) {
-                return '';
-            }
-        }, targetUrl);
-
         if (!html || html.trim() === '' || html.includes('cf-browser-verification') || html.includes('Just a moment')) {
-            console.log(`[Scrape] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            console.log(`[Scrape] Fetch Axios gagal/terblokir Cloudflare. Fallback ke Puppeteer...`);
+            slot = await acquireFromPool();
+            const page = slot.page;
             await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             html = await page.content();
         }
@@ -215,30 +219,33 @@ export async function resolveSingleServer(targetUrl, nume, req) {
     if (!targetUrl || !nume) throw new Error("Parameter 'url' dan 'nume' wajib diisi!");
     console.log(`\n[Resolve Fast] ${targetUrl} [nume=${nume}]`);
 
+    let html = '';
+    try {
+        const response = await axios.get(targetUrl, {
+            headers: {
+                'User-Agent': globalUserAgent,
+                'Cookie': globalCfCookie
+            },
+            timeout: 8000
+        });
+        html = response.data;
+    } catch (err) {
+        console.log(`[Resolve Fast] Axios gagal (${err.message}). Fallback...`);
+        if (err.response && (err.response.status === 403 || err.response.status === 503)) {
+            await refreshCfCookie();
+        }
+    }
+
     let slot;
     try {
-        slot = await acquireFromPool();
-        const page = slot.page;
-
-        // Fast fetch to get the post ID
-        let html = await page.evaluate(async (url) => {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                return await res.text();
-            } catch(e) {
-                return '';
-            }
-        }, targetUrl);
-
         let $ = cheerio.load(html);
         let post = $('.east_player_option').first().attr('data-post') || '';
 
         // Fallback to Puppeteer page.goto if fetch failed (Cloudflare IUAM / Tarpit)
         if (!post) {
-            console.log(`[Resolve] Fetch gagal/terblokir Cloudflare. Fallback ke page.goto...`);
+            console.log(`[Resolve] Fetch Axios gagal/terblokir Cloudflare. Fallback ke Puppeteer...`);
+            slot = await acquireFromPool();
+            const page = slot.page;
             await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             html = await page.content();
             $ = cheerio.load(html);
@@ -246,6 +253,12 @@ export async function resolveSingleServer(targetUrl, nume, req) {
         }
 
         if (!post) throw new Error("Tidak menemukan ID Post (data-post) setelah fallback");
+        
+        // Ensure we have a page for resolveServerIframe which uses evaluate
+        if (!slot) {
+            slot = await acquireFromPool();
+        }
+        const page = slot.page;
 
         const iframeUrl = await resolveServerIframe(page, {
             post,

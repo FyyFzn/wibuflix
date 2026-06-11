@@ -56,8 +56,8 @@ async function getServersBasedOnUrl(episodeUrl) {
 function getResolutionGroup(serverName) {
     const nameLower = serverName.toLowerCase();
     
-    // Only accept MP4. Reject MKV or x265
-    if (nameLower.includes('mkv') || nameLower.includes('x265')) {
+    // Tolak format x265/HEVC karena sangat memberatkan performa HP (software decoding)
+    if (nameLower.includes('x265') || nameLower.includes('hevc')) {
         return null;
     }
     
@@ -148,13 +148,13 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl);
                         if (extracted && extracted.url && !extracted.webviewOnly) {
-                            const isMp4 = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
-                            if (isMp4) {
+                            const isDirectVideo = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
+                            if (isDirectVideo) {
                                 matchedSource = {
                                     url: extracted.url,
                                     headers: extracted.headers || {}
                                 };
-                                console.info(`[Prefetch] Menemukan source MP4 (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
+                                console.info(`[Prefetch] Menemukan source video (Direct) (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
                                 break;
                             }
                         }
@@ -244,6 +244,17 @@ router.get('/api/smart-play', async (req, res) => {
             if (nextEpisodeUrl) {
                 triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle);
             }
+            
+            const cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
+            if (cachedProxyUrl) {
+                return res.json({
+                    success: true,
+                    status: 'UPLOADING',
+                    url: cachedProxyUrl,
+                    message: 'Memutar via Proxy Instan sementara Azure memproses.'
+                });
+            }
+            
             return res.json({
                 success: true,
                 status: 'UPLOADING',
@@ -355,13 +366,13 @@ router.get('/api/smart-play', async (req, res) => {
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl, req);
                         if (extracted && extracted.url && !extracted.webviewOnly) {
-                            const isMp4 = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
-                            if (isMp4) {
+                            const isDirectVideo = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
+                            if (isDirectVideo) {
                                 matchedSource = {
                                     url: extracted.url,
                                     headers: extracted.headers || {}
                                 };
-                                console.info(`[Smart-Play] Menemukan source MP4 (${resVal}p) dari ${srv.source}: ${extracted.url}`);
+                                console.info(`[Smart-Play] Menemukan source video (Direct) (${resVal}p) dari ${srv.source}: ${extracted.url}`);
                                 break;
                             }
                         }
@@ -389,10 +400,22 @@ router.get('/api/smart-play', async (req, res) => {
                 });
             }
 
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            let proxyUrl = matchedSource.url;
+            if (matchedSource.headers && matchedSource.headers.token) {
+                proxyUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(matchedSource.url)}&token=${encodeURIComponent(matchedSource.headers.token)}&referer=${encodeURIComponent(matchedSource.headers.Referer || '')}`;
+            } else {
+                proxyUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(matchedSource.url)}`;
+            }
+            
+            // Simpan proxy URL sementara ke global (opsional, tapi berguna untuk return UPLOADING berikutnya)
+            global[`proxy_${seriesSlug}_${episodeSlug}`] = proxyUrl;
+
             return res.json({
                 success: true,
                 status: 'UPLOADING',
-                message: 'Ekstraksi berhasil. Sedang mengalirkan video ke Azure Blob.'
+                url: proxyUrl,
+                message: 'Memutar via Proxy Instan sementara Azure memproses.'
             });
         } else {
             markUploadFailed(seriesSlug, episodeSlug);
