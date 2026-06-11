@@ -99,15 +99,15 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
     if (!containerClient) {
         console.error('[Azure Uploader] Cannot upload: Container client is not configured.');
         uploadCache.set(blobPath, 'FAILED');
-        return;
+        return Promise.reject(new Error('Container client is not configured.'));
     }
 
     await ensureContainerExists();
     uploadCache.set(blobPath, 'UPLOADING');
     console.info(`[Azure Uploader] Starting upload for ${blobPath} from ${videoUrl}`);
 
-    // Run the upload in background
-    (async () => {
+    // Return the upload promise so callers can wait for it if they want
+    return (async () => {
         try {
             // Setup headers for request
             const requestHeaders = {

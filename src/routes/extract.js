@@ -358,12 +358,17 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (matchedSource) {
-            // Start upload in background
-            await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
+            // Start upload in background and chain prefetch
+            const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
             
-            // Trigger prefetch of next episode
-            if (nextEpisodeUrl) {
-                triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle);
+            // Trigger prefetch of next episode ONLY AFTER current upload finishes
+            if (nextEpisodeUrl && uploadTask) {
+                uploadTask.then(() => {
+                    console.info(`[Smart-Play] Upload episode saat ini selesai. Memulai prefetch episode selanjutnya...`);
+                    triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle);
+                }).catch(err => {
+                    console.error(`[Smart-Play] Upload gagal, prefetch dibatalkan:`, err.message);
+                });
             }
 
             return res.json({
