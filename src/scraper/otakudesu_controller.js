@@ -55,7 +55,6 @@ export async function getOtakuEpisodesFormatted(slug) {
             return {
                 judul: ep.title,
                 url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
-                tanggal: ep.date || '',
                 slug: epSlug
             };
         })

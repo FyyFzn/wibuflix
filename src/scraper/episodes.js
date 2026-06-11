@@ -55,8 +55,7 @@ export async function getEpisodes(targetUrl) {
                     seenUrls.add(url);
                     daftar_episode.push({
                         judul: title,
-                        url: url,
-                        tanggal: epDate.length ? epDate.text().trim() : ''
+                        url: url
                     });
                 }
             }
@@ -68,15 +67,13 @@ export async function getEpisodes(targetUrl) {
             if (downloadLink.length && downloadLink.attr('href')) {
                 daftar_episode.push({
                     judul: rawTitle || 'Full Movie / Episode Spesial',
-                    url: targetUrl, // Kirim URL saat ini, server akan parsing iframenya
-                    tanggal: '-',
+                    url: targetUrl // Kirim URL saat ini, server akan parsing iframenya
                 });
             } else if ($('.player-area iframe, #player iframe, .pd-expand iframe').length > 0) {
                 // Ada iframe video langsung
                 daftar_episode.push({
                     judul: rawTitle || 'Full Movie / Episode Spesial',
-                    url: targetUrl,
-                    tanggal: '-',
+                    url: targetUrl
                 });
             }
         }

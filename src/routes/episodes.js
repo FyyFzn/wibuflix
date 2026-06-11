@@ -105,7 +105,6 @@ router.get('/api/episodes', async (req, res) => {
                     
                     epMap.set(num, {
                         judul: adjustedJudul, // Pakai judul Samehadaku sbg default
-                        tanggal: ep.tanggal,
                         urls: { samehadaku: ep.url }
                     });
                 });
@@ -125,7 +124,6 @@ router.get('/api/episodes', async (req, res) => {
                         const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetOtaku) : ep.judul;
                         epMap.set(num, {
                             judul: adjustedJudul, // Jika cuma ada di Otaku
-                            tanggal: ep.tanggal,
                             urls: { otakudesu: ep.url }
                         });
                     }
@@ -155,7 +153,6 @@ router.get('/api/episodes', async (req, res) => {
                 if (data && data.daftar_episode) {
                     data.daftar_episode = data.daftar_episode.map(ep => ({
                         judul: ep.judul,
-                        tanggal: ep.tanggal,
                         urls: { otakudesu: ep.url }
                     }));
                 }
@@ -165,7 +162,6 @@ router.get('/api/episodes', async (req, res) => {
                 if (data && data.daftar_episode) {
                     data.daftar_episode = data.daftar_episode.map(ep => ({
                         judul: ep.judul,
-                        tanggal: ep.tanggal,
                         urls: { samehadaku: ep.url }
                     }));
                 }
