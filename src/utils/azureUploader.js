@@ -33,7 +33,23 @@ export function getBlobPath(seriesSlug, episodeSlug) {
  */
 export function getBlobUrl(blobPath) {
     if (!containerClient) return '';
-    return containerClient.getBlockBlobClient(blobPath).url;
+    const rawUrl = containerClient.getBlockBlobClient(blobPath).url;
+    
+    // Jika user mengonfigurasi CDN, timpa URL base-nya
+    const cdnUrl = process.env.AZURE_CDN_URL;
+    if (cdnUrl) {
+        try {
+            const parsedRaw = new URL(rawUrl);
+            const parsedCdn = new URL(cdnUrl);
+            // Gabungkan host CDN dengan path asli dari Blob
+            return `${parsedCdn.origin}${parsedRaw.pathname}${parsedRaw.search}`;
+        } catch (e) {
+            console.error('[Azure Uploader] URL CDN tidak valid, kembali ke URL Blob default.');
+            return rawUrl;
+        }
+    }
+    
+    return rawUrl;
 }
 
 /**
