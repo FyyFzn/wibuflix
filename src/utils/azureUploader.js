@@ -115,21 +115,43 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 ...headers
             };
 
+            // Set up a 10-minute hard timeout for the entire upload process
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), 10 * 60 * 1000);
+
             // Download stream from source URL
             const response = await axios({
                 method: 'get',
                 url: videoUrl,
                 responseType: 'stream',
                 headers: requestHeaders,
-                timeout: 30000 // 30 seconds connection timeout
+                timeout: 30000, // 30 seconds connection timeout
+                signal: abortController.signal
+            });
+
+            // Progress tracking
+            let downloadedBytes = 0;
+            const logInterval = 50 * 1024 * 1024; // 50MB
+            let nextLogThreshold = logInterval;
+
+            response.data.on('data', (chunk) => {
+                downloadedBytes += chunk.length;
+                if (downloadedBytes >= nextLogThreshold) {
+                    console.info(`[Azure Uploader] Progress ${blobPath}: ${Math.round(downloadedBytes / 1024 / 1024)}MB downloaded...`);
+                    nextLogThreshold += logInterval;
+                }
+            });
+
+            response.data.on('end', () => {
+                console.info(`[Azure Uploader] Selesai mendownload dari source: ${blobPath} (Total: ${Math.round(downloadedBytes / 1024 / 1024)}MB)`);
+            });
+
+            response.data.on('error', (err) => {
+                console.error(`[Azure Uploader] Stream download error untuk ${blobPath}:`, err.message);
             });
 
             const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
             
-            // Set up a 10-minute hard timeout for the entire upload process
-            const abortController = new AbortController();
-            const timeoutId = setTimeout(() => abortController.abort(), 10 * 60 * 1000);
-
             try {
                 // Pipe stream to block blob
                 await blockBlobClient.uploadStream(
