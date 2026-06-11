@@ -126,17 +126,26 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
             
-            // Pipe stream to block blob
-            await blockBlobClient.uploadStream(
-                response.data,
-                4 * 1024 * 1024, // 4MB buffer size
-                20, // max concurrency
-                {
-                    blobHTTPHeaders: {
-                        blobContentType: 'video/mp4'
+            // Set up a 10-minute hard timeout for the entire upload process
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), 10 * 60 * 1000);
+
+            try {
+                // Pipe stream to block blob
+                await blockBlobClient.uploadStream(
+                    response.data,
+                    4 * 1024 * 1024, // 4MB buffer size
+                    5, // reduced max concurrency to 5 to save memory and prevent connection drops
+                    {
+                        blobHTTPHeaders: {
+                            blobContentType: 'video/mp4'
+                        },
+                        abortSignal: abortController.signal
                     }
-                }
-            );
+                );
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             console.info(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
