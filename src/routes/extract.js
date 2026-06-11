@@ -1,10 +1,11 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../scraper/extractor.js';
-import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl } from '../utils/azureUploader.js';
+import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed } from '../utils/azureUploader.js';
 import { getNeosatsuServers } from '../scraper/neosatsu.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
 
 const router = express.Router();
+const activeExtractions = new Set();
 
 function extractSlugs(episodeUrl, seriesUrl) {
     let episodeSlug = '';
@@ -79,75 +80,97 @@ async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
     if (!nextEpisodeUrl) return;
     try {
         const { episodeSlug: nextEpisodeSlug } = extractSlugs(nextEpisodeUrl, null);
+        const nextBlobPath = getBlobPath(seriesSlug, nextEpisodeSlug);
         
         const status = await checkUploadStatus(seriesSlug, nextEpisodeSlug);
-        if (status === 'READY' || status === 'UPLOADING') {
-            console.log(`[Prefetch] Episode selanjutnya (${nextEpisodeSlug}) sudah READY atau sedang UPLOADING.`);
+        if (status === 'READY' || status === 'UPLOADING' || status === 'FAILED') {
+            console.log(`[Prefetch] Episode selanjutnya (${nextEpisodeSlug}) sudah ${status}.`);
+            return;
+        }
+
+        if (activeExtractions.has(nextBlobPath)) {
+            console.log(`[Prefetch] Skip: Ekstraksi untuk ${nextBlobPath} sudah berjalan.`);
             return;
         }
 
         console.log(`[Prefetch] Memulai prefetch untuk: ${nextEpisodeSlug}`);
-        const pageData = await getServersBasedOnUrl(nextEpisodeUrl);
-        const primaryServers = pageData.servers || [];
-        const episodeTitle = pageData.judul || '';
+        
+        activeExtractions.add(nextBlobPath);
+        let matchedSource = null;
 
-        let alternativeServers = [];
-        if (seriesTitle && episodeTitle && !nextEpisodeUrl.includes('___neosatsu_ep___')) {
-            try {
-                if (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) {
-                    alternativeServers = await getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-                } else {
-                    alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle);
-                }
-            } catch (altErr) {
-                console.error(`[Prefetch Alt Error] Gagal mengambil server alternatif:`, altErr.message);
-            }
-        }
+        try {
+            const pageData = await getServersBasedOnUrl(nextEpisodeUrl);
+            const primaryServers = pageData.servers || [];
+            const episodeTitle = pageData.judul || '';
 
-        const primarySource = (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
-        const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
-
-        const taggedPrimary = (primaryServers || []).map(s => ({ ...s, source: primarySource }));
-        const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
-
-        const servers = [...taggedPrimary, ...taggedAlternative];
-
-        if (!servers || servers.length === 0) {
-            console.log(`[Prefetch] Tidak ada server ditemukan untuk prefetch ${nextEpisodeSlug}`);
-            return;
-        }
-
-        // Group servers by resolution
-        const groups = { 1080: [], 720: [], 480: [], 360: [] };
-        for (const srv of servers) {
-            const resGroup = getResolutionGroup(srv.nama);
-            if (resGroup && groups[resGroup]) {
-                groups[resGroup].push(srv);
-            }
-        }
-
-        // Try extracting in priority order
-        const resolutions = [1080, 720, 480, 360];
-        for (const res of resolutions) {
-            let found = false;
-            for (const srv of groups[res]) {
-                console.log(`[Prefetch] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source || 'Primary'}`);
+            let alternativeServers = [];
+            if (seriesTitle && episodeTitle && !nextEpisodeUrl.includes('___neosatsu_ep___')) {
                 try {
-                    const extracted = await extractVideoUrl(srv.iframeUrl);
-                    if (extracted && extracted.url) {
-                        const isMp4 = extracted.url.includes('.mp4') && !extracted.url.includes('.m3u8');
-                        if (isMp4) {
-                            console.log(`[Prefetch] Menemukan source MP4 (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
-                            await uploadStream(extracted.url, extracted.headers || {}, seriesSlug, nextEpisodeSlug);
-                            found = true;
-                            break;
-                        }
+                    if (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) {
+                        alternativeServers = await getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
+                    } else {
+                        alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle);
                     }
-                } catch (e) {
-                    console.error(`[Prefetch] Gagal mengekstrak dari server ${srv.namaHost} (${srv.source || 'Primary'}):`, e.message);
+                } catch (altErr) {
+                    console.error(`[Prefetch Alt Error] Gagal mengambil server alternatif:`, altErr.message);
                 }
             }
-            if (found) break;
+
+            const primarySource = (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
+            const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
+
+            const taggedPrimary = (primaryServers || []).map(s => ({ ...s, source: primarySource }));
+            const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
+
+            const servers = [...taggedPrimary, ...taggedAlternative];
+
+            if (!servers || servers.length === 0) {
+                console.log(`[Prefetch] Tidak ada server ditemukan untuk prefetch ${nextEpisodeSlug}`);
+                markUploadFailed(seriesSlug, nextEpisodeSlug);
+                return;
+            }
+
+            // Group servers by resolution
+            const groups = { 1080: [], 720: [], 480: [], 360: [] };
+            for (const srv of servers) {
+                const resGroup = getResolutionGroup(srv.nama);
+                if (resGroup && groups[resGroup]) {
+                    groups[resGroup].push(srv);
+                }
+            }
+
+            // Try extracting in priority order
+            const resolutions = [1080, 720, 480, 360];
+            for (const res of resolutions) {
+                for (const srv of groups[res]) {
+                    console.log(`[Prefetch] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source || 'Primary'}`);
+                    try {
+                        const extracted = await extractVideoUrl(srv.iframeUrl);
+                        if (extracted && extracted.url) {
+                            const isMp4 = extracted.url.includes('.mp4') && !extracted.url.includes('.m3u8');
+                            if (isMp4) {
+                                matchedSource = {
+                                    url: extracted.url,
+                                    headers: extracted.headers || {}
+                                };
+                                console.log(`[Prefetch] Menemukan source MP4 (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`[Prefetch] Gagal mengekstrak dari server ${srv.namaHost} (${srv.source || 'Primary'}):`, e.message);
+                    }
+                }
+                if (matchedSource) break;
+            }
+        } finally {
+            activeExtractions.delete(nextBlobPath);
+        }
+
+        if (matchedSource) {
+            await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, nextEpisodeSlug);
+        } else {
+            markUploadFailed(seriesSlug, nextEpisodeSlug);
         }
     } catch (err) {
         console.error(`[Prefetch Error] Gagal memproses prefetch untuk ${nextEpisodeUrl}:`, err.message);
@@ -229,83 +252,109 @@ router.get('/api/smart-play', async (req, res) => {
             });
         }
 
-        // Status is FAILED or null -> Start extraction and upload process
-        console.log(`[Smart-Play] Mulai ekstraksi server untuk: ${episodeUrl}`);
-
-        // Fetch primary servers and alternative servers in parallel
-        let primaryPromise = getServersBasedOnUrl(episodeUrl);
-        let alternativePromise = Promise.resolve([]);
-
-        if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
-            if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-                console.log(`[Smart-Play] Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-            } else {
-                console.log(`[Smart-Play] Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle);
-            }
-        }
-
-        const [primaryData, alternativeServers] = await Promise.all([
-            primaryPromise,
-            alternativePromise.catch(err => {
-                console.error(`[Smart-Play Alternative Fetch Error]:`, err.message);
-                return [];
-            })
-        ]);
-
-        const primaryServers = primaryData.servers || [];
-
-        // Mark source websites for clarity in logging / resolution priority
-        const primarySource = (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
-        const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
-
-        const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
-        const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
-
-        const servers = [...taggedPrimary, ...taggedAlternative];
-
-        if (servers.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Tidak ada server download/streaming yang ditemukan di halaman episode.'
+        if (status === 'FAILED') {
+            return res.json({
+                success: true,
+                status: 'FAILED',
+                message: 'Ekstraksi video gagal sebelumnya. Menggunakan fallback server.'
             });
         }
 
-        // Group servers by resolution
-        const groups = { 1080: [], 720: [], 480: [], 360: [] };
-        for (const srv of servers) {
-            const resGroup = getResolutionGroup(srv.nama);
-            if (resGroup && groups[resGroup]) {
-                groups[resGroup].push(srv);
-            }
+        const blobPath = getBlobPath(seriesSlug, episodeSlug);
+        if (activeExtractions.has(blobPath)) {
+            console.log(`[Smart-Play] Ekstraksi untuk ${blobPath} sedang berjalan di request lain. Mengembalikan status UPLOADING.`);
+            return res.json({
+                success: true,
+                status: 'UPLOADING',
+                message: 'Video sedang diekstrak di request lain.'
+            });
         }
 
-        // Try extracting in priority order
-        const resolutions = [1080, 720, 480, 360];
+        // Status is FAILED or null -> Start extraction and upload process
+        console.log(`[Smart-Play] Mulai ekstraksi server untuk: ${episodeUrl}`);
+
+        activeExtractions.add(blobPath);
         let matchedSource = null;
 
-        for (const resVal of resolutions) {
-            for (const srv of groups[resVal]) {
-                console.log(`[Smart-Play] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source}`);
-                try {
-                    const extracted = await extractVideoUrl(srv.iframeUrl, req);
-                    if (extracted && extracted.url) {
-                        const isMp4 = extracted.url.includes('.mp4') && !extracted.url.includes('.m3u8');
-                        if (isMp4) {
-                            matchedSource = {
-                                url: extracted.url,
-                                headers: extracted.headers || {}
-                            };
-                            console.log(`[Smart-Play] Menemukan source MP4 (${resVal}p) dari ${srv.source}: ${extracted.url}`);
-                            break;
-                        }
-                    }
-                } catch (e) {
-                    console.error(`[Smart-Play] Gagal mengekstrak dari server ${srv.namaHost} (${srv.source}):`, e.message);
+        try {
+            // Fetch primary servers and alternative servers in parallel
+            let primaryPromise = getServersBasedOnUrl(episodeUrl);
+            let alternativePromise = Promise.resolve([]);
+
+            if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
+                if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
+                    console.log(`[Smart-Play] Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
+                } else {
+                    console.log(`[Smart-Play] Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle);
                 }
             }
-            if (matchedSource) break;
+
+            const [primaryData, alternativeServers] = await Promise.all([
+                primaryPromise,
+                alternativePromise.catch(err => {
+                    console.error(`[Smart-Play Alternative Fetch Error]:`, err.message);
+                    return [];
+                })
+            ]);
+
+            const primaryServers = primaryData.servers || [];
+
+            // Mark source websites for clarity in logging / resolution priority
+            const primarySource = (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
+            const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
+
+            const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
+            const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
+
+            const servers = [...taggedPrimary, ...taggedAlternative];
+
+            if (servers.length === 0) {
+                markUploadFailed(seriesSlug, episodeSlug);
+                return res.status(404).json({
+                    success: false,
+                    status: 'FAILED',
+                    message: 'Tidak ada server download/streaming yang ditemukan di halaman episode.'
+                });
+            }
+
+            // Group servers by resolution
+            const groups = { 1080: [], 720: [], 480: [], 360: [] };
+            for (const srv of servers) {
+                const resGroup = getResolutionGroup(srv.nama);
+                if (resGroup && groups[resGroup]) {
+                    groups[resGroup].push(srv);
+                }
+            }
+
+            // Try extracting in priority order
+            const resolutions = [1080, 720, 480, 360];
+
+            for (const resVal of resolutions) {
+                for (const srv of groups[resVal]) {
+                    console.log(`[Smart-Play] Menyeleksi server: ${srv.namaHost} (${srv.nama}) dari ${srv.source}`);
+                    try {
+                        const extracted = await extractVideoUrl(srv.iframeUrl, req);
+                        if (extracted && extracted.url) {
+                            const isMp4 = extracted.url.includes('.mp4') && !extracted.url.includes('.m3u8');
+                            if (isMp4) {
+                                matchedSource = {
+                                    url: extracted.url,
+                                    headers: extracted.headers || {}
+                                };
+                                console.log(`[Smart-Play] Menemukan source MP4 (${resVal}p) dari ${srv.source}: ${extracted.url}`);
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`[Smart-Play] Gagal mengekstrak dari server ${srv.namaHost} (${srv.source}):`, e.message);
+                    }
+                }
+                if (matchedSource) break;
+            }
+        } finally {
+            activeExtractions.delete(blobPath);
         }
 
         if (matchedSource) {
@@ -323,8 +372,10 @@ router.get('/api/smart-play', async (req, res) => {
                 message: 'Ekstraksi berhasil. Sedang mengalirkan video ke Azure Blob.'
             });
         } else {
+            markUploadFailed(seriesSlug, episodeSlug);
             return res.status(404).json({
                 success: false,
+                status: 'FAILED',
                 message: 'Tidak ada server MP4 yang didukung untuk resolusi yang tersedia.'
             });
         }

@@ -83,6 +83,14 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
 }
 
 /**
+ * Marks the upload as failed in the cache with a 10-minute TTL
+ */
+export function markUploadFailed(seriesSlug, episodeSlug) {
+    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    uploadCache.set(blobPath, 'FAILED', 600); // 10 minutes failure cache TTL
+}
+
+/**
  * Performs background stream piping from source video URL to Azure Blob Storage
  */
 export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSlug) {
@@ -134,7 +142,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             uploadCache.set(blobPath, 'READY');
         } catch (err) {
             console.error(`[Azure Uploader] Failed to upload ${blobPath}:`, err.message);
-            uploadCache.set(blobPath, 'FAILED');
+            uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes
             
             // Cleanup partial upload if it exists
             try {
