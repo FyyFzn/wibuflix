@@ -35,21 +35,76 @@ router.get('/api/episodes', async (req, res) => {
                 daftar_episode: []
             };
             
-            // Map berdasarkan angka episode
-            const epMap = new Map();
-            
             const extractEpNum = (title) => {
                 const match = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i) || title.match(/0*(\d+(?:\.\d+)?)/);
                 return match ? parseFloat(match[1]) : title;
             };
 
+            const adjustTitleEpisodeNumber = (title, offset) => {
+                if (!offset) return title;
+                const match = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i) || title.match(/(\d+(?:\.\d+)?)/);
+                if (match) {
+                    const originalNumStr = match[1];
+                    const originalNum = parseFloat(originalNumStr);
+                    const newNum = originalNum + offset;
+                    
+                    const zeroPaddingLength = originalNumStr.startsWith('0') && originalNumStr.length > 1 ? originalNumStr.length : 0;
+                    let newNumStr = String(newNum);
+                    if (zeroPaddingLength > 0) {
+                        newNumStr = newNumStr.padStart(zeroPaddingLength, '0');
+                    }
+                    
+                    const fullMatch = match[0];
+                    const updatedFullMatch = fullMatch.replace(originalNumStr, newNumStr);
+                    return title.replace(fullMatch, updatedFullMatch);
+                }
+                return title;
+            };
+
+            // --- DETEKSI OFFSET OTOMATIS ---
+            let offsetSame = 0;
+            let offsetOtaku = 0;
+
+            const getValidEpNums = (epsList) => {
+                if (!epsList) return [];
+                return epsList
+                    .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                    .map(ep => extractEpNum(ep.judul))
+                    .filter(num => typeof num === 'number' && !isNaN(num));
+            };
+
+            const sameEps = getValidEpNums(sameRes?.daftar_episode);
+            const otakuEps = getValidEpNums(otakuRes?.daftar_episode);
+
+            if (sameEps.length > 0 && otakuEps.length > 0) {
+                const minSame = Math.min(...sameEps);
+                const minOtaku = Math.min(...otakuEps);
+
+                const sameSet = new Set(sameEps);
+                const hasOverlap = otakuEps.some(num => sameSet.has(num));
+
+                if (!hasOverlap) {
+                    if (minOtaku === 1 && minSame > 1) {
+                        offsetOtaku = minSame - 1;
+                    } else if (minSame === 1 && minOtaku > 1) {
+                        offsetSame = minOtaku - 1;
+                    }
+                }
+            }
+
+            // Map berdasarkan angka episode
+            const epMap = new Map();
+
             // Masukkan data Samehadaku
             if (sameRes && sameRes.daftar_episode) {
                 sameRes.daftar_episode.forEach(ep => {
                     if (ep.judul.toLowerCase().includes('batch')) return;
-                    const num = extractEpNum(ep.judul);
+                    const rawNum = extractEpNum(ep.judul);
+                    const num = typeof rawNum === 'number' ? rawNum + offsetSame : rawNum;
+                    const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetSame) : ep.judul;
+                    
                     epMap.set(num, {
-                        judul: ep.judul, // Pakai judul Samehadaku sbg default
+                        judul: adjustedJudul, // Pakai judul Samehadaku sbg default
                         tanggal: ep.tanggal,
                         urls: { samehadaku: ep.url }
                     });
@@ -60,13 +115,16 @@ router.get('/api/episodes', async (req, res) => {
             if (otakuRes && otakuRes.daftar_episode) {
                 otakuRes.daftar_episode.forEach(ep => {
                     if (ep.judul.toLowerCase().includes('batch')) return;
-                    const num = extractEpNum(ep.judul);
+                    const rawNum = extractEpNum(ep.judul);
+                    const num = typeof rawNum === 'number' ? rawNum + offsetOtaku : rawNum;
+                    
                     if (epMap.has(num)) {
                         const existing = epMap.get(num);
                         existing.urls.otakudesu = ep.url;
                     } else {
+                        const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetOtaku) : ep.judul;
                         epMap.set(num, {
-                            judul: ep.judul, // Jika cuma ada di Otaku
+                            judul: adjustedJudul, // Jika cuma ada di Otaku
                             tanggal: ep.tanggal,
                             urls: { otakudesu: ep.url }
                         });

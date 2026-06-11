@@ -38,8 +38,12 @@ export async function getEpisodes(targetUrl) {
 
         const seenUrls = new Set();
         $('.lstepsiode ul li, .episodelist ul li, .listeps ul li').each((_, el) => {
-            const epLink = $(el).find('.epsleft a, a').first();
-            const epDate = $(el).find('.epsright, .date').first();
+            let epLink = $(el).find('.epsleft a').first();
+            if (!epLink.length) epLink = $(el).find('a').first();
+            
+            let epDate = $(el).find('.date').first();
+            if (!epDate.length) epDate = $(el).find('.epsright').first();
+
             if (epLink.length && epLink.attr('href')) {
                 const title = epLink.text().trim();
                 const url = epLink.attr('href');
