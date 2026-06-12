@@ -55,7 +55,7 @@ export function cancelAllUploads() {
  * Normalizes and formats the blob path for Azure
  */
 export function getBlobPath(seriesSlug, episodeSlug) {
-    return `videos/${seriesSlug}/${episodeSlug}.mp4`;
+    return `${seriesSlug}/${episodeSlug}.mp4`;
 }
 
 /**
@@ -148,7 +148,7 @@ export function markUploadFailed(seriesSlug, episodeSlug) {
  * Checks if there is any active upload for a specific series.
  */
 export function hasActiveUploadForSeries(seriesSlug) {
-    const prefix = `videos/${seriesSlug}/`;
+    const prefix = `${seriesSlug}/`;
     const keys = uploadCache.keys();
     for (const key of keys) {
         if (key.startsWith(prefix) && uploadCache.get(key) === 'UPLOADING') {
