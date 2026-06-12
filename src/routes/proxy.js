@@ -195,15 +195,23 @@ router.get('/api/proxy/mega', async (req, res) => {
                     'Content-Length': chunksize,
                     'Content-Type': contentType
                 });
-                const stream = file.download({ start, end });
-                stream.pipe(res);
+                if (req.method !== 'HEAD') {
+                    const stream = file.download({ start, end });
+                    stream.pipe(res);
+                } else {
+                    res.end();
+                }
             } else {
                 res.writeHead(200, {
                     'Content-Length': fileSize,
                     'Content-Type': contentType
                 });
-                const stream = file.download();
-                stream.pipe(res);
+                if (req.method !== 'HEAD') {
+                    const stream = file.download();
+                    stream.pipe(res);
+                } else {
+                    res.end();
+                }
             }
             return; // Berhasil, keluar dari loop retry
         } catch (err) {

@@ -194,7 +194,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 console.info(`[Azure Uploader] Server supports Range! Starting MULTI-THREADED download for ${blobPath} (${Math.round(contentLength / 1024 / 1024)}MB)`);
                 
                 const chunkSize = 4 * 1024 * 1024; // 4MB per block
-                const concurrencyLimit = 20; // Dikembalikan ke 20 untuk kecepatan maksimal multi-threaded upload
+                let concurrencyLimit = 20; // Default untuk hoster normal
+                if (videoUrl.includes('mega') || videoUrl.includes('/proxy/mega')) {
+                    concurrencyLimit = 2; // Mega memblokir (ETOOMANY / -6) jika terlalu banyak koneksi
+                }
                 const blocks = [];
                 const blockIds = [];
                 
