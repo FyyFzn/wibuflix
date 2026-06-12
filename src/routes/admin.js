@@ -38,11 +38,19 @@ router.get('/api/factory-reset', async (req, res) => {
         const dataDir = getDataDir();
         const unifiedPath = path.join(dataDir, 'unified_db.json');
         const tmdbPath = path.join(dataDir, 'tmdb_cache.json');
+        const samehadakuPath = path.join(dataDir, 'anime_db.json');
+        const otakuPath = path.join(dataDir, 'otakudesu_test.json');
         
         if (fs.existsSync(unifiedPath)) fs.unlinkSync(unifiedPath);
         if (fs.existsSync(tmdbPath)) fs.unlinkSync(tmdbPath);
+        if (fs.existsSync(samehadakuPath)) fs.unlinkSync(samehadakuPath);
+        if (fs.existsSync(otakuPath)) fs.unlinkSync(otakuPath);
         
-        res.json({ status: 'ok', message: 'BERHASIL! Database Unified & TMDB Cache lama yang tercemar telah DIHANCURKAN. Proses pembangunan ulang (Rebuild) dimulai di latar belakang.' });
+        // Bersihkan cache memori agar sistem tidak memakai data lama
+        if (global.anime_db_cache) global.anime_db_cache = null;
+        if (global.otaku_db_cache) global.otaku_db_cache = null;
+        
+        res.json({ status: 'ok', message: 'BERHASIL! Semua Database (Unified, TMDB, Samehadaku, Otakudesu) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
         
         runSync(true).then(() => {
             console.log('[FactoryReset] Anime Sync selesai. Memulai Unified Sync...');
