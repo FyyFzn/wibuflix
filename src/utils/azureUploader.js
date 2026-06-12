@@ -194,7 +194,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 console.info(`[Azure Uploader] Server supports Range! Starting MULTI-THREADED download for ${blobPath} (${Math.round(contentLength / 1024 / 1024)}MB)`);
                 
                 const chunkSize = 4 * 1024 * 1024; // 4MB per block
-                const concurrencyLimit = 5; // DITURUNKAN dari 20 ke 5 agar VPS B1s (1 vCPU) tidak hang/ngelag saat prefetch berjalan di background
+                const concurrencyLimit = 20; // Dikembalikan ke 20 untuk kecepatan maksimal multi-threaded upload
                 const blocks = [];
                 const blockIds = [];
                 
@@ -252,7 +252,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
                 // Gabungkan semua block
                 await blockBlobClient.commitBlockList(blockIds, {
-                    blobHTTPHeaders: { blobContentType: 'video/mp4' }
+                    blobHTTPHeaders: { 
+                        blobContentType: 'video/mp4',
+                        blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun di CDN
+                    }
                 });
                 
                 console.info(`[Azure Uploader] Selesai merakit multi-thread: ${blobPath}`);
@@ -285,7 +288,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
                 try {
                     await blockBlobClient.uploadStream(response.data, 4 * 1024 * 1024, 5, {
-                        blobHTTPHeaders: { blobContentType: 'video/mp4' },
+                        blobHTTPHeaders: { 
+                            blobContentType: 'video/mp4',
+                            blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun di CDN
+                        },
                         abortSignal: abortController.signal
                     });
                 } finally {

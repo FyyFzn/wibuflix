@@ -272,13 +272,13 @@ router.get('/api/extract-video', async (req, res) => {
 // Parameter: episodeUrl (wajib), seriesUrl, nextEpisodeUrl
 // ============================================================
 router.get('/api/smart-play', async (req, res) => {
-    const { episodeUrl, seriesUrl, nextEpisodeUrl, nextNextEpisodeUrl, seriesTitle, episodeTitle } = req.query;
+    const { episodeUrl, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle } = req.query;
     if (!episodeUrl) {
         return res.status(400).json({ success: false, error: "Parameter 'episodeUrl' wajib diisi!" });
     }
 
     // Susun window prefetch: [N+1, N+2] — hanya yang ada nilainya
-    const prefetchWindow = [nextEpisodeUrl, nextNextEpisodeUrl].filter(Boolean);
+    const prefetchWindow = [nextEpisodeUrl].filter(Boolean);
 
     try {
         const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
