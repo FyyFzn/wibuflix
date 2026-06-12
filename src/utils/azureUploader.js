@@ -75,9 +75,9 @@ async function ensureContainerExists() {
 export async function checkUploadStatus(seriesSlug, episodeSlug) {
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
     
-    // Check in-memory cache first
+    // Check in-memory cache ONLY for UPLOADING or FAILED
     const cachedStatus = uploadCache.get(blobPath);
-    if (cachedStatus === 'READY' || cachedStatus === 'UPLOADING') {
+    if (cachedStatus === 'UPLOADING' || cachedStatus === 'FAILED') {
         return cachedStatus;
     }
 
@@ -88,7 +88,6 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
         const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
         const exists = await blockBlobClient.exists();
         if (exists) {
-            uploadCache.set(blobPath, 'READY');
             return 'READY';
         }
     } catch (err) {
@@ -222,11 +221,15 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
                         while (attempt < 3 && !success) {
                             try {
+                                const chunkAbort = new AbortController();
+                                const chunkTimeout = setTimeout(() => chunkAbort.abort(), 60000); // 60s hard timeout per chunk
+                                
                                 const res = await axios.get(videoUrl, {
                                     headers: { ...requestHeaders, 'Range': `bytes=${block.start}-${block.end}` },
                                     responseType: 'arraybuffer',
-                                    timeout: 30000
+                                    signal: chunkAbort.signal
                                 });
+                                clearTimeout(chunkTimeout);
                                 
                                 await blockBlobClient.stageBlock(block.blockId, res.data, res.data.byteLength);
                                 totalDownloadedBytes += res.data.byteLength;
@@ -254,12 +257,18 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 await Promise.all(workers);
 
                 // Gabungkan semua block
+                console.info(`[Azure Uploader] Semua chunk terunduh. Menggabungkan ${blocks.length} blocks untuk ${blobPath}...`);
+                const commitAbort = new AbortController();
+                const commitTimeout = setTimeout(() => commitAbort.abort(), 120000); // 2 menit hard timeout
+                
                 await blockBlobClient.commitBlockList(blockIds, {
                     blobHTTPHeaders: { 
                         blobContentType: 'video/mp4',
                         blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun di CDN
-                    }
+                    },
+                    abortSignal: commitAbort.signal
                 });
+                clearTimeout(commitTimeout);
                 
                 console.info(`[Azure Uploader] Selesai merakit multi-thread: ${blobPath}`);
 
