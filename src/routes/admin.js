@@ -26,4 +26,32 @@ router.get('/api/force-sync', (req, res) => {
     }).catch(err => console.error('[ForceSync] Error:', err.message));
 });
 
+// ============================================================
+// RUTE 9: GET /api/factory-reset  [HARD RESET DB]
+// ============================================================
+router.get('/api/factory-reset', async (req, res) => {
+    try {
+        const { getDataDir } = await import('../utils/pathUtils.js');
+        const fs = await import('fs');
+        const path = await import('path');
+        
+        const dataDir = getDataDir();
+        const unifiedPath = path.join(dataDir, 'unified_db.json');
+        const tmdbPath = path.join(dataDir, 'tmdb_cache.json');
+        
+        if (fs.existsSync(unifiedPath)) fs.unlinkSync(unifiedPath);
+        if (fs.existsSync(tmdbPath)) fs.unlinkSync(tmdbPath);
+        
+        res.json({ status: 'ok', message: 'BERHASIL! Database Unified & TMDB Cache lama yang tercemar telah DIHANCURKAN. Proses pembangunan ulang (Rebuild) dimulai di latar belakang.' });
+        
+        runSync(true).then(() => {
+            console.log('[FactoryReset] Anime Sync selesai. Memulai Unified Sync...');
+            return syncUnified();
+        }).catch(err => console.error('[FactoryReset] Error:', err.message));
+        
+    } catch (e) {
+        res.status(500).json({ status: 'error', message: e.message });
+    }
+});
+
 export default router;
