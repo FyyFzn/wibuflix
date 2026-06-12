@@ -60,21 +60,7 @@ export function getBlobUrl(blobPath) {
     if (!containerClient) return '';
     const rawUrl = containerClient.getBlockBlobClient(blobPath).url;
     
-    // Bypass CDN (Cloudflare) agar player mengambil video langsung dari Azure Storage
-    // Mengomentari logika CDN di bawah ini:
-    /*
-    const cdnUrl = process.env.AZURE_CDN_URL;
-    if (cdnUrl) {
-        try {
-            const parsedRaw = new URL(rawUrl);
-            const parsedCdn = new URL(cdnUrl);
-            return `${parsedCdn.origin}${parsedRaw.pathname}${parsedRaw.search}`;
-        } catch (e) {
-            console.error('[Azure Uploader] URL CDN tidak valid, kembali ke URL Blob default.');
-            return rawUrl;
-        }
-    }
-    */
+    // Mengambil video langsung dari Azure Storage Blob (Tidak menggunakan CDN Cloudflare karena limitasi file besar)
     
     // Pastikan URL di-encode dengan benar (mengubah spasi menjadi %20 dll) agar player Native tidak error
     try {
@@ -256,9 +242,14 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                         let success = false;
 
                         while (attempt < 3 && !success) {
+                            let chunkTimeout;
+                            let onGlobalAbort;
                             try {
                                 const chunkAbort = new AbortController();
-                                const chunkTimeout = setTimeout(() => chunkAbort.abort(), 60000); // 60s hard timeout per chunk
+                                chunkTimeout = setTimeout(() => chunkAbort.abort(), 60000); // 60s hard timeout per chunk
+                                
+                                onGlobalAbort = () => chunkAbort.abort();
+                                globalAbort.signal.addEventListener('abort', onGlobalAbort);
                                 
                                 const res = await axios.get(videoUrl, {
                                     headers: { ...requestHeaders, 'Range': `bytes=${block.start}-${block.end}` },
@@ -266,6 +257,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                                     signal: chunkAbort.signal
                                 });
                                 clearTimeout(chunkTimeout);
+                                globalAbort.signal.removeEventListener('abort', onGlobalAbort);
                                 
                                 await blockBlobClient.stageBlock(block.blockId, res.data, res.data.byteLength);
                                 totalDownloadedBytes += res.data.byteLength;
@@ -282,7 +274,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                                     uploadProgressCache.set(blobPath, msg);
                                 }
                             } catch (err) {
-                                if (err.message === 'UPLOAD_CANCELLED') throw err;
+                                if (chunkTimeout) clearTimeout(chunkTimeout);
+                                if (onGlobalAbort) globalAbort.signal.removeEventListener('abort', onGlobalAbort);
+                                if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
+                                
                                 attempt++;
                                 console.warn(`[Azure Uploader] Gagal chunk ${block.index} (attempt ${attempt}/3): ${err.message}`);
                                 if (attempt === 3) throw err;
