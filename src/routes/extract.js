@@ -1,11 +1,12 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../scraper/extractor.js';
-import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount } from '../utils/azureUploader.js';
+import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, cancelAllUploads, getUploadProgress } from '../utils/azureUploader.js';
 import { getNeosatsuServers } from '../scraper/neosatsu.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
 
 const router = express.Router();
 const activeExtractions = new Set();
+let prefetchAbortController = new AbortController();
 
 function extractSlugs(episodeUrl, seriesUrl) {
     let episodeSlug = '';
@@ -204,17 +205,24 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
             let globalUploadCount = getActiveUploadCount();
 
             while (activeUploadExists || globalUploadCount >= 2) {
+                if (prefetchAbortController.signal.aborted) {
+                    console.info(`[PrefetchWindow] Dibatalkan oleh pengguna saat menunggu antrean untuk ${episodeSlug}`);
+                    return;
+                }
+
                 if (activeUploadExists) {
                     console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}...`);
                 } else if (globalUploadCount >= 2) {
                     console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}...`);
                 }
 
-                await new Promise(r => setTimeout(r, 60000)); // Tunggu 60 detik
+                await new Promise(r => setTimeout(r, 10000)); // Cek setiap 10 detik
 
                 activeUploadExists = hasActiveUploadForSeries(seriesSlug);
                 globalUploadCount = getActiveUploadCount();
             }
+
+            if (prefetchAbortController.signal.aborted) return;
 
             await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle);
 
@@ -495,6 +503,36 @@ router.get('/api/smart-play', async (req, res) => {
     } catch (err) {
         console.error(`[Smart-Play Error] URL: ${episodeUrl} | STACK:`, err.stack);
         res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ============================================================
+// POST /api/cancel-uploads
+// ============================================================
+router.post('/api/cancel-uploads', (req, res) => {
+    try {
+        prefetchAbortController.abort();
+        prefetchAbortController = new AbortController();
+        const count = cancelAllUploads();
+        res.json({ success: true, message: `Berhasil membatalkan ${count} upload aktif.` });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================
+// GET /api/upload-status
+// ============================================================
+router.get('/api/upload-status', (req, res) => {
+    try {
+        const { episodeUrl, seriesUrl } = req.query;
+        if (!episodeUrl) return res.status(400).json({ success: false, message: "URL required" });
+        
+        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
+        const progressMessage = getUploadProgress(seriesSlug, episodeSlug);
+        res.json({ success: true, progressMessage });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
     }
 });
 

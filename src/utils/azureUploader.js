@@ -21,6 +21,31 @@ if (connectionString) {
 
 const uploadCache = getCache('azure-uploads', 86400); // 24 hours TTL
 
+export const uploadProgressCache = new Map();
+export const activeUploadControllers = new Map();
+
+/**
+ * Returns the current upload progress string for a given blob.
+ */
+export function getUploadProgress(seriesSlug, episodeSlug) {
+    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    return uploadProgressCache.get(blobPath) || 'Menyiapkan video...';
+}
+
+/**
+ * Cancels all currently active uploads.
+ */
+export function cancelAllUploads() {
+    let count = 0;
+    for (const [blobPath, controller] of activeUploadControllers.entries()) {
+        controller.abort();
+        console.info(`[Azure Uploader] Cancelled upload for ${blobPath}`);
+        count++;
+    }
+    activeUploadControllers.clear();
+    return count;
+}
+
 /**
  * Normalizes and formats the blob path for Azure
  */
@@ -152,6 +177,9 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
     // Return the upload promise so callers can wait for it if they want
     return (async () => {
+        const globalAbort = new AbortController();
+        activeUploadControllers.set(blobPath, globalAbort);
+        
         try {
             const requestHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -215,6 +243,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 // Promise pool worker
                 const worker = async () => {
                     while (blockIndex < blocks.length) {
+                        if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
                         const block = blocks[blockIndex++];
                         let attempt = 0;
                         let success = false;
@@ -237,9 +266,16 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                                 completedChunks++;
                                 
                                 if (completedChunks % 5 === 0 || completedChunks === blocks.length) {
-                                    console.info(`[Azure Uploader] Progress Multi-Thread ${blobPath}: ${completedChunks}/${blocks.length} blocks (${Math.round(totalDownloadedBytes / 1024 / 1024)}MB)...`);
+                                    const percent = Math.round((completedChunks / blocks.length) * 100);
+                                    const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
+                                    const totalMB = Math.round(contentLength / 1024 / 1024);
+                                    const msg = `Mengunggah: ${percent}% (${downloadedMB}MB / ${totalMB}MB)`;
+                                    
+                                    console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
+                                    uploadProgressCache.set(blobPath, msg);
                                 }
                             } catch (err) {
+                                if (err.message === 'UPLOAD_CANCELLED') throw err;
                                 attempt++;
                                 console.warn(`[Azure Uploader] Gagal chunk ${block.index} (attempt ${attempt}/3): ${err.message}`);
                                 if (attempt === 3) throw err;
@@ -279,6 +315,9 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 console.info(`[Azure Uploader] Menggunakan fallback SINGLE-STREAM untuk ${blobPath}`);
                 const abortController = new AbortController();
                 const timeoutId = setTimeout(() => abortController.abort(), 30 * 60 * 1000);
+                
+                // Jika globalAbort dibatalkan, batalkan juga abortController
+                globalAbort.signal.addEventListener('abort', () => abortController.abort());
 
                 const response = await axios({
                     method: 'get',
@@ -289,12 +328,18 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     signal: abortController.signal
                 });
 
-                let nextLogThreshold = 50 * 1024 * 1024;
+                let nextLogThreshold = 5 * 1024 * 1024;
                 response.data.on('data', (chunk) => {
                     totalDownloadedBytes += chunk.length;
                     if (totalDownloadedBytes >= nextLogThreshold) {
-                        console.info(`[Azure Uploader] Progress Stream ${blobPath}: ${Math.round(totalDownloadedBytes / 1024 / 1024)}MB downloaded...`);
-                        nextLogThreshold += 50 * 1024 * 1024;
+                        const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
+                        const msg = contentLength > MIN_VIDEO_SIZE 
+                            ? `Mengunggah: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
+                            : `Mengunggah: ${downloadedMB}MB...`;
+                            
+                        console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
+                        uploadProgressCache.set(blobPath, msg);
+                        nextLogThreshold += 5 * 1024 * 1024;
                     }
                 });
 
@@ -319,10 +364,21 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             console.info(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
+            uploadProgressCache.delete(blobPath);
+            activeUploadControllers.delete(blobPath);
 
         } catch (err) {
-            console.error(`[Azure Uploader] Failed to upload ${blobPath} from URL ${videoUrl}:`, err.message);
-            uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes
+            if (globalAbort.signal.aborted || err.message === 'UPLOAD_CANCELLED' || err.code === 'ERR_CANCELED') {
+                console.info(`[Azure Uploader] Upload cancelled explicitly: ${blobPath}`);
+                uploadCache.delete(blobPath);
+                uploadProgressCache.delete(blobPath);
+            } else {
+                console.error(`[Azure Uploader] Failed to upload ${blobPath} from URL ${videoUrl}:`, err.message);
+                uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes
+                uploadProgressCache.delete(blobPath);
+            }
+            
+            activeUploadControllers.delete(blobPath);
             
             // Cleanup partial upload if it exists
             try {
