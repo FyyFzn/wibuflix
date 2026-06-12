@@ -36,37 +36,34 @@ export async function extract(embedUrl, req) {
         const $ = cheerio.load(data);
         const token = $("#dl-token").val();
         
-        let hashMatch = viewUrl.match(/view\/(.*)\/file\.html/);
-        if (!hashMatch) {
-            throw new Error('Hash KrakenFiles tidak ditemukan dari URL');
+        let src;
+        if ($("video source").length > 0) {
+            src = $("video source").attr("src");
+        } else if ($("video").attr("src")) {
+            src = $("video").attr("src");
+        } else if ($(".lightgallery a").length > 0) {
+            src = $(".lightgallery a").attr("href");
+        } else if ($("a[data-type='video']").length > 0) {
+            src = $("a[data-type='video']").attr("href");
+        } else {
+            // Regex match as last resort
+            const m = data.match(/(https?:\/\/[^\s"'<>]+\.(?:mp4|mkv))/i);
+            if (m) src = m[1];
         }
         
-        const hash = hashMatch[1];
-        
-        // JDownloader method: POST ke /download/{hash} untuk mendapat direct link
-        const postResponse = await axios.post(`${new URL(viewUrl).origin}/download/${hash}`, `token=${token}`, {
-            headers: { 
-                'hash': hash,
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': viewUrl,
-                'Cookie': cookieStr
-            }
-        });
-        
-        if (postResponse.data && postResponse.data.url) {
-            let directUrl = postResponse.data.url;
-            if (directUrl.startsWith('//')) directUrl = 'https:' + directUrl;
+        if (src) {
+            if (src.startsWith('//')) src = 'https:' + src;
             
-            console.info(`[Kraken] ✓ Direct link berhasil diekstrak via POST: ${directUrl.substring(0, 60)}...`);
+            const reqHeaders = {
+                'Referer': viewUrl,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            };
+            if (token) reqHeaders['token'] = token;
+            if (cookieStr) reqHeaders['Cookie'] = cookieStr;
             
             return {
-                url: directUrl,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': viewUrl,
-                    'Cookie': cookieStr
-                }
+                url: src,
+                headers: reqHeaders
             };
         }
         
