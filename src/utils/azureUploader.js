@@ -169,7 +169,7 @@ export function cancelUpload(seriesSlug, episodeSlug) {
         console.info(`[Azure Uploader] Membatalkan upload untuk ${blobPath}`);
         abortController.abort();
         activeUploadControllers.delete(blobPath);
-        uploadCache.delete(blobPath);
+        uploadCache.del(blobPath);
         uploadProgressCache.delete(blobPath);
     }
 }
@@ -340,7 +340,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
         } catch (err) {
             if (globalAbort.signal.aborted || err.message === 'UPLOAD_CANCELLED' || err.code === 'ERR_CANCELED') {
                 console.info(`[Azure Uploader] Upload dibatalkan oleh pengguna: ${blobPath}`);
-                uploadCache.delete(blobPath);
+                uploadCache.del(blobPath);
                 uploadProgressCache.delete(blobPath);
             } else {
                 console.error(`[Azure Uploader] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
