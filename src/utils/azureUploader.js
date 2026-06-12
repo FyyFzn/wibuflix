@@ -1,6 +1,11 @@
 import { BlobServiceClient } from '@azure/storage-blob';
 import axios from 'axios';
 import { getCache } from './cacheManager.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import crypto from 'crypto';
+import { faststart } from '@fyreware/moov-faststart';
 
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'videos';
@@ -189,6 +194,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
         const globalAbort = new AbortController();
         activeUploadControllers.set(blobPath, globalAbort);
         
+        const tempFileName = crypto.randomUUID() + '.mp4';
+        const tempFilePath = path.join(os.tmpdir(), tempFileName);
+        const optimizedFilePath = path.join(os.tmpdir(), 'fast_' + tempFileName);
+        
         try {
             const requestHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -197,214 +206,147 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
 
-            // 1. Pre-flight check: Apakah server mendukung Range Request?
-            let supportsRange = false;
-            let contentLength = 0;
-            try {
-                const headRes = await axios.get(videoUrl, {
-                    headers: { ...requestHeaders, 'Range': 'bytes=0-0' },
-                    timeout: 10000,
-                    responseType: 'arraybuffer'
-                });
-                
-                if (headRes.status === 206) {
-                    supportsRange = true;
-                    const contentRange = headRes.headers['content-range'];
-                    if (contentRange) {
-                        contentLength = parseInt(contentRange.split('/')[1]);
-                    }
-                } else if (headRes.headers['content-length']) {
-                    contentLength = parseInt(headRes.headers['content-length']);
-                }
-            } catch (e) {
-                console.warn(`[Azure Uploader] Pre-flight check failed, fallback to single-stream. Error: ${e.message}`);
-            }
+            // ========================================================
+            // TAHAP 1: UNDUH UTUH KE SERVER LOKAL (VPS)
+            // ========================================================
+            console.info(`[Azure Uploader] Tahap 1: Mengunduh ${blobPath} ke server lokal...`);
+            uploadProgressCache.set(blobPath, 'Mengunduh ke Server VPS... 0%');
+            
+            const response = await axios({
+                method: 'get',
+                url: videoUrl,
+                responseType: 'stream',
+                headers: requestHeaders,
+                timeout: 30000,
+                signal: globalAbort.signal
+            });
 
+            const contentLengthStr = response.headers['content-length'];
+            const contentLength = contentLengthStr ? parseInt(contentLengthStr) : 0;
             const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
             let totalDownloadedBytes = 0;
 
-            if (supportsRange && contentLength > MIN_VIDEO_SIZE) {
-                // ========================================================
-                // JDOWNLOADER-STYLE MULTI-THREADED UPLOAD (B1 SAFE-MODE)
-                // ========================================================
-                console.info(`[Azure Uploader] Server supports Range! Starting MULTI-THREADED download for ${blobPath} (${Math.round(contentLength / 1024 / 1024)}MB)`);
-                
-                const chunkSize = 4 * 1024 * 1024; // 4MB per block
-                let concurrencyLimit = 20; // Default untuk hoster normal
-                if (videoUrl.includes('mega') || videoUrl.includes('/proxy/mega')) {
-                    concurrencyLimit = 2; // Mega memblokir (ETOOMANY / -6) jika terlalu banyak koneksi
+            const writer = fs.createWriteStream(tempFilePath);
+            
+            let nextLogThreshold = 5 * 1024 * 1024;
+            response.data.on('data', (chunk) => {
+                totalDownloadedBytes += chunk.length;
+                if (totalDownloadedBytes >= nextLogThreshold) {
+                    const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
+                    const msg = contentLength > MIN_VIDEO_SIZE 
+                        ? `Mengunduh ke Server VPS: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
+                        : `Mengunduh ke Server VPS: ${downloadedMB}MB...`;
+                        
+                    console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
+                    uploadProgressCache.set(blobPath, msg);
+                    nextLogThreshold += 5 * 1024 * 1024;
                 }
-                const blocks = [];
-                const blockIds = [];
-                
-                for (let i = 0; i < contentLength; i += chunkSize) {
-                    const end = Math.min(i + chunkSize - 1, contentLength - 1);
-                    // Block ID harus panjangnya sama dan Base64 encoded
-                    const blockId = Buffer.from(String(blocks.length).padStart(6, '0')).toString('base64');
-                    blocks.push({ start: i, end, blockId, index: blocks.length });
-                    blockIds.push(blockId);
-                }
+            });
 
-                let completedChunks = 0;
-                let activeWorkers = 0;
-                let blockIndex = 0;
+            response.data.pipe(writer);
 
-                // Promise pool worker
-                const worker = async () => {
-                    while (blockIndex < blocks.length) {
-                        if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
-                        const block = blocks[blockIndex++];
-                        let attempt = 0;
-                        let success = false;
-
-                        while (attempt < 3 && !success) {
-                            let chunkTimeout;
-                            let onGlobalAbort;
-                            try {
-                                const chunkAbort = new AbortController();
-                                chunkTimeout = setTimeout(() => chunkAbort.abort(), 60000); // 60s hard timeout per chunk
-                                
-                                onGlobalAbort = () => chunkAbort.abort();
-                                globalAbort.signal.addEventListener('abort', onGlobalAbort);
-                                
-                                const res = await axios.get(videoUrl, {
-                                    headers: { ...requestHeaders, 'Range': `bytes=${block.start}-${block.end}` },
-                                    responseType: 'arraybuffer',
-                                    signal: chunkAbort.signal
-                                });
-                                clearTimeout(chunkTimeout);
-                                globalAbort.signal.removeEventListener('abort', onGlobalAbort);
-                                
-                                await blockBlobClient.stageBlock(block.blockId, res.data, res.data.byteLength);
-                                totalDownloadedBytes += res.data.byteLength;
-                                success = true;
-                                completedChunks++;
-                                
-                                if (completedChunks % 5 === 0 || completedChunks === blocks.length) {
-                                    const percent = Math.round((completedChunks / blocks.length) * 100);
-                                    const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
-                                    const totalMB = Math.round(contentLength / 1024 / 1024);
-                                    const msg = `Mengunggah: ${percent}% (${downloadedMB}MB / ${totalMB}MB)`;
-                                    
-                                    console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
-                                    uploadProgressCache.set(blobPath, msg);
-                                }
-                            } catch (err) {
-                                if (chunkTimeout) clearTimeout(chunkTimeout);
-                                if (onGlobalAbort) globalAbort.signal.removeEventListener('abort', onGlobalAbort);
-                                if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
-                                
-                                attempt++;
-                                console.warn(`[Azure Uploader] Gagal chunk ${block.index} (attempt ${attempt}/3): ${err.message}`);
-                                if (attempt === 3) throw err;
-                                await new Promise(r => setTimeout(r, 2000));
-                            }
-                        }
-                    }
-                };
-
-                const workers = [];
-                for (let i = 0; i < Math.min(concurrencyLimit, blocks.length); i++) {
-                    workers.push(worker());
-                }
-
-                await Promise.all(workers);
-
-                // Gabungkan semua block
-                console.info(`[Azure Uploader] Semua chunk terunduh. Menggabungkan ${blocks.length} blocks untuk ${blobPath}...`);
-                const commitAbort = new AbortController();
-                const commitTimeout = setTimeout(() => commitAbort.abort(), 120000); // 2 menit hard timeout
-                
-                await blockBlobClient.commitBlockList(blockIds, {
-                    blobHTTPHeaders: { 
-                        blobContentType: 'video/mp4',
-                        blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun di CDN
-                    },
-                    abortSignal: commitAbort.signal
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+                // Menangani pembatalan jika user exit player
+                globalAbort.signal.addEventListener('abort', () => {
+                    writer.destroy(new Error('UPLOAD_CANCELLED'));
+                    reject(new Error('UPLOAD_CANCELLED'));
                 });
-                clearTimeout(commitTimeout);
-                
-                console.info(`[Azure Uploader] Selesai merakit multi-thread: ${blobPath}`);
-
-            } else {
-                // ========================================================
-                // SINGLE STREAM UPLOAD (FALLBACK)
-                // ========================================================
-                console.info(`[Azure Uploader] Menggunakan fallback SINGLE-STREAM untuk ${blobPath}`);
-                const abortController = new AbortController();
-                const timeoutId = setTimeout(() => abortController.abort(), 30 * 60 * 1000);
-                
-                // Jika globalAbort dibatalkan, batalkan juga abortController
-                globalAbort.signal.addEventListener('abort', () => abortController.abort());
-
-                const response = await axios({
-                    method: 'get',
-                    url: videoUrl,
-                    responseType: 'stream',
-                    headers: requestHeaders,
-                    timeout: 30000,
-                    signal: abortController.signal
-                });
-
-                let nextLogThreshold = 5 * 1024 * 1024;
-                response.data.on('data', (chunk) => {
-                    totalDownloadedBytes += chunk.length;
-                    if (totalDownloadedBytes >= nextLogThreshold) {
-                        const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
-                        const msg = contentLength > MIN_VIDEO_SIZE 
-                            ? `Mengunggah: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
-                            : `Mengunggah: ${downloadedMB}MB...`;
-                            
-                        console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
-                        uploadProgressCache.set(blobPath, msg);
-                        nextLogThreshold += 5 * 1024 * 1024;
-                    }
-                });
-
-                try {
-                    await blockBlobClient.uploadStream(response.data, 4 * 1024 * 1024, 5, {
-                        blobHTTPHeaders: { 
-                            blobContentType: 'video/mp4',
-                            blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun di CDN
-                        },
-                        abortSignal: abortController.signal
-                    });
-                } finally {
-                    clearTimeout(timeoutId);
-                }
-            }
+            });
 
             // Validasi akhir ukuran file
             if (totalDownloadedBytes < MIN_VIDEO_SIZE) {
-                await blockBlobClient.deleteIfExists();
-                throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video. Dihapus dari Azure.`);
+                throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video.`);
             }
 
-            console.info(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
+            // ========================================================
+            // TAHAP 2: OPTIMASI FASTSTART (Bongkar metadata)
+            // ========================================================
+            if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
+            
+            console.info(`[Azure Uploader] Tahap 2: Optimasi FastStart untuk ${blobPath}...`);
+            uploadProgressCache.set(blobPath, 'Mengoptimasi File MP4 (FastStart)...');
+            
+            // Baca seluruh file ke memory Buffer
+            let rawBuffer = fs.readFileSync(tempFilePath);
+            
+            try {
+                 const optimizedBuffer = faststart(rawBuffer);
+                 fs.writeFileSync(optimizedFilePath, optimizedBuffer);
+                 console.info(`[Azure Uploader] FastStart sukses diterapkan untuk ${blobPath}.`);
+            } catch (fastErr) {
+                 console.warn('[Azure Uploader] FastStart tidak diterapkan (Mungkin format tidak didukung atau sudah teroptimasi sebelumnya). Menyimpan file asli.', fastErr.message);
+                 fs.copyFileSync(tempFilePath, optimizedFilePath);
+            }
+            
+            // Kosongkan memory Buffer agar RAM lega
+            rawBuffer = null;
+
+            // ========================================================
+            // TAHAP 3: UNGGAH KE AZURE STORAGE
+            // ========================================================
+            if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
+
+            console.info(`[Azure Uploader] Tahap 3: Mengunggah file teroptimasi ke Azure Blob...`);
+            uploadProgressCache.set(blobPath, 'Mengunggah ke Azure Cloud... 0%');
+
+            const uploadAbort = new AbortController();
+            const onGlobalAbort = () => uploadAbort.abort();
+            globalAbort.signal.addEventListener('abort', onGlobalAbort);
+
+            await blockBlobClient.uploadFile(optimizedFilePath, {
+                concurrency: 5,
+                blobHTTPHeaders: { 
+                    blobContentType: 'video/mp4',
+                    blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun
+                },
+                onProgress: (ev) => {
+                    const percent = totalDownloadedBytes > 0 ? Math.round((ev.loadedBytes / totalDownloadedBytes) * 100) : 0;
+                    const uploadedMB = Math.round(ev.loadedBytes / 1024 / 1024);
+                    const msg = `Mengunggah ke Azure Cloud: ${percent}% (${uploadedMB}MB)`;
+                    // Hanya update log tiap kelipatan tertentu agar tidak spam
+                    if (percent % 10 === 0) uploadProgressCache.set(blobPath, msg);
+                },
+                abortSignal: uploadAbort.signal
+            });
+            
+            globalAbort.signal.removeEventListener('abort', onGlobalAbort);
+
+            console.info(`[Azure Uploader] Berhasil mengunggah versi FastStart ke Azure: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
             uploadProgressCache.delete(blobPath);
             activeUploadControllers.delete(blobPath);
 
         } catch (err) {
             if (globalAbort.signal.aborted || err.message === 'UPLOAD_CANCELLED' || err.code === 'ERR_CANCELED') {
-                console.info(`[Azure Uploader] Upload cancelled explicitly: ${blobPath}`);
+                console.info(`[Azure Uploader] Upload dibatalkan oleh pengguna: ${blobPath}`);
                 uploadCache.delete(blobPath);
                 uploadProgressCache.delete(blobPath);
             } else {
-                console.error(`[Azure Uploader] Failed to upload ${blobPath} from URL ${videoUrl}:`, err.message);
+                console.error(`[Azure Uploader] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
                 uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes
                 uploadProgressCache.delete(blobPath);
             }
             
             activeUploadControllers.delete(blobPath);
             
-            // Cleanup partial upload if it exists
+            // Cleanup partial blob jika gagal saat tahap 3
             try {
                 const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
                 await blockBlobClient.deleteIfExists();
-                console.info(`[Azure Uploader] Cleaned up partial/failed blob: ${blobPath}`);
-            } catch (cleanupErr) {
-                console.error(`[Azure Uploader] Failed to clean up failed blob ${blobPath}:`, cleanupErr.message);
+            } catch (cleanupErr) {}
+            
+        } finally {
+            // ========================================================
+            // TAHAP 4: BERSIH-BERSIH DISK VPS
+            // ========================================================
+            try {
+                if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+                if (fs.existsSync(optimizedFilePath)) fs.unlinkSync(optimizedFilePath);
+                console.info(`[Azure Uploader] Disk VPS dibersihkan untuk ${blobPath}.`);
+            } catch (fsErr) {
+                console.warn(`[Azure Uploader] Gagal menghapus file temporary: ${fsErr.message}`);
             }
         }
     })();
