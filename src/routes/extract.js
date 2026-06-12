@@ -169,20 +169,53 @@ async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle) {
 
 /**
  * Prefetch sliding window — unduh episode dalam `upcomingUrls` satu per satu
- * secara sekuensial. Lewati jika sudah READY/UPLOADING.
+ * secara sekuensial dengan jeda antar episode.
  * Logika: selalu jaga 2 episode ke depan sudah READY.
+ * Jika ada upload Mega yang sedang berjalan, tunggu dulu.
  */
 async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
     if (!upcomingUrls || upcomingUrls.length === 0) return;
 
-    // Filter hanya URL yang valid
     const validUrls = upcomingUrls.filter(Boolean);
     if (validUrls.length === 0) return;
 
-    // Jalankan secara sekuensial agar tidak membanjiri server
     for (const epUrl of validUrls) {
         try {
+            const { episodeSlug } = extractSlugs(epUrl, null);
+            const status = await checkUploadStatus(seriesSlug, episodeSlug);
+
+            if (status === 'READY' || status === 'FAILED') {
+                // Sudah done atau sudah gagal — skip
+                console.info(`[PrefetchWindow] Skip ${episodeSlug} — status: ${status}`);
+                continue;
+            }
+
+            if (status === 'UPLOADING') {
+                // Sedang upload, tunggu dahulu sebelum episode berikutnya
+                console.info(`[PrefetchWindow] ${episodeSlug} sedang UPLOADING, tunggu sebelum lanjut ke episode berikutnya...`);
+                await new Promise(r => setTimeout(r, 45000)); // Tunggu 45 detik
+                continue;
+            }
+
+            // Jika ada upload aktif lainnya di series ini (cek N+1), tunggu dulu sebelum mulai N+2
+            // Cek episode sebelumnya di window — jika masih UPLOADING, jeda
+            const prevIdx = validUrls.indexOf(epUrl) - 1;
+            if (prevIdx >= 0) {
+                const { episodeSlug: prevSlug } = extractSlugs(validUrls[prevIdx], null);
+                const prevStatus = await checkUploadStatus(seriesSlug, prevSlug);
+                if (prevStatus === 'UPLOADING') {
+                    console.info(`[PrefetchWindow] Episode sebelumnya ${prevSlug} masih UPLOADING. Menunda prefetch ${episodeSlug}...`);
+                    await new Promise(r => setTimeout(r, 60000)); // Tunggu 60 detik
+                }
+            }
+
             await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle);
+
+            // Jeda antar episode untuk mencegah ETOOMANY dari Mega
+            if (validUrls.indexOf(epUrl) < validUrls.length - 1) {
+                console.info(`[PrefetchWindow] Jeda 30 detik sebelum prefetch episode berikutnya...`);
+                await new Promise(r => setTimeout(r, 30000));
+            }
         } catch (err) {
             console.error(`[PrefetchWindow Error] ${epUrl}:`, err.message);
         }
