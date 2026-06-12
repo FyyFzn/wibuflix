@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import ffmpegPath from 'ffmpeg-static';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import pLimit from 'p-limit';
 
 const execFileAsync = promisify(execFile);
 
@@ -59,7 +60,7 @@ export function cancelAllUploads() {
  * Normalizes and formats the blob path for Azure
  */
 export function getBlobPath(seriesSlug, episodeSlug) {
-    return `${seriesSlug}/${episodeSlug}.mp4`;
+    return `${seriesSlug}/${episodeSlug}/playlist.m3u8`;
 }
 
 /**
@@ -182,11 +183,13 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
         
         const tempFileName = crypto.randomUUID() + '.mp4';
         const tempFilePath = path.join(os.tmpdir(), tempFileName);
-        const optimizedFilePath = path.join(os.tmpdir(), 'fast_' + tempFileName);
+        const hlsOutputDir = path.join(os.tmpdir(), `hls_${crypto.randomUUID()}`);
         
         try {
+            if (fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
+            fs.mkdirSync(hlsOutputDir, { recursive: true });
             const requestHeaders = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/124.0.0.0',
                 ...headers
             };
 
@@ -247,26 +250,28 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             }
 
             // ========================================================
-            // TAHAP 2: OPTIMASI FASTSTART MENGGUNAKAN FFMPEG
+            // TAHAP 2: OPTIMASI HLS MENGGUNAKAN FFMPEG
             // ========================================================
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
             
-            console.info(`[Azure Uploader] Tahap 2: Optimasi FastStart (FFmpeg) untuk ${blobPath}...`);
-            uploadProgressCache.set(blobPath, 'Mengoptimasi File MP4 (FastStart)...');
+            console.info(`[Azure Uploader] Tahap 2: Memotong HLS (FFmpeg) untuk ${blobPath}...`);
+            uploadProgressCache.set(blobPath, 'Mencacah Video (HLS M3U8)...');
             
             try {
-                // Eksekusi FFmpeg: -y (overwrite), -i (input), -c copy (tanpa konversi), -movflags faststart (pindah atom)
+                // Eksekusi FFmpeg: -y, -i (input), -c copy (tanpa konversi), -f hls, potongan 10 detik
                 await execFileAsync(ffmpegPath, [
                     '-y',
                     '-i', tempFilePath,
                     '-c', 'copy',
-                    '-movflags', 'faststart',
-                    optimizedFilePath
+                    '-f', 'hls',
+                    '-hls_time', '10',
+                    '-hls_playlist_type', 'vod',
+                    '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
+                    path.join(hlsOutputDir, 'playlist.m3u8')
                 ]);
-                console.info(`[Azure Uploader] FastStart sukses diterapkan menggunakan FFmpeg untuk ${blobPath}.`);
+                console.info(`[Azure Uploader] Pemotongan HLS sukses diterapkan untuk ${blobPath}.`);
             } catch (fastErr) {
-                 console.warn('[Azure Uploader] FFmpeg FastStart gagal (Mungkin file rusak parah). Menyimpan file asli.', fastErr.message);
-                 fs.copyFileSync(tempFilePath, optimizedFilePath);
+                 throw new Error('FFmpeg HLS gagal: ' + fastErr.message);
             }
 
             // ========================================================
@@ -274,32 +279,45 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             // ========================================================
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
 
-            console.info(`[Azure Uploader] Tahap 3: Mengunggah file teroptimasi ke Azure Blob...`);
-            uploadProgressCache.set(blobPath, 'Mengunggah ke Azure Cloud... 0%');
-
+            console.info(`[Azure Uploader] Tahap 3: Mengunggah pecahan HLS ke Azure Blob...`);
+            
             const uploadAbort = new AbortController();
             const onGlobalAbort = () => uploadAbort.abort();
             globalAbort.signal.addEventListener('abort', onGlobalAbort);
 
-            await blockBlobClient.uploadFile(optimizedFilePath, {
-                concurrency: 5,
-                blobHTTPHeaders: { 
-                    blobContentType: 'video/mp4',
-                    blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun
-                },
-                onProgress: (ev) => {
-                    const percent = totalDownloadedBytes > 0 ? Math.round((ev.loadedBytes / totalDownloadedBytes) * 100) : 0;
-                    const uploadedMB = Math.round(ev.loadedBytes / 1024 / 1024);
-                    const msg = `Mengunggah ke Azure Cloud: ${percent}% (${uploadedMB}MB)`;
-                    // Hanya update log tiap kelipatan tertentu agar tidak spam
-                    if (percent % 10 === 0) uploadProgressCache.set(blobPath, msg);
-                },
-                abortSignal: uploadAbort.signal
-            });
+            const filesToUpload = fs.readdirSync(hlsOutputDir);
+            uploadProgressCache.set(blobPath, `Mengunggah HLS ke Azure Cloud (0/${filesToUpload.length})...`);
+
+            const limit = pLimit(15);
+            let uploadedCount = 0;
+            const baseAzurePath = `${seriesSlug}/${episodeSlug}`;
+
+            const uploadPromises = filesToUpload.map(filename => limit(async () => {
+                if (uploadAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
+                const filePath = path.join(hlsOutputDir, filename);
+                const azurePath = `${baseAzurePath}/${filename}`;
+                const fileType = filename.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
+                const blockBlobClient = containerClient.getBlockBlobClient(azurePath);
+                
+                await blockBlobClient.uploadFile(filePath, {
+                    blobHTTPHeaders: { 
+                        blobContentType: fileType,
+                        blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun
+                    },
+                    abortSignal: uploadAbort.signal
+                });
+
+                uploadedCount++;
+                if (uploadedCount % 5 === 0 || uploadedCount === filesToUpload.length) {
+                    uploadProgressCache.set(blobPath, `Mengunggah HLS ke Azure Cloud (${uploadedCount}/${filesToUpload.length})...`);
+                }
+            }));
+
+            await Promise.all(uploadPromises);
             
             globalAbort.signal.removeEventListener('abort', onGlobalAbort);
 
-            console.info(`[Azure Uploader] Berhasil mengunggah versi FastStart ke Azure: ${blobPath}`);
+            console.info(`[Azure Uploader] Berhasil mengunggah versi HLS ke Azure: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
             uploadProgressCache.delete(blobPath);
             activeUploadControllers.delete(blobPath);
@@ -317,19 +335,13 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             
             activeUploadControllers.delete(blobPath);
             
-            // Cleanup partial blob jika gagal saat tahap 3
-            try {
-                const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-                await blockBlobClient.deleteIfExists();
-            } catch (cleanupErr) {}
-            
         } finally {
             // ========================================================
             // TAHAP 4: BERSIH-BERSIH DISK VPS
             // ========================================================
             try {
                 if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-                if (fs.existsSync(optimizedFilePath)) fs.unlinkSync(optimizedFilePath);
+                if (hlsOutputDir && fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
                 console.info(`[Azure Uploader] Disk VPS dibersihkan untuk ${blobPath}.`);
             } catch (fsErr) {
                 console.warn(`[Azure Uploader] Gagal menghapus file temporary: ${fsErr.message}`);
