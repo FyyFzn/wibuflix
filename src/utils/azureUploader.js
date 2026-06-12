@@ -5,7 +5,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import { faststart } from '@fyreware/moov-faststart';
+import ffmpegPath from 'ffmpeg-static';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'videos';
@@ -261,27 +265,27 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             }
 
             // ========================================================
-            // TAHAP 2: OPTIMASI FASTSTART (Bongkar metadata)
+            // TAHAP 2: OPTIMASI FASTSTART MENGGUNAKAN FFMPEG
             // ========================================================
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
             
-            console.info(`[Azure Uploader] Tahap 2: Optimasi FastStart untuk ${blobPath}...`);
+            console.info(`[Azure Uploader] Tahap 2: Optimasi FastStart (FFmpeg) untuk ${blobPath}...`);
             uploadProgressCache.set(blobPath, 'Mengoptimasi File MP4 (FastStart)...');
             
-            // Baca seluruh file ke memory Buffer
-            let rawBuffer = fs.readFileSync(tempFilePath);
-            
             try {
-                 const optimizedBuffer = faststart(rawBuffer);
-                 fs.writeFileSync(optimizedFilePath, optimizedBuffer);
-                 console.info(`[Azure Uploader] FastStart sukses diterapkan untuk ${blobPath}.`);
+                // Eksekusi FFmpeg: -y (overwrite), -i (input), -c copy (tanpa konversi), -movflags faststart (pindah atom)
+                await execFileAsync(ffmpegPath, [
+                    '-y',
+                    '-i', tempFilePath,
+                    '-c', 'copy',
+                    '-movflags', 'faststart',
+                    optimizedFilePath
+                ]);
+                console.info(`[Azure Uploader] FastStart sukses diterapkan menggunakan FFmpeg untuk ${blobPath}.`);
             } catch (fastErr) {
-                 console.warn('[Azure Uploader] FastStart tidak diterapkan (Mungkin format tidak didukung atau sudah teroptimasi sebelumnya). Menyimpan file asli.', fastErr.message);
+                 console.warn('[Azure Uploader] FFmpeg FastStart gagal (Mungkin file rusak parah). Menyimpan file asli.', fastErr.message);
                  fs.copyFileSync(tempFilePath, optimizedFilePath);
             }
-            
-            // Kosongkan memory Buffer agar RAM lega
-            rawBuffer = null;
 
             // ========================================================
             // TAHAP 3: UNGGAH KE AZURE STORAGE
