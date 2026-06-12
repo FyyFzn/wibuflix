@@ -185,8 +185,18 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 clearTimeout(timeoutId);
             }
 
+            // Validasi ukuran file setelah upload selesai
+            // Jika 0 byte atau terlalu kecil, kemungkinan bukan video asli (halaman HTML, redirect page, dsb)
+            const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
+            if (downloadedBytes < MIN_VIDEO_SIZE) {
+                // Hapus blob invalid yang sudah terlanjur terupload
+                await blockBlobClient.deleteIfExists();
+                throw new Error(`[Azure Uploader] File terlalu kecil (${downloadedBytes} bytes) — URL mungkin bukan direct link video. Dihapus dari Azure.`);
+            }
+
             console.info(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
+
         } catch (err) {
             console.error(`[Azure Uploader] Failed to upload ${blobPath} from URL ${videoUrl}:`, err.message);
             uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes

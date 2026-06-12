@@ -9,6 +9,7 @@ import * as filemoon from './filemoon.js';
 import * as filelions from './filelions.js';
 import * as gdrive from './gdrive.js';
 import * as mega from './mega.js';
+import * as mediafire from './mediafire.js';
 import * as generic from './generic.js';
 
 const extractors = [
@@ -22,7 +23,8 @@ const extractors = [
     filemoon,
     filelions,
     gdrive,
-    mega
+    mega,
+    mediafire, // Harus sebelum generic agar tidak jatuh ke Puppeteer
 ];
 
 export function resolveExtractor(embedUrl) {
