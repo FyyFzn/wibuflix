@@ -159,7 +159,9 @@ async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle) {
     }
 
     if (matchedSource) {
+        global[`prefetch_src_${seriesSlug}_${episodeSlug}`] = matchedSource;
         await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
+        delete global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
         return true;
     } else {
         markUploadFailed(seriesSlug, episodeSlug);
@@ -294,7 +296,17 @@ router.get('/api/smart-play', async (req, res) => {
                 triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
             }
             
-            const cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
+            let cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
+            if (!cachedProxyUrl && global[`prefetch_src_${seriesSlug}_${episodeSlug}`]) {
+                const src = global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
+                const baseUrl = `${req.protocol}://${req.get('host')}`;
+                if (src.headers && src.headers.token) {
+                    cachedProxyUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(src.url)}&token=${encodeURIComponent(src.headers.token)}&referer=${encodeURIComponent(src.headers.Referer || '')}`;
+                } else {
+                    cachedProxyUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(src.url)}`;
+                }
+            }
+
             if (cachedProxyUrl) {
                 return res.json({
                     success: true,
