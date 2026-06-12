@@ -14,16 +14,22 @@ router.get('/api/cache-clear', (req, res) => {
 });
 
 // ============================================================
+// ============================================================
 // RUTE 8: GET /api/force-sync  [MANUAL TRIGGER]
 // ============================================================
 router.get('/api/force-sync', (req, res) => {
     res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
-    
+
     // Jalankan asinkron tanpa memblokir request
-    runSync(true).then(() => {
-        console.log('[ForceSync] Anime Sync selesai. Memulai Unified Sync...');
-        return syncUnified();
-    }).catch(err => console.error('[ForceSync] Error:', err.message));
+    import('../scraper/otakudesu_sync.js').then(({ syncOtakudesu }) => {
+        Promise.all([
+            runSync(true),
+            syncOtakudesu()
+        ]).then(() => {
+            console.log('[ForceSync] Raw Sync selesai. Memulai Unified Sync...');
+            return syncUnified();
+        }).catch(err => console.error('[ForceSync] Error:', err.message));
+    });
 });
 
 // ============================================================
@@ -34,29 +40,34 @@ router.get('/api/factory-reset', async (req, res) => {
         const { getDataDir } = await import('../utils/pathUtils.js');
         const fs = await import('fs');
         const path = await import('path');
-        
+
         const dataDir = getDataDir();
         const unifiedPath = path.join(dataDir, 'unified_db.json');
         const tmdbPath = path.join(dataDir, 'tmdb_cache.json');
         const samehadakuPath = path.join(dataDir, 'anime_db.json');
         const otakuPath = path.join(dataDir, 'otakudesu_test.json');
-        
+
         if (fs.existsSync(unifiedPath)) fs.unlinkSync(unifiedPath);
         if (fs.existsSync(tmdbPath)) fs.unlinkSync(tmdbPath);
         if (fs.existsSync(samehadakuPath)) fs.unlinkSync(samehadakuPath);
         if (fs.existsSync(otakuPath)) fs.unlinkSync(otakuPath);
-        
+
         // Bersihkan cache memori agar sistem tidak memakai data lama
         if (global.anime_db_cache) global.anime_db_cache = null;
         if (global.otaku_db_cache) global.otaku_db_cache = null;
         
+        const { syncOtakudesu } = await import('../scraper/otakudesu_sync.js');
+
         res.json({ status: 'ok', message: 'BERHASIL! Semua Database (Unified, TMDB, Samehadaku, Otakudesu) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
-        
-        runSync(true).then(() => {
-            console.log('[FactoryReset] Anime Sync selesai. Memulai Unified Sync...');
+
+        Promise.all([
+            runSync(true),
+            syncOtakudesu()
+        ]).then(() => {
+            console.log('[FactoryReset] Raw Sync selesai. Memulai Unified Sync...');
             return syncUnified();
         }).catch(err => console.error('[FactoryReset] Error:', err.message));
-        
+
     } catch (e) {
         res.status(500).json({ status: 'error', message: e.message });
     }
