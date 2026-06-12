@@ -324,8 +324,8 @@ router.get('/api/smart-play', async (req, res) => {
                 return res.json({
                     success: true,
                     status: 'UPLOADING',
-                    url: cachedProxyUrl,
-                    message: 'Memutar via Proxy Instan sementara Azure memproses.'
+                    // url dihapus agar player tidak memutar proxy stream dan tetap menampilkan progress upload
+                    message: 'Video sedang dialirkan ke Azure Blob (Proxy dimatikan agar progress terlihat).'
                 });
             }
 
@@ -482,14 +482,14 @@ router.get('/api/smart-play', async (req, res) => {
                 proxyUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(matchedSource.url)}`;
             }
 
-            // Simpan proxy URL sementara ke global (opsional, tapi berguna untuk return UPLOADING berikutnya)
+            // Simpan proxy URL sementara ke global (opsional)
             global[`proxy_${seriesSlug}_${episodeSlug}`] = proxyUrl;
 
             return res.json({
                 success: true,
                 status: 'UPLOADING',
-                url: proxyUrl,
-                message: 'Memutar via Proxy Instan sementara Azure memproses.'
+                // url dihapus agar player tidak memutar proxy stream dan tetap menampilkan progress upload
+                message: 'Video sedang dialirkan ke Azure Blob (Proxy dimatikan agar progress terlihat).'
             });
         } else {
             markUploadFailed(seriesSlug, episodeSlug);

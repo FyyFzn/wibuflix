@@ -68,7 +68,6 @@ export function getBlobUrl(blobPath) {
         try {
             const parsedRaw = new URL(rawUrl);
             const parsedCdn = new URL(cdnUrl);
-            // Gabungkan host CDN dengan path asli dari Blob
             return `${parsedCdn.origin}${parsedRaw.pathname}${parsedRaw.search}`;
         } catch (e) {
             console.error('[Azure Uploader] URL CDN tidak valid, kembali ke URL Blob default.');
@@ -77,7 +76,12 @@ export function getBlobUrl(blobPath) {
     }
     */
     
-    return rawUrl;
+    // Pastikan URL di-encode dengan benar (mengubah spasi menjadi %20 dll) agar player Native tidak error
+    try {
+        return new URL(rawUrl).href;
+    } catch (e) {
+        return rawUrl;
+    }
 }
 
 /**
