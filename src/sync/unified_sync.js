@@ -234,6 +234,15 @@ export async function syncUnified() {
         saveTMDBCache();
         log('[UnifiedSync] Cache TMDB berhasil disimpan ke disk.');
 
+        // Bersihkan seluruh cache API (seperti /api/katalog) agar aplikasi frontend langsung menerima data baru tanpa harus menunggu 1 jam
+        try {
+            const { flushAll } = await import('../utils/cacheManager.js');
+            flushAll();
+            log('[UnifiedSync] Berhasil menghapus cache API di memori. Pembaruan akan langsung terlihat di aplikasi!');
+        } catch (cacheErr) {
+            log('[UnifiedSync] Gagal menghapus cache API:', cacheErr.message);
+        }
+
     } catch (err) {
         console.error('[UnifiedSync] Error:', err.message);
     }
