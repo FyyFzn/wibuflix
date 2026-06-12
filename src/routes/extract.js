@@ -461,14 +461,6 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (matchedSource) {
-            // Deteksi jika user agresif menekan tombol next / menutup aplikasi
-            req.on('close', () => {
-                // Jika koneksi terputus, batalkan proses eksekusi untuk episode ini agar tidak bikin server jebol
-                console.info(`[Smart-Play] User disconnect/skip terdeteksi untuk: ${episodeSlug}. Membatalkan upload...`);
-                cancelUpload(seriesSlug, episodeSlug);
-                activeExtractions.delete(blobPath);
-            });
-
             // Start upload in background, then chain prefetch window
             const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
 
@@ -540,8 +532,24 @@ router.get('/api/upload-status', (req, res) => {
         const progressMessage = getUploadProgress(seriesSlug, episodeSlug);
         res.json({ success: true, progressMessage });
     } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
+        console.error(`[Smart-Play Error]:`, e.message);
+        return res.status(500).json({ success: false, status: 'FAILED', message: e.message });
     }
+});
+
+// Endpoint untuk membatalkan upload secara eksplisit dari client
+router.post('/cancel-stream', express.json(), (req, res) => {
+    const { url } = req.body;
+    if (!url) return res.json({ success: false });
+    
+    const { seriesSlug, episodeSlug } = extractSlugs(url, null);
+    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    
+    console.info(`[Smart-Play] Eksplisit cancel dari client untuk: ${episodeSlug}`);
+    cancelUpload(seriesSlug, episodeSlug);
+    activeExtractions.delete(blobPath);
+    
+    return res.json({ success: true });
 });
 
 export default router;
