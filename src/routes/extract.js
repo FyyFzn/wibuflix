@@ -76,107 +76,120 @@ function getResolutionGroup(serverName) {
     return null;
 }
 
-async function triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle) {
-    if (!nextEpisodeUrl) return;
+/**
+ * Prefetch satu episode tertentu ke Azure Blob.
+ * Return true jika berhasil memulai upload, false jika sudah ada/skip.
+ */
+async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle) {
+    const { episodeSlug } = extractSlugs(episodeUrl, null);
+    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+
+    const status = await checkUploadStatus(seriesSlug, episodeSlug);
+    if (status === 'READY' || status === 'UPLOADING' || status === 'FAILED') {
+        console.info(`[Prefetch] Skip ${episodeSlug} — status: ${status}`);
+        return false;
+    }
+
+    if (activeExtractions.has(blobPath)) {
+        console.info(`[Prefetch] Skip ${episodeSlug} — sedang diekstrak`);
+        return false;
+    }
+
+    console.info(`[Prefetch] Memulai prefetch untuk: ${episodeSlug}`);
+    activeExtractions.add(blobPath);
+    let matchedSource = null;
+
     try {
-        const { episodeSlug: nextEpisodeSlug } = extractSlugs(nextEpisodeUrl, null);
-        const nextBlobPath = getBlobPath(seriesSlug, nextEpisodeSlug);
-        
-        const status = await checkUploadStatus(seriesSlug, nextEpisodeSlug);
-        if (status === 'READY' || status === 'UPLOADING' || status === 'FAILED') {
-            return;
+        const pageData = await getServersBasedOnUrl(episodeUrl);
+        const primaryServers = pageData.servers || [];
+        const episodeTitle = pageData.judul || '';
+
+        let alternativeServers = [];
+        if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
+            try {
+                if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
+                    alternativeServers = await getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
+                } else {
+                    alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
+                }
+            } catch (altErr) {
+                console.error(`[Prefetch Alt Error] Gagal mengambil server alternatif:`, altErr.message);
+            }
         }
 
-        if (activeExtractions.has(nextBlobPath)) {
-            return;
+        const primarySource = (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
+        const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
+
+        const servers = [
+            ...(primaryServers || []).map(s => ({ ...s, source: primarySource })),
+            ...(alternativeServers || []).map(s => ({ ...s, source: altSource })),
+        ];
+
+        if (!servers || servers.length === 0) {
+            console.info(`[Prefetch] Tidak ada server untuk: ${episodeSlug}`);
+            markUploadFailed(seriesSlug, episodeSlug);
+            return false;
         }
 
-        console.info(`[Prefetch] Memulai prefetch untuk: ${nextEpisodeSlug}`);
-        
-        activeExtractions.add(nextBlobPath);
-        let matchedSource = null;
+        const groups = { 1080: [], 720: [], 480: [], 360: [] };
+        for (const srv of servers) {
+            const resGroup = getResolutionGroup(srv.nama);
+            if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
+        }
 
-        try {
-            const pageData = await getServersBasedOnUrl(nextEpisodeUrl);
-            const primaryServers = pageData.servers || [];
-            const episodeTitle = pageData.judul || '';
-
-            let alternativeServers = [];
-            if (seriesTitle && episodeTitle && !nextEpisodeUrl.includes('___neosatsu_ep___')) {
+        for (const res of [1080, 720, 480, 360]) {
+            for (const srv of groups[res]) {
                 try {
-                    if (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) {
-                        alternativeServers = await getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-                    } else {
-                        alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle, nextEpisodeUrl);
-                    }
-                } catch (altErr) {
-                    console.error(`[Prefetch Alt Error] Gagal mengambil server alternatif:`, altErr.message);
-                }
-            }
-
-            const primarySource = (nextEpisodeUrl.includes('otakudesu') || nextEpisodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
-            const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
-
-            const taggedPrimary = (primaryServers || []).map(s => ({ ...s, source: primarySource }));
-            const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
-
-            const servers = [...taggedPrimary, ...taggedAlternative];
-
-            if (!servers || servers.length === 0) {
-                console.info(`[Prefetch] Tidak ada server ditemukan untuk prefetch ${nextEpisodeSlug}`);
-                markUploadFailed(seriesSlug, nextEpisodeSlug);
-                return;
-            }
-
-            // Group servers by resolution
-            const groups = { 1080: [], 720: [], 480: [], 360: [] };
-            for (const srv of servers) {
-                const resGroup = getResolutionGroup(srv.nama);
-                if (resGroup && groups[resGroup]) {
-                    groups[resGroup].push(srv);
-                }
-            }
-
-            // Try extracting in priority order
-            const resolutions = [1080, 720, 480, 360];
-            for (const res of resolutions) {
-                if (groups[res].length > 0) {
-                    const serverNames = groups[res].map(s => s.namaHost).join(', ');
-                    console.info(`[Prefetch] Menguji server ${res}p: ${serverNames}`);
-                }
-                for (const srv of groups[res]) {
-                    try {
-                        const extracted = await extractVideoUrl(srv.iframeUrl);
-                        if (extracted && extracted.url && !extracted.webviewOnly) {
-                            const isDirectVideo = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
-                            if (isDirectVideo) {
-                                matchedSource = {
-                                    url: extracted.url,
-                                    headers: extracted.headers || {}
-                                };
-                                console.info(`[Prefetch] Menemukan source video (Direct) (${res}p) dari ${srv.source || 'Primary'}: ${extracted.url}`);
-                                break;
-                            }
+                    const extracted = await extractVideoUrl(srv.iframeUrl);
+                    if (extracted && extracted.url && !extracted.webviewOnly) {
+                        if (!extracted.isM3U8 && !extracted.url.includes('.m3u8')) {
+                            matchedSource = { url: extracted.url, headers: extracted.headers || {} };
+                            console.info(`[Prefetch] ✓ ${episodeSlug} (${res}p) dari ${srv.source}`);
+                            break;
                         }
-                    } catch (e) {
-                        console.error(`[Prefetch] Gagal mengekstrak dari server ${srv.namaHost} (${srv.source || 'Primary'}):`, e.message);
                     }
+                } catch (e) {
+                    console.error(`[Prefetch] Gagal ekstrak dari ${srv.namaHost}:`, e.message);
                 }
-                if (matchedSource) break;
             }
-        } finally {
-            activeExtractions.delete(nextBlobPath);
+            if (matchedSource) break;
         }
+    } finally {
+        activeExtractions.delete(blobPath);
+    }
 
-        if (matchedSource) {
-            await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, nextEpisodeSlug);
-        } else {
-            markUploadFailed(seriesSlug, nextEpisodeSlug);
-        }
-    } catch (err) {
-        console.error(`[Prefetch Error] Gagal memproses prefetch untuk ${nextEpisodeUrl}:`, err.message);
+    if (matchedSource) {
+        await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
+        return true;
+    } else {
+        markUploadFailed(seriesSlug, episodeSlug);
+        return false;
     }
 }
+
+/**
+ * Prefetch sliding window — unduh episode dalam `upcomingUrls` satu per satu
+ * secara sekuensial. Lewati jika sudah READY/UPLOADING.
+ * Logika: selalu jaga 2 episode ke depan sudah READY.
+ */
+async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
+    if (!upcomingUrls || upcomingUrls.length === 0) return;
+
+    // Filter hanya URL yang valid
+    const validUrls = upcomingUrls.filter(Boolean);
+    if (validUrls.length === 0) return;
+
+    // Jalankan secara sekuensial agar tidak membanjiri server
+    for (const epUrl of validUrls) {
+        try {
+            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle);
+        } catch (err) {
+            console.error(`[PrefetchWindow Error] ${epUrl}:`, err.message);
+        }
+    }
+}
+
+
 
 // ============================================================
 // RUTE 5: GET /api/extract-video?url=EMBED_URL
@@ -219,10 +232,13 @@ router.get('/api/extract-video', async (req, res) => {
 // Parameter: episodeUrl (wajib), seriesUrl, nextEpisodeUrl
 // ============================================================
 router.get('/api/smart-play', async (req, res) => {
-    const { episodeUrl, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle } = req.query;
+    const { episodeUrl, seriesUrl, nextEpisodeUrl, nextNextEpisodeUrl, seriesTitle, episodeTitle } = req.query;
     if (!episodeUrl) {
         return res.status(400).json({ success: false, error: "Parameter 'episodeUrl' wajib diisi!" });
     }
+
+    // Susun window prefetch: [N+1, N+2] — hanya yang ada nilainya
+    const prefetchWindow = [nextEpisodeUrl, nextNextEpisodeUrl].filter(Boolean);
 
     try {
         const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
@@ -230,8 +246,8 @@ router.get('/api/smart-play', async (req, res) => {
         const status = await checkUploadStatus(seriesSlug, episodeSlug);
 
         if (status === 'READY') {
-            if (nextEpisodeUrl) {
-                triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle);
+            if (prefetchWindow.length > 0) {
+                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
             }
             return res.json({
                 success: true,
@@ -241,8 +257,8 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (status === 'UPLOADING') {
-            if (nextEpisodeUrl) {
-                triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle);
+            if (prefetchWindow.length > 0) {
+                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
             }
             
             const cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
@@ -387,16 +403,16 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (matchedSource) {
-            // Start upload in background and chain prefetch
+            // Start upload in background, then chain prefetch window
             const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
             
-            // Trigger prefetch of next episode ONLY AFTER current upload finishes
-            if (nextEpisodeUrl && uploadTask) {
+            // Trigger prefetch window ONLY AFTER current upload finishes (hemat bandwidth)
+            if (prefetchWindow.length > 0 && uploadTask) {
                 uploadTask.then(() => {
-                    console.info(`[Smart-Play] Upload episode saat ini selesai. Memulai prefetch episode selanjutnya...`);
-                    triggerPrefetch(seriesSlug, nextEpisodeUrl, seriesTitle);
+                    console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
+                    triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
                 }).catch(err => {
-                    console.error(`[Smart-Play] Upload gagal, prefetch dibatalkan:`, err.message);
+                    console.error(`[Smart-Play] Upload gagal, prefetch window dibatalkan:`, err.message);
                 });
             }
 
