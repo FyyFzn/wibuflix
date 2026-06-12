@@ -46,6 +46,23 @@ export async function getOtakuEpisodesFormatted(slug) {
             .join(' ');
     }
 
+    // Fungsi untuk merapikan judul episode Otakudesu (menghilangkan tanggal dan judul seri)
+    const cleanEpisodeTitle = (title) => {
+        if (!title) return "Episode ?";
+        if (title.toLowerCase().includes('batch')) return "Batch";
+        
+        const ovaMatch = title.match(/(OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
+        if (ovaMatch) return `${ovaMatch[1].toUpperCase()} ${ovaMatch[2]}`;
+        
+        const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
+        if (stdMatch) return `Episode ${stdMatch[1]}`;
+        
+        const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
+        if (fallbackMatch) return `Episode ${fallbackMatch[1]}`;
+        
+        return title;
+    };
+
     const result = {
         judul_seri: finalTitle,
         cover_scraper: details.thumb || '',
@@ -53,7 +70,7 @@ export async function getOtakuEpisodesFormatted(slug) {
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
             return {
-                judul: ep.title,
+                judul: cleanEpisodeTitle(ep.title),
                 url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
                 slug: epSlug
             };
