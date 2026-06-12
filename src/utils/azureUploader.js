@@ -147,7 +147,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
     }
 
     await ensureContainerExists();
-    uploadCache.set(blobPath, 'UPLOADING');
+    // Set UPLOADING state with a 30-minute TTL to prevent it from getting stuck forever if the upload crashes
+    uploadCache.set(blobPath, 'UPLOADING', 1800);
     console.info(`[Azure Uploader] Starting upload for ${blobPath} from ${videoUrl}`);
 
     // Return the upload promise so callers can wait for it if they want
