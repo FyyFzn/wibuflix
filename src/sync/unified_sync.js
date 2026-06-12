@@ -116,11 +116,18 @@ export async function syncUnified() {
                 tmdbData = await searchTMDB(cleanTitle);
             }
             
-            const baseKey = existingEntry ? existingEntry.title.toLowerCase() : (tmdbData ? tmdbData.title.toLowerCase() : originalTitle);
-            const unifiedKey = baseKey + suffix;
+            let unifiedKey;
+            if (existingEntry) {
+                const extInfo = extractTitleAndSuffix(existingEntry.title);
+                unifiedKey = normalizeForMatch(extInfo.cleanTitle) + extInfo.suffix;
+            } else {
+                const baseKey = tmdbData ? normalizeForMatch(extractTitleAndSuffix(tmdbData.title).cleanTitle) : normalizeForMatch(cleanTitle);
+                unifiedKey = baseKey + suffix;
+            }
             
             if (existingEntry) {
                 // Update source samehadaku
+                if (!existingEntry.sources) existingEntry.sources = {};
                 existingEntry.sources.samehadaku = {
                     url: item.url,
                     id: item.url.split('/').filter(Boolean).pop()
@@ -165,8 +172,14 @@ export async function syncUnified() {
                 tmdbData = await searchTMDB(cleanTitle);
             }
             
-            const baseKey = existingEntry ? existingEntry.title.toLowerCase() : (tmdbData ? tmdbData.title.toLowerCase() : originalTitle);
-            let unifiedKey = baseKey + suffix;
+            let unifiedKey;
+            if (existingEntry) {
+                const extInfo = extractTitleAndSuffix(existingEntry.title);
+                unifiedKey = normalizeForMatch(extInfo.cleanTitle) + extInfo.suffix;
+            } else {
+                const baseKey = tmdbData ? normalizeForMatch(extractTitleAndSuffix(tmdbData.title).cleanTitle) : normalizeForMatch(cleanTitle);
+                unifiedKey = baseKey + suffix;
+            }
             
             // FUZZY MATCH FALLBACK
             if (!tmdbData && !existingEntry && !unifiedMap.has(unifiedKey)) {
