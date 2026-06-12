@@ -160,6 +160,21 @@ export function getActiveUploadCount() {
 }
 
 /**
+ * Membatalkan proses upload yang sedang berjalan
+ */
+export function cancelUpload(seriesSlug, episodeSlug) {
+    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    const abortController = activeUploadControllers.get(blobPath);
+    if (abortController) {
+        console.info(`[Azure Uploader] Membatalkan upload untuk ${blobPath}`);
+        abortController.abort();
+        activeUploadControllers.delete(blobPath);
+        uploadCache.delete(blobPath);
+        uploadProgressCache.delete(blobPath);
+    }
+}
+
+/**
  * Melakukan download multi-thread (jika didukung) atau single-stream, lalu upload ke Azure Blob Storage
  */
 export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSlug) {
