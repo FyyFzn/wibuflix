@@ -164,8 +164,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 // ========================================================
                 console.info(`[Azure Uploader] Server supports Range! Starting MULTI-THREADED download for ${blobPath} (${Math.round(contentLength / 1024 / 1024)}MB)`);
                 
-                const chunkSize = 4 * 1024 * 1024; // 4MB per block (Aman untuk B1)
-                const concurrencyLimit = 8; // Max 8 koneksi paralel (Aman untuk B1)
+                const chunkSize = 4 * 1024 * 1024; // 4MB per block
+                const concurrencyLimit = 10; // Max 10 koneksi paralel (Aman, pakai ~40MB RAM)
                 const blocks = [];
                 const blockIds = [];
                 
