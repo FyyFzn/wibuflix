@@ -1,6 +1,6 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../scraper/extractor.js';
-import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, cancelAllUploads, getUploadProgress } from '../utils/azureUploader.js';
+import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, cancelAllUploads, getUploadProgress, cancelUpload } from '../utils/azureUploader.js';
 import { getNeosatsuServers } from '../scraper/neosatsu.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
 
@@ -461,6 +461,14 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (matchedSource) {
+            // Deteksi jika user agresif menekan tombol next / menutup aplikasi
+            req.on('close', () => {
+                // Jika koneksi terputus, batalkan proses eksekusi untuk episode ini agar tidak bikin server jebol
+                console.info(`[Smart-Play] User disconnect/skip terdeteksi untuk: ${episodeSlug}. Membatalkan upload...`);
+                cancelUpload(seriesSlug, episodeSlug);
+                activeExtractions.delete(blobPath);
+            });
+
             // Start upload in background, then chain prefetch window
             const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
 
