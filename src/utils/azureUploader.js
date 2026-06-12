@@ -69,24 +69,6 @@ export function getBlobUrl(blobPath) {
     if (!containerClient) return '';
     const rawUrl = containerClient.getBlockBlobClient(blobPath).url;
     
-    // Gunakan Azure CDN jika dikonfigurasi di environment variables
-    const cdnUrl = process.env.AZURE_CDN_URL;
-    if (cdnUrl) {
-        try {
-            const parsedRaw = new URL(rawUrl);
-            // Tambahkan protokol otomatis jika user lupa memasukkan https://
-            const validCdnUrl = cdnUrl.startsWith('http') ? cdnUrl : `https://${cdnUrl}`;
-            const parsedCdn = new URL(validCdnUrl);
-            
-            // Gabungkan host CDN dengan path asli dan ubah spasi menjadi %20 agar tidak error di player
-            return `${parsedCdn.origin}${parsedRaw.pathname}${parsedRaw.search}`.replace(/ /g, '%20');
-        } catch (e) {
-            console.error('[Azure Uploader] URL CDN tidak valid, kembali ke URL Blob default.');
-        }
-    }
-    
-    // Fallback: Mengambil video langsung dari Azure Storage Blob
-    
     // Pastikan URL di-encode dengan benar (mengubah spasi menjadi %20 dll) agar player Native tidak error
     try {
         return new URL(rawUrl).href;
