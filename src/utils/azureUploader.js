@@ -60,7 +60,9 @@ export function getBlobUrl(blobPath) {
     if (!containerClient) return '';
     const rawUrl = containerClient.getBlockBlobClient(blobPath).url;
     
-    // Jika user mengonfigurasi CDN, timpa URL base-nya
+    // Bypass CDN (Cloudflare) agar player mengambil video langsung dari Azure Storage
+    // Mengomentari logika CDN di bawah ini:
+    /*
     const cdnUrl = process.env.AZURE_CDN_URL;
     if (cdnUrl) {
         try {
@@ -73,6 +75,7 @@ export function getBlobUrl(blobPath) {
             return rawUrl;
         }
     }
+    */
     
     return rawUrl;
 }
