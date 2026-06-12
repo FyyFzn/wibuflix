@@ -10,7 +10,7 @@ const activeExtractions = new Set();
 function extractSlugs(episodeUrl, seriesUrl) {
     let episodeSlug = '';
     let seriesSlug = '';
-    
+
     if (episodeUrl.includes('___neosatsu_ep___')) {
         const parts = episodeUrl.split('___neosatsu_ep___');
         let seriesPart = parts[0].replace(/\/$/, '').split('/').pop() || 'neosatsu_series';
@@ -23,7 +23,7 @@ function extractSlugs(episodeUrl, seriesUrl) {
         }
         const cleanUrl = realEpUrl.replace(/\/$/, '');
         episodeSlug = cleanUrl.split('/').pop() || 'uncategorized_ep';
-        
+
         if (seriesUrl) {
             let realSeriesUrl = seriesUrl;
             if (seriesUrl.includes('?url=')) {
@@ -55,12 +55,12 @@ async function getServersBasedOnUrl(episodeUrl) {
 
 function getResolutionGroup(serverName) {
     const nameLower = serverName.toLowerCase();
-    
+
     // Tolak format x265/HEVC karena sangat memberatkan performa HP (software decoding)
     if (nameLower.includes('x265') || nameLower.includes('hevc')) {
         return null;
     }
-    
+
     if (nameLower.includes('1080') || nameLower.includes('fullhd') || nameLower.includes('full hd')) {
         return 1080;
     }
@@ -202,16 +202,16 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
             // Jika ada upload aktif lainnya di series ini, tunggu dulu sebelum mulai prefetch
             let activeUploadExists = hasActiveUploadForSeries(seriesSlug);
             let globalUploadCount = getActiveUploadCount();
-            
+
             while (activeUploadExists || globalUploadCount >= 2) {
                 if (activeUploadExists) {
                     console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}...`);
                 } else if (globalUploadCount >= 2) {
                     console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}...`);
                 }
-                
+
                 await new Promise(r => setTimeout(r, 60000)); // Tunggu 60 detik
-                
+
                 activeUploadExists = hasActiveUploadForSeries(seriesSlug);
                 globalUploadCount = getActiveUploadCount();
             }
@@ -300,7 +300,7 @@ router.get('/api/smart-play', async (req, res) => {
             if (prefetchWindow.length > 0) {
                 triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
             }
-            
+
             let cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
             if (!cachedProxyUrl && global[`prefetch_src_${seriesSlug}_${episodeSlug}`]) {
                 const src = global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
@@ -320,7 +320,7 @@ router.get('/api/smart-play', async (req, res) => {
                     message: 'Memutar via Proxy Instan sementara Azure memproses.'
                 });
             }
-            
+
             return res.json({
                 success: true,
                 status: 'UPLOADING',
@@ -455,7 +455,7 @@ router.get('/api/smart-play', async (req, res) => {
         if (matchedSource) {
             // Start upload in background, then chain prefetch window
             const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
-            
+
             // Trigger prefetch window ONLY AFTER current upload finishes (hemat bandwidth)
             if (prefetchWindow.length > 0 && uploadTask) {
                 uploadTask.then(() => {
@@ -473,7 +473,7 @@ router.get('/api/smart-play', async (req, res) => {
             } else {
                 proxyUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(matchedSource.url)}`;
             }
-            
+
             // Simpan proxy URL sementara ke global (opsional, tapi berguna untuk return UPLOADING berikutnya)
             global[`proxy_${seriesSlug}_${episodeSlug}`] = proxyUrl;
 
