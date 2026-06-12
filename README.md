@@ -4,20 +4,21 @@ Fyy Stream adalah aplikasi *streaming* anime tanpa iklan yang mengambil data (*s
 
 ## ✨ Fitur Utama
 
-### 🔧 Backend (Scraper & Proxy)
+### 🔧 Backend (Scraper, Proxy & Cloud Storage)
 - **Cloudflare Bypass**: Menggunakan *Puppeteer* dan *Cheerio* untuk menembus proteksi Cloudflare Samehadaku secara otomatis.
-- **Video Extractor**: Mengekstrak *direct link* video (.mp4/.m3u8) dari berbagai *server* seperti Vidhide, Krakenfiles, Filedon (Pucuk), Pixeldrain (Nakama), Blogger, dan lainnya.
-- **Smart Proxying**: Menyembunyikan *User-Agent* asli (seperti *ExoPlayer* dari Android) ke *server* tujuan (seperti Pixeldrain dan Filedon) untuk menghindari pemblokiran *hotlinking* (Error 403/404).
+- **Azure Blob Storage & Prefetching**: Mengalirkan video dari *hoster* langsung ke Azure Blob Storage untuk kecepatan maksimal. Mendukung sistem *Background Prefetching* (N+1 & N+2) sehingga episode selanjutnya sudah siap ditonton tanpa *buffering*.
+- **Smart Proxying & Fallback**: Memanipulasi *User-Agent* untuk melewati pemblokiran. Jika video sedang dalam proses *UPLOADING* ke Azure, sistem otomatis beralih ke *Proxy Stream Instan*, memungkinkan pengguna menonton tanpa menunggu *upload* selesai!
 - **Smart Caching & Metadata**: Menyimpan hasil *scraping* daftar episode sementara (RAM *caching*) untuk mempercepat pemuatan. Terintegrasi dengan Jikan API (MyAnimeList) untuk menambahkan skor dan genre pada anime.
 
 ### 📱 Frontend (Mobile App)
-- **Native & Webview Player**: Menggunakan `expo-video` untuk memutar video secara langsung (*native*) tanpa iklan. Jika *server* tidak bisa diekstrak (seperti Mega, Bstation, Bilibili), pemutar akan otomatis beralih ke mode *Webview*.
-- **Seamless Server Transition**: Transisi yang mulus saat berganti *server* atau resolusi video. Progres video yang ditonton akan disimpan dan dilanjutkan secara otomatis saat server diganti.
+- **Native & Webview Player**: Menggunakan `expo-video` untuk memutar video secara langsung (*native*) tanpa iklan. Jika *server* tidak bisa diekstrak (seperti Mega, Bstation, Bilibili), pemutar otomatis beralih ke mode *Webview*.
+- **Premium UX & Soft Navigation**: Memanfaatkan `InteractionManager` dan *Soft Route Params* agar perpindahan antar-episode atau dari Beranda sangat mulus, secepat kilat (0ms delay), tanpa *lag/stutter* memori.
+- **Watch History & Progress Tracking**: Riwayat tontonan cerdas yang tidak akan pernah dobel (menggunakan sistem penumpukan deduplikasi *URL* otomatis). Aplikasi selalu mengingat detak (*progress*) detik terakhir video Anda.
 - **Smart Navigation**: 
   - *Double-tap* di sisi layar untuk mempercepat mundur/maju 10 detik.
   - Tombol lewati *Opening/Ending* (OP/ED).
-  - Peralihan episode lancar tanpa keluar dari mode layar penuh (*fullscreen*).
-- **Audio Leak Prevention**: Penghancuran memori *Webview* dengan injeksi JavaScript untuk mencegah *bug* di mana suara video tetap berjalan di latar belakang setelah mengganti server atau menutup pemutar.
+  - Peralihan episode yang persisten tanpa merusak mode layar penuh (*fullscreen*).
+- **Audio Leak Prevention**: Penghancuran memori *Webview* dengan injeksi JavaScript untuk mencegah *bug* suara video tetap berjalan di latar belakang.
 
 ---
 
