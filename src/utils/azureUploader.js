@@ -107,7 +107,7 @@ export function markUploadFailed(seriesSlug, episodeSlug) {
 }
 
 /**
- * Performs background stream piping from source video URL to Azure Blob Storage
+ * Melakukan download multi-thread (jika didukung) atau single-stream, lalu upload ke Azure Blob Storage
  */
 export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSlug) {
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
@@ -125,73 +125,149 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
     // Return the upload promise so callers can wait for it if they want
     return (async () => {
         try {
-            // Setup headers for request
             const requestHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 ...headers
             };
 
-            // Set up a 30-minute hard timeout because Krakenfiles limits speed to ~150KB/s (takes 15-20 mins)
-            const abortController = new AbortController();
-            const timeoutId = setTimeout(() => abortController.abort(), 30 * 60 * 1000);
-
-            // Download stream from source URL
-            const response = await axios({
-                method: 'get',
-                url: videoUrl,
-                responseType: 'stream',
-                headers: requestHeaders,
-                timeout: 30000, // 30 seconds connection timeout
-                signal: abortController.signal
-            });
-
-            // Progress tracking
-            let downloadedBytes = 0;
-            const logInterval = 50 * 1024 * 1024; // Log setiap 50MB agar console tidak penuh
-            let nextLogThreshold = logInterval;
-
-            response.data.on('data', (chunk) => {
-                downloadedBytes += chunk.length;
-                if (downloadedBytes >= nextLogThreshold) {
-                    console.info(`[Azure Uploader] Progress ${blobPath}: ${Math.round(downloadedBytes / 1024 / 1024)}MB downloaded...`);
-                    nextLogThreshold += logInterval;
-                }
-            });
-
-            response.data.on('end', () => {
-                console.info(`[Azure Uploader] Selesai mendownload dari source: ${blobPath} (Total: ${Math.round(downloadedBytes / 1024 / 1024)}MB)`);
-            });
-
-            response.data.on('error', (err) => {
-                console.error(`[Azure Uploader] Stream download error untuk ${blobPath}:`, err.message);
-            });
-
             const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-            
+
+            // 1. Pre-flight check: Apakah server mendukung Range Request?
+            let supportsRange = false;
+            let contentLength = 0;
             try {
-                // Pipe stream to block blob
-                await blockBlobClient.uploadStream(
-                    response.data,
-                    4 * 1024 * 1024, // 4MB buffer size
-                    5, // reduced max concurrency to 5 to save memory and prevent connection drops
-                    {
-                        blobHTTPHeaders: {
-                            blobContentType: 'video/mp4'
-                        },
-                        abortSignal: abortController.signal
+                const headRes = await axios.get(videoUrl, {
+                    headers: { ...requestHeaders, 'Range': 'bytes=0-0' },
+                    timeout: 10000,
+                    responseType: 'arraybuffer'
+                });
+                
+                if (headRes.status === 206) {
+                    supportsRange = true;
+                    const contentRange = headRes.headers['content-range'];
+                    if (contentRange) {
+                        contentLength = parseInt(contentRange.split('/')[1]);
                     }
-                );
-            } finally {
-                clearTimeout(timeoutId);
+                } else if (headRes.headers['content-length']) {
+                    contentLength = parseInt(headRes.headers['content-length']);
+                }
+            } catch (e) {
+                console.warn(`[Azure Uploader] Pre-flight check failed, fallback to single-stream. Error: ${e.message}`);
             }
 
-            // Validasi ukuran file setelah upload selesai
-            // Jika 0 byte atau terlalu kecil, kemungkinan bukan video asli (halaman HTML, redirect page, dsb)
             const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
-            if (downloadedBytes < MIN_VIDEO_SIZE) {
-                // Hapus blob invalid yang sudah terlanjur terupload
+            let totalDownloadedBytes = 0;
+
+            if (supportsRange && contentLength > MIN_VIDEO_SIZE) {
+                // ========================================================
+                // JDOWNLOADER-STYLE MULTI-THREADED UPLOAD (B1 SAFE-MODE)
+                // ========================================================
+                console.info(`[Azure Uploader] Server supports Range! Starting MULTI-THREADED download for ${blobPath} (${Math.round(contentLength / 1024 / 1024)}MB)`);
+                
+                const chunkSize = 4 * 1024 * 1024; // 4MB per block (Aman untuk B1)
+                const concurrencyLimit = 8; // Max 8 koneksi paralel (Aman untuk B1)
+                const blocks = [];
+                const blockIds = [];
+                
+                for (let i = 0; i < contentLength; i += chunkSize) {
+                    const end = Math.min(i + chunkSize - 1, contentLength - 1);
+                    // Block ID harus panjangnya sama dan Base64 encoded
+                    const blockId = Buffer.from(String(blocks.length).padStart(6, '0')).toString('base64');
+                    blocks.push({ start: i, end, blockId, index: blocks.length });
+                    blockIds.push(blockId);
+                }
+
+                let completedChunks = 0;
+                let activeWorkers = 0;
+                let blockIndex = 0;
+
+                // Promise pool worker
+                const worker = async () => {
+                    while (blockIndex < blocks.length) {
+                        const block = blocks[blockIndex++];
+                        let attempt = 0;
+                        let success = false;
+
+                        while (attempt < 3 && !success) {
+                            try {
+                                const res = await axios.get(videoUrl, {
+                                    headers: { ...requestHeaders, 'Range': `bytes=${block.start}-${block.end}` },
+                                    responseType: 'arraybuffer',
+                                    timeout: 30000
+                                });
+                                
+                                await blockBlobClient.stageBlock(block.blockId, res.data, res.data.byteLength);
+                                totalDownloadedBytes += res.data.byteLength;
+                                success = true;
+                                completedChunks++;
+                                
+                                if (completedChunks % 5 === 0 || completedChunks === blocks.length) {
+                                    console.info(`[Azure Uploader] Progress Multi-Thread ${blobPath}: ${completedChunks}/${blocks.length} blocks (${Math.round(totalDownloadedBytes / 1024 / 1024)}MB)...`);
+                                }
+                            } catch (err) {
+                                attempt++;
+                                console.warn(`[Azure Uploader] Gagal chunk ${block.index} (attempt ${attempt}/3): ${err.message}`);
+                                if (attempt === 3) throw err;
+                                await new Promise(r => setTimeout(r, 2000));
+                            }
+                        }
+                    }
+                };
+
+                const workers = [];
+                for (let i = 0; i < Math.min(concurrencyLimit, blocks.length); i++) {
+                    workers.push(worker());
+                }
+
+                await Promise.all(workers);
+
+                // Gabungkan semua block
+                await blockBlobClient.commitBlockList(blockIds, {
+                    blobHTTPHeaders: { blobContentType: 'video/mp4' }
+                });
+                
+                console.info(`[Azure Uploader] Selesai merakit multi-thread: ${blobPath}`);
+
+            } else {
+                // ========================================================
+                // SINGLE STREAM UPLOAD (FALLBACK)
+                // ========================================================
+                console.info(`[Azure Uploader] Menggunakan fallback SINGLE-STREAM untuk ${blobPath}`);
+                const abortController = new AbortController();
+                const timeoutId = setTimeout(() => abortController.abort(), 30 * 60 * 1000);
+
+                const response = await axios({
+                    method: 'get',
+                    url: videoUrl,
+                    responseType: 'stream',
+                    headers: requestHeaders,
+                    timeout: 30000,
+                    signal: abortController.signal
+                });
+
+                let nextLogThreshold = 50 * 1024 * 1024;
+                response.data.on('data', (chunk) => {
+                    totalDownloadedBytes += chunk.length;
+                    if (totalDownloadedBytes >= nextLogThreshold) {
+                        console.info(`[Azure Uploader] Progress Stream ${blobPath}: ${Math.round(totalDownloadedBytes / 1024 / 1024)}MB downloaded...`);
+                        nextLogThreshold += 50 * 1024 * 1024;
+                    }
+                });
+
+                try {
+                    await blockBlobClient.uploadStream(response.data, 4 * 1024 * 1024, 5, {
+                        blobHTTPHeaders: { blobContentType: 'video/mp4' },
+                        abortSignal: abortController.signal
+                    });
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+            }
+
+            // Validasi akhir ukuran file
+            if (totalDownloadedBytes < MIN_VIDEO_SIZE) {
                 await blockBlobClient.deleteIfExists();
-                throw new Error(`[Azure Uploader] File terlalu kecil (${downloadedBytes} bytes) — URL mungkin bukan direct link video. Dihapus dari Azure.`);
+                throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video. Dihapus dari Azure.`);
             }
 
             console.info(`[Azure Uploader] Successfully uploaded to Azure: ${blobPath}`);
