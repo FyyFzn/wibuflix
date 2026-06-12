@@ -1,6 +1,6 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../scraper/extractor.js';
-import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed } from '../utils/azureUploader.js';
+import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount } from '../utils/azureUploader.js';
 import { getNeosatsuServers } from '../scraper/neosatsu.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
 
@@ -199,16 +199,21 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
                 continue;
             }
 
-            // Jika ada upload aktif lainnya di series ini (cek N+1), tunggu dulu sebelum mulai N+2
-            // Cek episode sebelumnya di window — jika masih UPLOADING, jeda
-            const prevIdx = validUrls.indexOf(epUrl) - 1;
-            if (prevIdx >= 0) {
-                const { episodeSlug: prevSlug } = extractSlugs(validUrls[prevIdx], null);
-                const prevStatus = await checkUploadStatus(seriesSlug, prevSlug);
-                if (prevStatus === 'UPLOADING') {
-                    console.info(`[PrefetchWindow] Episode sebelumnya ${prevSlug} masih UPLOADING. Menunda prefetch ${episodeSlug}...`);
-                    await new Promise(r => setTimeout(r, 60000)); // Tunggu 60 detik
+            // Jika ada upload aktif lainnya di series ini, tunggu dulu sebelum mulai prefetch
+            let activeUploadExists = hasActiveUploadForSeries(seriesSlug);
+            let globalUploadCount = getActiveUploadCount();
+            
+            while (activeUploadExists || globalUploadCount >= 2) {
+                if (activeUploadExists) {
+                    console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}...`);
+                } else if (globalUploadCount >= 2) {
+                    console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}...`);
                 }
+                
+                await new Promise(r => setTimeout(r, 60000)); // Tunggu 60 detik
+                
+                activeUploadExists = hasActiveUploadForSeries(seriesSlug);
+                globalUploadCount = getActiveUploadCount();
             }
 
             await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle);

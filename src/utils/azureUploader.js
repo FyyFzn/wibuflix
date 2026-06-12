@@ -107,6 +107,34 @@ export function markUploadFailed(seriesSlug, episodeSlug) {
 }
 
 /**
+ * Checks if there is any active upload for a specific series.
+ */
+export function hasActiveUploadForSeries(seriesSlug) {
+    const prefix = `videos/${seriesSlug}/`;
+    const keys = uploadCache.keys();
+    for (const key of keys) {
+        if (key.startsWith(prefix) && uploadCache.get(key) === 'UPLOADING') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Gets the total number of active uploads globally.
+ */
+export function getActiveUploadCount() {
+    let count = 0;
+    const keys = uploadCache.keys();
+    for (const key of keys) {
+        if (uploadCache.get(key) === 'UPLOADING') {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
  * Melakukan download multi-thread (jika didukung) atau single-stream, lalu upload ke Azure Blob Storage
  */
 export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSlug) {
