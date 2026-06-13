@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDataDir } from '../utils/pathUtils.js';
+import Anime from '../models/Anime.js'; // Model MongoDB
 
 // Gunakan path dari utility
 const DB_PATH = path.join(getDataDir(), 'otakudesu_db.json');
@@ -47,14 +48,41 @@ export async function syncOtakudesu() {
 
         if (list.length > 0) {
             global.otakudesu_db_cache = list;
-            const dbDir = path.dirname(DB_PATH);
-            if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
             
             try {
-                fs.writeFileSync(DB_PATH, JSON.stringify(list, null, 2));
-                log(`[OtakuSync] Berhasil menyimpan ${list.length} anime ke database.`);
-            } catch (fsErr) {
-                log(`[OtakuSync] Gagal menyimpan ke disk. Tersimpan di memory cache. Error: ${fsErr.message}`);
+                // 1. Simpan ke MongoDB (Bulk Upsert)
+                // Kita update sumber Otakudesu saja, menggunakan "title" sebagai kriteria pencocokan.
+                const bulkOps = list.map(anime => ({
+                    updateOne: {
+                        filter: { 
+                            $or: [
+                                { title: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+                                { aliases: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+                            ]
+                        },
+                        update: { 
+                            $set: { 
+                                'sources.otakudesu.url': anime.url,
+                                'sources.otakudesu.id': anime.id
+                            } 
+                        },
+                        upsert: false // Jangan buat data anime baru murni dari Otakudesu jika tidak ada (untuk menjaga metadata rapi dari Samehadaku)
+                    }
+                }));
+
+                if (bulkOps.length > 0) {
+                    const result = await Anime.bulkWrite(bulkOps);
+                    log(`[OtakuSync] ✅ MongoDB Bulk Update berhasil memetakan ${result.modifiedCount} anime dari Otakudesu.`);
+                }
+
+                // 2. Simpan ke lokal sebagai cache raw
+                const dbDir = path.dirname(DB_PATH);
+                if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+                
+                await fs.promises.writeFile(DB_PATH, JSON.stringify(list, null, 2));
+                log(`[OtakuSync] ✅ Berhasil menyimpan ${list.length} anime ke JSON lokal.`);
+            } catch (err) {
+                log(`[OtakuSync] ❌ Gagal menyimpan data. Error: ${err.message}`);
             }
         } else {
             log('[OtakuSync] Peringatan: Tidak ada anime yang terambil dari list.');
@@ -97,10 +125,10 @@ export function startBackgroundOtakuSync() {
         syncOtakudesu();
     }
 
-    // Jalankan ulang setiap 6 jam
+    // Jalankan ulang setiap 7 hari karena ini hanya full list A-Z (Update episode diambil alih latest_sync.js)
     setInterval(() => {
         syncOtakudesu();
-    }, 6 * 60 * 60 * 1000);
+    }, 7 * 24 * 60 * 60 * 1000); // 7 Hari
 }
 
 // Jika dijalankan langsung

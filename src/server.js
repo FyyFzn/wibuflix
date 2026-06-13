@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { syncUnified } from './sync/unified_sync.js';
 import { startBackgroundAnimeSync } from './sync/anime_sync.js';
 import { startBackgroundOtakuSync } from './scraper/otakudesu_sync.js';
+import { startBackgroundLatestSync } from './sync/latest_sync.js';
 
 // Route Imports
 import katalogRouter from './routes/katalog.js';
@@ -39,9 +40,14 @@ app.use(proxyRouter);
 app.use(otakudesuRouter);
 app.use(adminRouter);
 
+import connectDB from './config/db.js';
+
 function startServer() {
-    app.listen(PORT, '0.0.0.0', async () => {
-        const log = global.forceLog || console.log;
+    // 1. Hubungkan ke MongoDB terlebih dahulu
+    connectDB().then(() => {
+        // 2. Jalankan Express App
+        app.listen(PORT, '0.0.0.0', async () => {
+            const log = global.forceLog || console.log;
 
         const modeText = global.forceLog ? `\n💡 Mode         : PRODUCTION (Log standar dinonaktifkan)` : '';
         const banner = `
@@ -61,6 +67,7 @@ function startServer() {
         // Memulai background job
         startBackgroundAnimeSync();
         startBackgroundOtakuSync();
+        startBackgroundLatestSync();
 
         // Mulai proses unified sync (akan berjalan sinkron atau asinkron tanpa memblok server)
         setTimeout(() => {
@@ -69,6 +76,7 @@ function startServer() {
             setInterval(syncUnified, 60 * 60 * 1000);
         }, 10000); // Tunda 10 detik agar localDb & otakuDb selesai di-load
 
+        });
     });
 }
 

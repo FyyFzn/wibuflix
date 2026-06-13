@@ -4,7 +4,7 @@ import axios from 'axios';
 import { extractIframeSrc, namaServer } from './extractors/utils.js';
 import { resolveExtractor } from './extractors/index.js';
 import { loadLocalDatabase } from '../sync/anime_sync.js';
-import { loadUnifiedDatabase } from '../sync/unified_sync.js';
+import Anime from '../models/Anime.js';
 import { getEpisodes } from './episodes.js';
 
 export { extractIframeSrc, namaServer };
@@ -327,70 +327,30 @@ export async function getAlternativeServersSamehadaku(seriesTitle, episodeTitle)
         let samehadakuUrl = null;
 
         // 1. Try unified database first for mapping
-        const unifiedDb = loadUnifiedDatabase();
-        if (unifiedDb && unifiedDb.length > 0) {
-            const query = seriesTitle.toLowerCase().trim();
-            // Try exact title / alias match
-            let matchedEntry = unifiedDb.find(item => 
-                item.title.toLowerCase() === query || 
-                (item.aliases && item.aliases.some(a => a.toLowerCase() === query))
-            );
+        let matchedEntry = await Anime.findOne({
+            $or: [
+                { title: { $regex: new RegExp(`^${seriesTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+                { aliases: { $regex: new RegExp(`^${seriesTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+            ]
+        });
 
-            // Fuzzy match in unified_db if exact match not found
-            if (!matchedEntry) {
-                const queryWords = query.replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
-                let bestMatch = null;
-                let maxMatches = 0;
-                for (const item of unifiedDb) {
-                    const titlesToTry = [item.title, ...(item.aliases || [])];
-                    for (const t of titlesToTry) {
-                        const itemTitle = t.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
-                        let matches = 0;
-                        for (const w of queryWords) {
-                            if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
-                        }
-                        if (matches > maxMatches) {
-                            maxMatches = matches;
-                            bestMatch = item;
-                        }
-                    }
-                }
-                if (bestMatch && maxMatches >= queryWords.length / 2) {
-                    matchedEntry = bestMatch;
-                }
-            }
-
-            if (matchedEntry && matchedEntry.sources && matchedEntry.sources.samehadaku) {
-                samehadakuUrl = matchedEntry.sources.samehadaku.url;
+        // Fuzzy match in unified_db if exact match not found
+        if (!matchedEntry) {
+            const queryWords = seriesTitle.replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
+            if (queryWords.length > 0) {
+                // Cari data yang mengandung setidaknya salah satu kata kunci
+                const regexes = queryWords.map(w => new RegExp(`\\b${w}\\b`, 'i'));
+                matchedEntry = await Anime.findOne({
+                    $or: [
+                        { title: { $in: regexes } },
+                        { aliases: { $in: regexes } }
+                    ]
+                });
             }
         }
 
-        // 2. Fallback to local anime database (samehadaku)
-        if (!samehadakuUrl) {
-            const samehadakuDb = loadLocalDatabase();
-            if (samehadakuDb && samehadakuDb.length > 0) {
-                const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-                const queryWords = query.split(' ').filter(w => w.length > 2);
-
-                let bestMatch = null;
-                let maxMatches = 0;
-
-                for (const item of samehadakuDb) {
-                    const itemTitle = item.judul.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
-                    let matches = 0;
-                    for (const w of queryWords) {
-                        if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
-                    }
-                    if (matches > maxMatches) {
-                        maxMatches = matches;
-                        bestMatch = item;
-                    }
-                }
-
-                if (bestMatch && maxMatches >= queryWords.length / 2) {
-                    samehadakuUrl = bestMatch.url;
-                }
-            }
+        if (matchedEntry && matchedEntry.sources && matchedEntry.sources.samehadaku) {
+            samehadakuUrl = matchedEntry.sources.samehadaku.url;
         }
 
         if (!samehadakuUrl) {

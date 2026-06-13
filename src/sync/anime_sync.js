@@ -4,6 +4,7 @@ import * as cheerio from 'cheerio';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { getDataDir } from '../utils/pathUtils.js';
+import Anime from '../models/Anime.js'; // Model MongoDB
 
 // Gunakan path dari utility
 const DB_PATH = path.join(getDataDir(), 'anime_db.json');
@@ -36,10 +37,10 @@ export async function startBackgroundAnimeSync() {
         }
     }
 
-    // Schedule every 12 hours (43200000 ms)
+    // Schedule every 7 days (604800000 ms) karena daftar A-Z jarang berubah
     setInterval(() => {
         runSync(false);
-    }, 43200000);
+    }, 604800000);
 }
 
 export async function runSync(isInitial = false) {
@@ -162,13 +163,39 @@ export async function runSync(isInitial = false) {
             global.anime_db_cache = allAnime;
             
             try {
+                // 1. Simpan ke MongoDB (Bulk Upsert)
+                const bulkOps = allAnime.map(anime => ({
+                    updateOne: {
+                        filter: { title: anime.judul },
+                        update: { 
+                            $set: { 
+                                title: anime.judul,
+                                image: anime.gambarScraper,
+                                type: anime.tipe,
+                                score: anime.skor,
+                                status: anime.status,
+                                'sources.samehadaku.url': anime.url
+                            } 
+                        },
+                        upsert: true
+                    }
+                }));
+
+                // Eksekusi operasi massal
+                if (bulkOps.length > 0) {
+                    await Anime.bulkWrite(bulkOps);
+                    log(`[Anime Sync] ✅ MongoDB Bulk Upsert berhasil untuk ${bulkOps.length} anime.`);
+                }
+
+                // 2. Simpan cadangan ke disk lokal
                 const dbDir = path.dirname(DB_PATH);
                 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
                 
-                fs.writeFileSync(DB_PATH, JSON.stringify(allAnime, null, 2));
-                log(`[Anime Sync] SUKSES! Tersimpan ${allAnime.length} anime ke database lokal.`);
-            } catch (fsErr) {
-                log(`[Anime Sync] Gagal menyimpan ke disk (mungkin Read-Only). Tersimpan di memory cache. Error: ${fsErr.message}`);
+                // Gunakan promise untuk non-blocking IO
+                await fs.promises.writeFile(DB_PATH, JSON.stringify(allAnime, null, 2));
+                log(`[Anime Sync] ✅ Tersimpan ${allAnime.length} anime ke JSON lokal.`);
+            } catch (err) {
+                log(`[Anime Sync] ❌ Gagal menyimpan data. Error: ${err.message}`);
             }
         } else {
             log(`[Anime Sync] Peringatan: Tidak ada anime yang terambil.`);
