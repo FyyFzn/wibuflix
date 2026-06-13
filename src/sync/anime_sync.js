@@ -208,19 +208,3 @@ export async function runSync(isInitial = false) {
     }
 }
 
-// Fungsi pembantu untuk load DB agar cepat
-export function loadLocalDatabase() {
-    if (global.anime_db_cache) return global.anime_db_cache;
-    
-    if (fs.existsSync(DB_PATH)) {
-        try {
-            const raw = fs.readFileSync(DB_PATH, 'utf-8');
-            global.anime_db_cache = JSON.parse(raw);
-            return global.anime_db_cache;
-        } catch(e) {
-            console.error("[Anime DB] Gagal membaca JSON:", e.message);
-            return [];
-        }
-    }
-    return [];
-}

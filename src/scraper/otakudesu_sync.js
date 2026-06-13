@@ -93,22 +93,6 @@ export async function syncOtakudesu() {
     }
 }
 
-export function loadOtakuDatabase() {
-    if (global.otakudesu_db_cache) return global.otakudesu_db_cache;
-    
-    if (fs.existsSync(DB_PATH)) {
-        try {
-            const raw = fs.readFileSync(DB_PATH, 'utf-8');
-            global.otakudesu_db_cache = JSON.parse(raw);
-            return global.otakudesu_db_cache;
-        } catch(e) {
-            console.error("[Otaku DB] Gagal membaca JSON:", e.message);
-            return [];
-        }
-    }
-    return [];
-}
-
 export function startBackgroundOtakuSync() {
     let shouldSyncNow = true;
     if (fs.existsSync(DB_PATH)) {

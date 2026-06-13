@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer } from './extractors/utils.js';
 import { resolveExtractor } from './extractors/index.js';
-import { loadLocalDatabase } from '../sync/anime_sync.js';
+
 import Anime from '../models/Anime.js';
 import { getEpisodes } from './episodes.js';
 

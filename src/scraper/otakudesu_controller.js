@@ -1,7 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { OtakudesuInstance } from 'otakudesu-scraper';
-import { loadOtakuDatabase } from './otakudesu_sync.js';
+import Anime from '../models/Anime.js';
 import { enrichWithMAL } from '../utils/malEnrichment.js';
 
 const otaku = new OtakudesuInstance('https://otakudesu.blog');
@@ -24,9 +24,8 @@ export async function getOtakuEpisodesFormatted(slug) {
 
     if (!details) return null;
 
-    // Fallback title dari database lokal jika parser scraper gagal mendapatkan nama
-    const otakuDb = loadOtakuDatabase();
-    const found = otakuDb.find(item => item.slug === slug || item.id === `otakudesu:${slug}`);
+    // Fallback title dari database MongoDB jika parser scraper gagal mendapatkan nama
+    const found = await Anime.findOne({ "sources.otakudesu.url": new RegExp(slug, 'i') }).lean();
     let fallbackTitle = found ? found.title : slug;
     
     // Bersihkan teks status dari judul database (misal: "Anime Title On-Going")
