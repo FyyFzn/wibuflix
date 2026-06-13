@@ -579,7 +579,7 @@ router.post('/cancel-stream', express.json(), (req, res) => {
 // RUTE QUEUE: Background Download Manager
 // ============================================================
 
-router.post('/api/queue/add', (req, res) => {
+router.post('/api/queue/add', express.json(), (req, res) => {
     const { episodeUrl, seriesUrl, seriesTitle, episodeTitle } = req.body;
     if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
     
@@ -591,13 +591,13 @@ router.post('/api/queue/add', (req, res) => {
     res.json({ success: true, item });
 });
 
-router.post('/api/queue/prioritize', (req, res) => {
+router.post('/api/queue/prioritize', express.json(), (req, res) => {
     const { id } = req.body;
     backgroundQueue.prioritize(id);
     res.json({ success: true });
 });
 
-router.post('/api/queue/cancel', (req, res) => {
+router.post('/api/queue/cancel', express.json(), (req, res) => {
     const { id, seriesSlug, episodeSlug } = req.body;
     backgroundQueue.cancel(id);
     // Jika sedang berjalan di azureUploader (UPLOADING), kita harus membatalkan controller-nya juga
