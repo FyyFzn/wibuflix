@@ -24,16 +24,34 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
         ];
     }
     
-    if (typeFilter) {
-        query.type = { $regex: new RegExp(`^${typeFilter}$`, 'i') };
+    if (typeFilter && typeFilter !== 'Semua') {
+        if (tabParam === 'toku') {
+            // Tokusatsu tidak punya kolom tipe spesifik (semuanya 'Toku'), jadi filternya dicari di Judul
+            if (typeFilter.toLowerCase() === 'lainnya') {
+                // Yang bukan kamen rider, super sentai, power rangers, ultraman
+                query.title = { 
+                    $not: /kamen rider|super sentai|power rangers|ultraman/i 
+                };
+            } else {
+                if (!query.$or) query.$or = [];
+                // Push regex untuk mencari di judul
+                query.$or.push(
+                    { title: { $regex: typeFilter, $options: 'i' } },
+                    { aliases: { $regex: typeFilter, $options: 'i' } }
+                );
+            }
+        } else {
+            // Anime menggunakan tipe yang spesifik (TV, OVA, Movie, dll)
+            query.type = { $regex: new RegExp(`^${typeFilter}$`, 'i') };
+        }
     }
 
-    // Filter berdasarkan tab
+    // Filter berdasarkan tab (wajib dieksekusi setelah typeFilter)
     if (tabParam === 'anime') {
-        // Jika sedang di tab Anime, sembunyikan semua yang tipenya Toku
+        // Sembunyikan semua yang tipenya Toku
         if (!query.type) query.type = { $ne: 'Toku' };
     } else if (tabParam === 'toku') {
-        // Jika sedang di tab Toku, wajib tipenya Toku
+        // Wajib tipenya Toku
         query.type = 'Toku';
     }
 
