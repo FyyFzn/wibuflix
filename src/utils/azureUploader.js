@@ -44,17 +44,34 @@ export function getUploadProgress(seriesSlug, episodeSlug) {
 }
 
 /**
- * Cancels all currently active uploads.
+ * Cancels all currently active uploads for a specific source.
  */
-export function cancelAllUploads() {
+export function cancelAllUploads(source = 'player') {
     let count = 0;
-    for (const [blobPath, controller] of activeUploadControllers.entries()) {
-        controller.abort();
-        console.info(`[Azure Uploader] Cancelled upload for ${blobPath}`);
-        count++;
+    for (const [blobPath, data] of activeUploadControllers.entries()) {
+        if (data.source === source) {
+            data.abortController.abort();
+            console.info(`[Azure Uploader] Cancelled upload for ${blobPath} (source: ${source})`);
+            activeUploadControllers.delete(blobPath);
+            count++;
+        }
     }
-    activeUploadControllers.clear();
     return count;
+}
+
+/**
+ * Cancels a specific active upload based on slugs.
+ */
+export function cancelUpload(seriesSlug, episodeSlug) {
+    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    const data = activeUploadControllers.get(blobPath);
+    if (data) {
+        data.abortController.abort();
+        console.info(`[Azure Uploader] Cancelled specific upload for ${blobPath}`);
+        activeUploadControllers.delete(blobPath);
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -288,7 +305,7 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
 /**
  * Melakukan download multi-thread (jika didukung) atau single-stream, lalu upload ke Azure Blob Storage
  */
-export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSlug) {
+export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSlug, source = 'player') {
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
     
     if (!containerClient) {
@@ -308,7 +325,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
         const tempFileName = crypto.randomUUID() + '.mp4';
         const tempFilePath = path.join(os.tmpdir(), tempFileName);
         
-        activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath });
+        activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath, source });
         
         const hlsOutputDir = path.join(os.tmpdir(), `hls_${crypto.randomUUID()}`);
         

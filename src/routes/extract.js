@@ -3,12 +3,23 @@ import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } 
 import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, checkRangeSupport } from '../utils/azureUploader.js';
 import { getNeosatsuServers } from '../scraper/neosatsu.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
+import { backgroundQueue } from '../utils/queueManager.js';
+
+// Setup background queue processor
+backgroundQueue.setProcessor(async (item) => {
+    // Jalankan prefetchOneEpisode dengan source 'queue'
+    const success = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue');
+    if (!success) {
+        // Jika skip atau gagal, ubah status di antrean
+        throw new Error('Prefetch failed or skipped');
+    }
+});
 
 const router = express.Router();
 const activeExtractions = new Set();
 let prefetchAbortController = new AbortController();
 
-function extractSlugs(episodeUrl, seriesUrl) {
+export function extractSlugs(episodeUrl, seriesUrl) {
     let episodeSlug = '';
     let seriesSlug = '';
 
@@ -81,7 +92,7 @@ function getResolutionGroup(serverName) {
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle) {
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player') {
     const { episodeSlug } = extractSlugs(episodeUrl, null);
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
 
@@ -161,7 +172,7 @@ async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle) {
 
     if (matchedSource) {
         global[`prefetch_src_${seriesSlug}_${episodeSlug}`] = matchedSource;
-        await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
+        await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug, source);
         delete global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
         return true;
     } else {
@@ -204,7 +215,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
             let activeUploadExists = hasActiveUploadForSeries(seriesSlug);
             let globalUploadCount = getActiveUploadCount();
 
-            while (activeUploadExists || globalUploadCount >= 2) {
+            while (activeUploadExists || globalUploadCount >= 3) {
                 if (prefetchAbortController.signal.aborted) {
                     console.info(`[PrefetchWindow] Dibatalkan oleh pengguna saat menunggu antrean untuk ${episodeSlug}`);
                     return;
@@ -212,7 +223,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
 
                 if (activeUploadExists) {
                     console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}...`);
-                } else if (globalUploadCount >= 2) {
+                } else if (globalUploadCount >= 3) {
                     console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}...`);
                 }
 
@@ -562,6 +573,53 @@ router.post('/cancel-stream', express.json(), (req, res) => {
     activeExtractions.delete(blobPath);
     
     return res.json({ success: true });
+});
+
+// ============================================================
+// RUTE QUEUE: Background Download Manager
+// ============================================================
+
+router.post('/api/queue/add', (req, res) => {
+    const { episodeUrl, seriesUrl, seriesTitle, episodeTitle } = req.body;
+    if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
+    
+    // Extract slugs to check if already uploaded/uploading
+    const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
+    
+    // We can directly add it to the background queue manager
+    const item = backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle);
+    res.json({ success: true, item });
+});
+
+router.post('/api/queue/prioritize', (req, res) => {
+    const { id } = req.body;
+    backgroundQueue.prioritize(id);
+    res.json({ success: true });
+});
+
+router.post('/api/queue/cancel', (req, res) => {
+    const { id, seriesSlug, episodeSlug } = req.body;
+    backgroundQueue.cancel(id);
+    // Jika sedang berjalan di azureUploader (UPLOADING), kita harus membatalkan controller-nya juga
+    if (seriesSlug && episodeSlug) {
+        cancelUpload(seriesSlug, episodeSlug);
+    }
+    res.json({ success: true });
+});
+
+router.get('/api/queue/status', async (req, res) => {
+    const queueItems = backgroundQueue.getStatus();
+    
+    // Update real-time progress untuk item yang UPLOADING
+    const updatedItems = queueItems.map(item => {
+        if (item.status === 'UPLOADING') {
+            const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, null);
+            item.progress = getUploadProgress(seriesSlug, episodeSlug);
+        }
+        return item;
+    });
+
+    res.json({ success: true, queue: updatedItems });
 });
 
 export default router;
