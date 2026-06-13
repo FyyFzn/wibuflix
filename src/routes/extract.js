@@ -95,19 +95,22 @@ function getResolutionGroup(serverName) {
 export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player') {
     const { episodeSlug } = extractSlugs(episodeUrl, null);
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
 
     const status = await checkUploadStatus(seriesSlug, episodeSlug);
-    if (status === 'READY' || status === 'UPLOADING' || status === 'FAILED') {
-        console.info(`[Prefetch] Skip ${episodeSlug} — status: ${status}`);
+    
+    // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
+    if (status === 'READY' || status === 'UPLOADING' || (status === 'FAILED' && source !== 'queue')) {
+        console.info(`${logPrefix} Skip ${episodeSlug} — status: ${status}`);
         return false;
     }
 
     if (activeExtractions.has(blobPath)) {
-        console.info(`[Prefetch] Skip ${episodeSlug} — sedang diekstrak`);
+        console.info(`${logPrefix} Skip ${episodeSlug} — sedang diekstrak`);
         return false;
     }
 
-    console.info(`[Prefetch] Memulai prefetch untuk: ${episodeSlug}`);
+    console.info(`${logPrefix} Memulai proses untuk: ${episodeSlug}`);
     activeExtractions.add(blobPath);
     let matchedSource = null;
 
@@ -138,7 +141,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         ];
 
         if (!servers || servers.length === 0) {
-            console.info(`[Prefetch] Tidak ada server untuk: ${episodeSlug}`);
+            console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
             markUploadFailed(seriesSlug, episodeSlug);
             return false;
         }
@@ -156,12 +159,12 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                     if (extracted && extracted.url && !extracted.webviewOnly) {
                         if (!extracted.isM3U8 && !extracted.url.includes('.m3u8')) {
                             matchedSource = { url: extracted.url, headers: extracted.headers || {} };
-                            console.info(`[Prefetch] ✓ ${episodeSlug} (${res}p) dari ${srv.source}`);
+                            console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source}`);
                             break;
                         }
                     }
                 } catch (e) {
-                    console.error(`[Prefetch] Gagal ekstrak dari ${srv.namaHost}:`, e.message);
+                    console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
                 }
             }
             if (matchedSource) break;
