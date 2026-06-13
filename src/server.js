@@ -8,6 +8,7 @@ import { syncUnified } from './sync/unified_sync.js';
 import { startBackgroundAnimeSync } from './sync/anime_sync.js';
 import { startBackgroundOtakuSync } from './scraper/otakudesu_sync.js';
 import { startBackgroundLatestSync } from './sync/latest_sync.js';
+import { syncNeosatsu } from './sync/neosatsu_sync.js';
 
 // Route Imports
 import katalogRouter from './routes/katalog.js';
@@ -64,17 +65,24 @@ function startServer() {
         await initPagePool();
         log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
 
-        // Memulai background job
-        startBackgroundAnimeSync();
-        startBackgroundOtakuSync();
-        startBackgroundLatestSync();
-
-        // Mulai proses unified sync (akan berjalan sinkron atau asinkron tanpa memblok server)
+        // Jalankan Sinkronisasi Penuh di Latar Belakang (agar tidak memblokir server start)
         setTimeout(() => {
-            syncUnified();
-            // Jadwalkan sinkronisasi berulang tiap jam
-            setInterval(syncUnified, 60 * 60 * 1000);
-        }, 10000); // Tunda 10 detik agar localDb & otakuDb selesai di-load
+            syncSamehadaku().catch(err => console.error("Error Samehadaku Sync:", err));
+            syncOtakudesu().catch(err => console.error("Error Otakudesu Sync:", err));
+            syncNeosatsu().catch(err => console.error("Error Neosatsu Sync:", err));
+            
+            // Jadwalkan sinkronisasi penuh (A-Z) setiap 7 hari (604800000 ms)
+            setInterval(() => {
+                syncSamehadaku();
+                syncOtakudesu();
+                syncNeosatsu();
+            }, 604800000);
+            
+            // Worker Enrichment berjalan lebih sering (misal setiap 1 hari) untuk mencari data TMDB yang belum lengkap
+            setInterval(() => {
+                syncUnified();
+            }, 86400000);
+        }, 5000); // Tunda 5 detik setelah server menyalaDb & otakuDb selesai di-load
 
         });
     });
