@@ -60,21 +60,6 @@ export function cancelAllUploads(source = 'player') {
 }
 
 /**
- * Cancels a specific active upload based on slugs.
- */
-export function cancelUpload(seriesSlug, episodeSlug) {
-    const blobPath = getBlobPath(seriesSlug, episodeSlug);
-    const data = activeUploadControllers.get(blobPath);
-    if (data) {
-        data.abortController.abort();
-        console.info(`[Azure Uploader] Cancelled specific upload for ${blobPath}`);
-        activeUploadControllers.delete(blobPath);
-        return true;
-    }
-    return false;
-}
-
-/**
  * Normalizes and formats the blob path for Azure
  */
 export function getBlobPath(seriesSlug, episodeSlug) {
