@@ -40,7 +40,12 @@ export async function syncUnified() {
                 }
                 
                 anime.score = tmdbData.score && tmdbData.score !== '-' ? tmdbData.score : anime.score;
-                anime.type = tmdbData.type || anime.type;
+                
+                // PENTING: Jangan timpa tipe jika itu adalah Tokusatsu
+                if (anime.type !== 'Toku') {
+                    anime.type = tmdbData.type || anime.type;
+                }
+                
                 anime.status = tmdbData.status && anime.status === '-' ? tmdbData.status : anime.status;
                 
                 // Gabungkan array alias untuk pencarian teks yang lebih tangguh
