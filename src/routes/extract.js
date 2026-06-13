@@ -582,7 +582,7 @@ router.post('/cancel-stream', express.json(), (req, res) => {
 // RUTE QUEUE: Background Download Manager
 // ============================================================
 
-router.post('/api/queue/add', express.json(), (req, res) => {
+router.post('/api/queue/add', express.json(), async (req, res) => {
     const { episodeUrl, seriesUrl, seriesTitle, episodeTitle } = req.body;
     if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
     
@@ -590,19 +590,19 @@ router.post('/api/queue/add', express.json(), (req, res) => {
     const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
     
     // We can directly add it to the background queue manager
-    const item = backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle);
+    const item = await backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle);
     res.json({ success: true, item });
 });
 
-router.post('/api/queue/prioritize', express.json(), (req, res) => {
+router.post('/api/queue/prioritize', express.json(), async (req, res) => {
     const { id } = req.body;
-    backgroundQueue.prioritize(id);
+    await backgroundQueue.prioritize(id);
     res.json({ success: true });
 });
 
-router.post('/api/queue/cancel', express.json(), (req, res) => {
+router.post('/api/queue/cancel', express.json(), async (req, res) => {
     const { id, seriesSlug, episodeSlug } = req.body;
-    backgroundQueue.cancel(id);
+    await backgroundQueue.cancel(id);
     // Jika sedang berjalan di azureUploader (UPLOADING), kita harus membatalkan controller-nya juga
     if (seriesSlug && episodeSlug) {
         cancelUpload(seriesSlug, episodeSlug);
@@ -611,7 +611,7 @@ router.post('/api/queue/cancel', express.json(), (req, res) => {
 });
 
 router.get('/api/queue/status', async (req, res) => {
-    const queueItems = backgroundQueue.getStatus();
+    const queueItems = await backgroundQueue.getStatus();
     
     // Update real-time progress untuk item yang UPLOADING
     const updatedItems = queueItems.map(item => {
@@ -631,8 +631,8 @@ router.get('/api/queue/stream', (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const sendQueueUpdate = () => {
-        const queueItems = backgroundQueue.getStatus();
+    const sendQueueUpdate = async () => {
+        const queueItems = await backgroundQueue.getStatus();
         
         // Update real-time progress untuk item yang UPLOADING
         const updatedItems = queueItems.map(item => {

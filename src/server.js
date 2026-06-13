@@ -3,6 +3,7 @@ import cors from 'cors';
 import { initPagePool } from './puppeteer/pool.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { backgroundQueue } from './utils/queueManager.js';
 
 import { syncUnified } from './sync/unified_sync.js';
 import { startBackgroundAnimeSync } from './sync/anime_sync.js';
@@ -69,6 +70,9 @@ function startServer() {
         startBackgroundAnimeSync();
         startBackgroundOtakuSync();
         startBackgroundLatestSync();
+
+        // Lanjutkan antrean download HLS yang mungkin terputus saat server restart
+        backgroundQueue.resumeOrphanedTasks().catch(err => console.error("Error resuming orphaned tasks:", err));
 
         // Mulai proses unified sync (akan berjalan sinkron atau asinkron tanpa memblok server)
         setTimeout(() => {
