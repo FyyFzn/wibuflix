@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]  # ganti ke "master" kalau branch kamu master
 
+# Membatalkan workflow lama jika ada push baru, untuk mencegah versi lama menimpa versi baru
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
