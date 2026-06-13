@@ -30,6 +30,7 @@ if (connectionString) {
 }
 
 const uploadCache = getCache('azure-uploads', 86400); // 24 hours TTL
+const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
 
 export const uploadProgressCache = new Map();
 export const activeUploadControllers = new Map();
