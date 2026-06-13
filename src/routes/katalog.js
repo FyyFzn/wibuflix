@@ -1,7 +1,7 @@
 import express from 'express';
 import { getKatalog } from '../scraper/katalog.js';
 import { getHotAnime } from '../scraper/hot.js';
-import { getHotAnime } from '../scraper/hot.js';
+
 
 const router = express.Router();
 
