@@ -3,9 +3,9 @@ import { getCache } from '../utils/cacheManager.js';
 
 const cache = getCache('katalog', 3600);
 
-export async function getKatalog(pageParams, searchParam, typeFilter = '') {
+export async function getKatalog(pageParams, searchParam, typeFilter = '', tabParam = 'all') {
     const isSearch = searchParam.trim() !== '';
-    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}`;
+    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}_${tabParam}`;
     
     const cachedData = cache.get(cacheKey);
     if (cachedData) {
@@ -26,6 +26,15 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '') {
     
     if (typeFilter) {
         query.type = { $regex: new RegExp(`^${typeFilter}$`, 'i') };
+    }
+
+    // Filter berdasarkan tab
+    if (tabParam === 'anime') {
+        // Jika sedang di tab Anime, sembunyikan semua yang tipenya Toku
+        if (!query.type) query.type = { $ne: 'Toku' };
+    } else if (tabParam === 'toku') {
+        // Jika sedang di tab Toku, wajib tipenya Toku
+        query.type = 'Toku';
     }
 
     const limit = 9;
@@ -53,10 +62,13 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '') {
             
             if (item.sources?.samehadaku?.url) {
                 finalUrl = item.sources.samehadaku.url;
-                finalId = item.sources.samehadaku.id;
+                finalId = item.sources.samehadaku.id || '';
             } else if (item.sources?.otakudesu?.url) {
-                finalUrl = `/anime/${item.sources.otakudesu.id}`;
-                finalId = item.sources.otakudesu.id;
+                finalUrl = `/anime/${item.sources.otakudesu.id || ''}`;
+                finalId = item.sources.otakudesu.id || '';
+            } else if (item.sources?.neosatsu?.url) {
+                finalUrl = item.sources.neosatsu.url;
+                finalId = ''; // Neosatsu menggunakan endpoint URL langsung
             }
 
             return {
