@@ -1,6 +1,6 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../scraper/extractor.js';
-import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload } from '../utils/azureUploader.js';
+import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, checkRangeSupport } from '../utils/azureUploader.js';
 import { getNeosatsuServers } from '../scraper/neosatsu.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
 
@@ -442,12 +442,24 @@ router.get('/api/smart-play', async (req, res) => {
                         if (extracted && extracted.url && !extracted.webviewOnly) {
                             const isDirectVideo = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
                             if (isDirectVideo) {
-                                matchedSource = {
-                                    url: extracted.url,
-                                    headers: extracted.headers || {}
-                                };
-                                console.info(`[Smart-Play] Menemukan source video (Direct) (${resVal}p) dari ${srv.source}: ${extracted.url}`);
-                                break;
+                                // Ping host to ensure it's not rate-limited (e.g., Pixeldrain 5GB limit)
+                                console.info(`[Smart-Play] Ping ${srv.namaHost} untuk mengecek limit bandwidth...`);
+                                try {
+                                    await checkRangeSupport(extracted.url, extracted.headers || {});
+                                    // If no error, we proceed
+                                    matchedSource = {
+                                        url: extracted.url,
+                                        headers: extracted.headers || {}
+                                    };
+                                    console.info(`[Smart-Play] Menemukan source video (Direct) (${resVal}p) dari ${srv.source}: ${extracted.url}`);
+                                    break;
+                                } catch (pingErr) {
+                                    if (pingErr.message === 'HTTP_429_LIMIT') {
+                                        console.warn(`[Smart-Play] ${srv.namaHost} terkena Limit Kuota (429)! Melompat ke server berikutnya...`);
+                                        continue;
+                                    }
+                                    throw pingErr;
+                                }
                             }
                         }
                     } catch (e) {

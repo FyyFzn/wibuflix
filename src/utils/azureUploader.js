@@ -164,15 +164,125 @@ export function getActiveUploadCount() {
  */
 export function cancelUpload(seriesSlug, episodeSlug) {
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
-    const abortController = activeUploadControllers.get(blobPath);
-    if (abortController) {
+    const data = activeUploadControllers.get(blobPath);
+    if (data) {
         console.info(`[Azure Uploader] Membatalkan upload untuk ${blobPath}`);
-        abortController.abort();
+        const controller = data.abortController || data;
+        if (typeof controller.abort === 'function') controller.abort();
+        
+        if (data.tempFilePath) {
+            // Sapu bersih file sementara
+            try {
+                if (fs.existsSync(data.tempFilePath)) fs.unlinkSync(data.tempFilePath);
+                for (let i = 0; i < 20; i++) {
+                    const chunkPath = `${data.tempFilePath}.part${i}`;
+                    if (fs.existsSync(chunkPath)) fs.unlinkSync(chunkPath);
+                }
+            } catch(e) { }
+        }
+
         activeUploadControllers.delete(blobPath);
         uploadCache.del(blobPath);
         uploadProgressCache.delete(blobPath);
     }
 }
+
+// --- FUNGSI JDOWNLOADER ---
+export async function checkRangeSupport(url, headers) {
+    try {
+        const res = await axios({
+            method: 'get',
+            url: url,
+            headers: { ...headers, 'Range': 'bytes=0-0' },
+            timeout: 10000
+        });
+        if (res.status === 206) {
+            const contentRange = res.headers['content-range'];
+            if (contentRange) {
+                const match = contentRange.match(/\/(\d+)$/);
+                if (match) return { supported: true, totalSize: parseInt(match[1], 10) };
+            }
+        }
+    } catch (e) {
+        if (e.response && e.response.status === 429) {
+            throw new Error('HTTP_429_LIMIT');
+        }
+    }
+    return { supported: false, totalSize: 0 };
+}
+
+async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads, globalAbort, blobPath) {
+    const chunkSize = Math.ceil(totalSize / numThreads);
+    const chunkFiles = [];
+    let downloadedBytes = 0;
+    let nextLogThreshold = 5 * 1024 * 1024;
+    const limit = pLimit(numThreads);
+    const promises = [];
+    
+    for (let i = 0; i < numThreads; i++) {
+        const start = i * chunkSize;
+        const end = Math.min((i + 1) * chunkSize - 1, totalSize - 1);
+        if (start > end) break;
+        
+        const chunkPath = `${tempFilePath}.part${i}`;
+        chunkFiles.push(chunkPath);
+        
+        promises.push(limit(async () => {
+            const res = await axios({
+                method: 'get',
+                url: url,
+                responseType: 'stream',
+                headers: { ...headers, 'Range': `bytes=${start}-${end}` },
+                signal: globalAbort.signal,
+                timeout: 30000
+            });
+            
+            const writer = fs.createWriteStream(chunkPath);
+            res.data.on('data', (chunk) => {
+                downloadedBytes += chunk.length;
+                if (downloadedBytes >= nextLogThreshold) {
+                    const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
+                    const msg = `Mengunduh (${numThreads} Jalur): ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
+                    console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
+                    uploadProgressCache.set(blobPath, msg);
+                    nextLogThreshold += 5 * 1024 * 1024;
+                }
+            });
+            res.data.pipe(writer);
+            return new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+                res.data.on('error', reject);
+                globalAbort.signal.addEventListener('abort', () => {
+                    writer.destroy(new Error('UPLOAD_CANCELLED'));
+                    reject(new Error('UPLOAD_CANCELLED'));
+                });
+            });
+        }));
+    }
+    
+    await Promise.all(promises);
+    
+    console.info(`[Azure Uploader] Pengunduhan multi-jalur selesai. Menggabungkan ${chunkFiles.length} file...`);
+    uploadProgressCache.set(blobPath, 'Menggabungkan potongan file...');
+    
+    if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+    for (const chunkPath of chunkFiles) {
+        if (!fs.existsSync(chunkPath)) throw new Error(`Chunk hilang: ${chunkPath}`);
+        await new Promise((resolve, reject) => {
+            const reader = fs.createReadStream(chunkPath);
+            const writer = fs.createWriteStream(tempFilePath, { flags: 'a' });
+            reader.pipe(writer);
+            reader.on('end', () => {
+                fs.unlinkSync(chunkPath);
+                resolve();
+            });
+            reader.on('error', reject);
+            writer.on('error', reject);
+        });
+    }
+}
+
 
 /**
  * Melakukan download multi-thread (jika didukung) atau single-stream, lalu upload ke Azure Blob Storage
@@ -194,10 +304,11 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
     // Return the upload promise so callers can wait for it if they want
     return (async () => {
         const globalAbort = new AbortController();
-        activeUploadControllers.set(blobPath, globalAbort);
-        
         const tempFileName = crypto.randomUUID() + '.mp4';
         const tempFilePath = path.join(os.tmpdir(), tempFileName);
+        
+        activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath });
+        
         const hlsOutputDir = path.join(os.tmpdir(), `hls_${crypto.randomUUID()}`);
         
         try {
@@ -213,55 +324,67 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             // ========================================================
             // TAHAP 1: UNDUH UTUH KE SERVER LOKAL (VPS)
             // ========================================================
-            console.info(`[Azure Uploader] Tahap 1: Mengunduh ${blobPath} ke server lokal...`);
-            uploadProgressCache.set(blobPath, 'Mengunduh ke Server VPS... 0%');
+            console.info(`[Azure Uploader] Tahap 1: Mengecek JDownloader Mode untuk ${videoUrl}`);
+            uploadProgressCache.set(blobPath, 'Menghubungkan ke server...');
             
-            const response = await axios({
-                method: 'get',
-                url: videoUrl,
-                responseType: 'stream',
-                headers: requestHeaders,
-                timeout: 30000,
-                signal: globalAbort.signal
-            });
-
-            const contentLengthStr = response.headers['content-length'];
-            const contentLength = contentLengthStr ? parseInt(contentLengthStr) : 0;
-            const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
-            let totalDownloadedBytes = 0;
-
-            const writer = fs.createWriteStream(tempFilePath);
+            const rangeCheck = await checkRangeSupport(videoUrl, requestHeaders);
             
-            let nextLogThreshold = 5 * 1024 * 1024;
-            response.data.on('data', (chunk) => {
-                totalDownloadedBytes += chunk.length;
-                if (totalDownloadedBytes >= nextLogThreshold) {
-                    const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
-                    const msg = contentLength > MIN_VIDEO_SIZE 
-                        ? `Mengunduh ke Server VPS: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
-                        : `Mengunduh ke Server VPS: ${downloadedMB}MB...`;
-                        
-                    console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
-                    uploadProgressCache.set(blobPath, msg);
-                    nextLogThreshold += 5 * 1024 * 1024;
-                }
-            });
-
-            response.data.pipe(writer);
-
-            await new Promise((resolve, reject) => {
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-                // Menangani pembatalan jika user exit player
-                globalAbort.signal.addEventListener('abort', () => {
-                    writer.destroy(new Error('UPLOAD_CANCELLED'));
-                    reject(new Error('UPLOAD_CANCELLED'));
+            let numThreads = 1;
+            const hostLow = videoUrl.toLowerCase();
+            if (hostLow.includes('kraken')) numThreads = 16;
+            else if (hostLow.includes('pixeldrain')) numThreads = 4;
+            
+            if (rangeCheck.supported && numThreads > 1) {
+                console.info(`[Azure Uploader] Menggunakan JDownloader Mode (${numThreads} Threads) untuk ${blobPath}`);
+                await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);
+            } else {
+                console.info(`[Azure Uploader] Tahap 1: Mengunduh Single-Stream ke server lokal...`);
+                uploadProgressCache.set(blobPath, 'Mengunduh ke Server VPS... 0%');
+                
+                const response = await axios({
+                    method: 'get',
+                    url: videoUrl,
+                    responseType: 'stream',
+                    headers: requestHeaders,
+                    timeout: 30000,
+                    signal: globalAbort.signal
                 });
-            });
 
-            // Validasi akhir ukuran file
-            if (totalDownloadedBytes < MIN_VIDEO_SIZE) {
-                throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video.`);
+                const contentLengthStr = response.headers['content-length'];
+                const contentLength = contentLengthStr ? parseInt(contentLengthStr) : 0;
+                let totalDownloadedBytes = 0;
+
+                const writer = fs.createWriteStream(tempFilePath);
+                
+                let nextLogThreshold = 5 * 1024 * 1024;
+                response.data.on('data', (chunk) => {
+                    totalDownloadedBytes += chunk.length;
+                    if (totalDownloadedBytes >= nextLogThreshold) {
+                        const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
+                        const msg = contentLength > MIN_VIDEO_SIZE 
+                            ? `Mengunduh ke Server VPS: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
+                            : `Mengunduh ke Server VPS: ${downloadedMB}MB...`;
+                            
+                        console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
+                        uploadProgressCache.set(blobPath, msg);
+                        nextLogThreshold += 5 * 1024 * 1024;
+                    }
+                });
+
+                response.data.pipe(writer);
+
+                await new Promise((resolve, reject) => {
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                    globalAbort.signal.addEventListener('abort', () => {
+                        writer.destroy(new Error('UPLOAD_CANCELLED'));
+                        reject(new Error('UPLOAD_CANCELLED'));
+                    });
+                });
+
+                if (totalDownloadedBytes < MIN_VIDEO_SIZE) {
+                    throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video.`);
+                }
             }
 
             // ========================================================
