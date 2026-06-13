@@ -625,4 +625,36 @@ router.get('/api/queue/status', async (req, res) => {
     res.json({ success: true, queue: updatedItems });
 });
 
+router.get('/api/queue/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendQueueUpdate = () => {
+        const queueItems = backgroundQueue.getStatus();
+        
+        // Update real-time progress untuk item yang UPLOADING
+        const updatedItems = queueItems.map(item => {
+            if (item.status === 'UPLOADING') {
+                const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, null);
+                item.progress = getUploadProgress(seriesSlug, episodeSlug);
+            }
+            return item;
+        });
+
+        res.write(`data: ${JSON.stringify({ success: true, queue: updatedItems })}\n\n`);
+    };
+
+    // Kirim data langsung saat koneksi dibuka
+    sendQueueUpdate();
+
+    // Kirim update setiap 1.5 detik
+    const interval = setInterval(sendQueueUpdate, 1500);
+
+    req.on('close', () => {
+        clearInterval(interval);
+    });
+});
+
 export default router;
