@@ -87,11 +87,19 @@ class QueueManager extends EventEmitter {
 
         try {
             await this.processor(nextItem);
-            // Hapus dari antrean jika selesai (sukses/gagal tidak masalah, karena status akhir diurus cache)
+            // Hapus dari antrean jika selesai sukses
             this.removeByUrl(nextItem.episodeUrl);
         } catch (err) {
             console.error(`[Queue Error] ${nextItem.episodeTitle}:`, err.message);
-            this.removeByUrl(nextItem.episodeUrl);
+            
+            nextItem.retryCount = (nextItem.retryCount || 0) + 1;
+            if (nextItem.retryCount < 3) {
+                console.info(`[Queue Retry] Mengulang ${nextItem.episodeTitle} (Percobaan ke-${nextItem.retryCount + 1})...`);
+                nextItem.status = 'PENDING';
+            } else {
+                console.warn(`[Queue Failed] ${nextItem.episodeTitle} gagal 3 kali. Menghapus dari antrean.`);
+                this.removeByUrl(nextItem.episodeUrl);
+            }
         } finally {
             this.isProcessing = false;
             // Cek antrean berikutnya setelah jeda sejenak

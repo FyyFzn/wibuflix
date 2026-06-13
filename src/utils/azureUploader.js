@@ -34,6 +34,7 @@ const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
 
 export const uploadProgressCache = new Map();
 export const activeUploadControllers = new Map();
+const failureCountCache = new Map();
 
 /**
  * Returns the current upload progress string for a given blob.
@@ -127,11 +128,20 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
 }
 
 /**
- * Marks the upload as failed in the cache with a 10-minute TTL
+ * Marks the upload as failed in the cache, allowing up to 3 retries before permanent failure.
  */
 export function markUploadFailed(seriesSlug, episodeSlug) {
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
-    uploadCache.set(blobPath, 'FAILED', 600); // 10 minutes failure cache TTL
+    const count = (failureCountCache.get(blobPath) || 0) + 1;
+    failureCountCache.set(blobPath, count);
+    
+    if (count >= 3) {
+        console.warn(`[Azure Uploader] ${blobPath} gagal ${count} kali. Menandai sebagai FAILED permanen (10 menit).`);
+        uploadCache.set(blobPath, 'FAILED', 600); // 10 minutes failure cache TTL
+    } else {
+        console.info(`[Azure Uploader] ${blobPath} gagal ${count} kali. Menghapus cache agar bisa di-retry.`);
+        uploadCache.del(blobPath);
+    }
 }
 
 /**
@@ -462,6 +472,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             uploadCache.set(blobPath, 'READY');
             uploadProgressCache.delete(blobPath);
             activeUploadControllers.delete(blobPath);
+            failureCountCache.delete(blobPath); // Hapus count jika sukses
 
         } catch (err) {
             if (globalAbort.signal.aborted || err.message === 'UPLOAD_CANCELLED' || err.code === 'ERR_CANCELED') {
@@ -470,7 +481,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 uploadProgressCache.delete(blobPath);
             } else {
                 console.error(`[Azure Uploader] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
-                uploadCache.set(blobPath, 'FAILED', 600); // Fail for 10 minutes
+                markUploadFailed(seriesSlug, episodeSlug); // Gunakan fungsi terpusat untuk logika retry
                 uploadProgressCache.delete(blobPath);
             }
             
