@@ -64,9 +64,17 @@ export async function syncOtakudesu() {
                             $set: { 
                                 'sources.otakudesu.url': anime.url,
                                 'sources.otakudesu.id': anime.id
-                            } 
+                            },
+                            $setOnInsert: {
+                                title: anime.title,
+                                type: 'Anime',
+                                status: 'Unknown',
+                                image: 'https://via.placeholder.com/225x320?text=No+Cover', // Akan ditimpa oleh TMDB Enrichment nanti
+                                tmdbEnriched: false,
+                                last_sync: new Date()
+                            }
                         },
-                        upsert: false // Jangan buat data anime baru murni dari Otakudesu jika tidak ada (untuk menjaga metadata rapi dari Samehadaku)
+                        upsert: true // Bolehkan pembuatan data baru jika anime tersebut eksklusif HANYA ada di Otakudesu
                     }
                 }));
 
