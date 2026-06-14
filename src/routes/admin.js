@@ -103,6 +103,42 @@ router.get('/api/force-sync', (req, res) => {
 });
 
 // ============================================================
+// RUTE 8.5: GET /api/retry-enrich  [RETRY FAILED TMDB ENRICHMENT]
+// ============================================================
+router.get('/api/retry-enrich', async (req, res) => {
+    try {
+        const Anime = (await import('../models/Anime.js')).default;
+        
+        // Cari anime yang sudah "diperkaya" tapi datanya masih jelek/kosong
+        const result = await Anime.updateMany(
+            { 
+                tmdbEnriched: true, 
+                $or: [
+                    { score: '-' },
+                    { image: { $regex: /placehold/i } },
+                    { image: null },
+                    { image: '' }
+                ]
+            },
+            { $set: { tmdbEnriched: false } }
+        );
+
+        res.json({ 
+            status: 'ok', 
+            message: `Berhasil mereset status tmdbEnriched untuk ${result.modifiedCount} anime. Proses Unified Sync sedang dijalankan di latar belakang untuk mencoba ulang pencarian TMDB.` 
+        });
+
+        // Jalankan ulang pekerja enrichment
+        console.log(`[RetryEnrich] Mereset ${result.modifiedCount} anime. Memulai ulang Unified Sync...`);
+        syncUnified().catch(err => console.error('[RetryEnrich] Error:', err.message));
+
+    } catch (error) {
+        console.error('[RetryEnrich] Gagal:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================
 // RUTE 9: GET /api/factory-reset  [HARD RESET DB]
 // ============================================================
 router.get('/api/factory-reset', async (req, res) => {
