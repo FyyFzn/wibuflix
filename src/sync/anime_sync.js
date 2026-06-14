@@ -51,11 +51,6 @@ export async function runSync(isInitial = false) {
     log(`[Anime Sync] Memulai sinkronisasi katalog...`);
     log(`===========================================\n`);
 
-    const dbDir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-    }
-
     const allAnime = [];
     let page = 1;
     let hasNext = true;
@@ -188,14 +183,6 @@ export async function runSync(isInitial = false) {
                     await Anime.bulkWrite(bulkOps);
                     log(`[Anime Sync] ✅ MongoDB Bulk Upsert berhasil untuk ${bulkOps.length} anime.`);
                 }
-
-                // 2. Simpan cadangan ke disk lokal
-                const dbDir = path.dirname(DB_PATH);
-                if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-                
-                // Gunakan promise untuk non-blocking IO
-                await fs.promises.writeFile(DB_PATH, JSON.stringify(allAnime, null, 2));
-                log(`[Anime Sync] ✅ Tersimpan ${allAnime.length} anime ke JSON lokal.`);
             } catch (err) {
                 log(`[Anime Sync] ❌ Gagal menyimpan data. Error: ${err.message}`);
             }
