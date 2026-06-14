@@ -28,7 +28,7 @@ export async function syncUnified() {
         for (const anime of unenrichedAnimes) {
             // Bersihkan judul dari angka season/part untuk pencarian TMDB yang optimal
             let cleanTitle = anime.title.replace(/[\[\]【】()]/g, '');
-            cleanTitle = cleanTitle.replace(/season\s*\d+/i, '').replace(/part\s*\d+/i, '').trim();
+            cleanTitle = cleanTitle.replace(/season\s*\d+/i, '').replace(/s\d+/i, '').replace(/part\s*\d+/i, '').trim();
             cleanTitle = cleanTitle.replace(/[-:]\s*$/, '').trim();
             
             const isToku = anime.type === 'Toku';
