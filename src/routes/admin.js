@@ -14,6 +14,31 @@ router.get('/api/cache-clear', (req, res) => {
 });
 
 // ============================================================
+// RUTE 7.5: GET /api/admin/logs  [SISTEM LOG ALTERNATIF]
+// ============================================================
+router.get('/api/admin/logs', (req, res) => {
+    const logs = global.memLogs ? global.memLogs.join('\n') : 'Tidak ada log tersimpan atau aplikasi tidak dijalankan dengan server-prod.js';
+    const html = `
+    <html>
+        <head>
+            <title>WibuFlix Server Logs</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body { background-color: #1e1e1e; color: #00ff00; font-family: monospace; padding: 20px; font-size: 14px; line-height: 1.5; }
+                pre { white-space: pre-wrap; word-wrap: break-word; }
+            </style>
+        </head>
+        <body>
+            <h3>🚀 WibuFlix Live Log Stream (Top 500 Lines)</h3>
+            <pre id="logbox">${logs}</pre>
+            <script>window.scrollTo(0, document.body.scrollHeight);</script>
+        </body>
+    </html>
+    `;
+    res.send(html);
+});
+
+// ============================================================
 // ============================================================
 // RUTE 8: GET /api/force-sync  [MANUAL TRIGGER]
 // ============================================================
