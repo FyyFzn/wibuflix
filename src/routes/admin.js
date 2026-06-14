@@ -107,20 +107,11 @@ router.get('/api/force-sync', (req, res) => {
 // ============================================================
 router.get('/api/factory-reset', async (req, res) => {
     try {
-        const { getDataDir } = await import('../utils/pathUtils.js');
-        const fs = await import('fs');
-        const path = await import('path');
-
-        const dataDir = getDataDir();
-        const unifiedPath = path.join(dataDir, 'unified_db.json');
-        const tmdbPath = path.join(dataDir, 'tmdb_cache.json');
-        const samehadakuPath = path.join(dataDir, 'anime_db.json');
-        const otakuPath = path.join(dataDir, 'otakudesu_test.json');
-
-        if (fs.existsSync(unifiedPath)) fs.unlinkSync(unifiedPath);
-        if (fs.existsSync(tmdbPath)) fs.unlinkSync(tmdbPath);
-        if (fs.existsSync(samehadakuPath)) fs.unlinkSync(samehadakuPath);
-        if (fs.existsSync(otakuPath)) fs.unlinkSync(otakuPath);
+        const Anime = (await import('../models/Anime.js')).default;
+        const TMDBCache = (await import('../models/TMDBCache.js')).default;
+        
+        await Anime.deleteMany({});
+        await TMDBCache.deleteMany({});
 
         // Bersihkan cache memori agar sistem tidak memakai data lama
         if (global.anime_db_cache) global.anime_db_cache = null;
@@ -128,7 +119,7 @@ router.get('/api/factory-reset', async (req, res) => {
         
         const { syncOtakudesu } = await import('../sync/otaku_sync.js');
 
-        res.json({ status: 'ok', message: 'BERHASIL! Semua Database (Unified, TMDB, Samehadaku, Otakudesu) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
+        res.json({ status: 'ok', message: 'BERHASIL! Semua Database MongoDB (Anime & TMDB Cache) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
 
         Promise.all([
             runSync(true),
@@ -138,8 +129,9 @@ router.get('/api/factory-reset', async (req, res) => {
             return syncUnified();
         }).catch(err => console.error('[FactoryReset] Error:', err.message));
 
-    } catch (e) {
-        res.status(500).json({ status: 'error', message: e.message });
+    } catch (error) {
+        console.error('[FactoryReset] Gagal:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 

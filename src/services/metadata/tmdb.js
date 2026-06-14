@@ -1,42 +1,5 @@
 import axios from 'axios';
-import NodeCache from 'node-cache';
-import fs from 'fs';
-import path from 'path';
-import { getDataDir } from '../../utils/pathUtils.js';
-
-// TMDB API Cache (24 hours)
-const tmdbCache = new NodeCache({ stdTTL: 86400 });
-const CACHE_FILE = path.join(getDataDir(), 'tmdb_cache.json');
-
-// Muat cache dari disk jika ada
-if (fs.existsSync(CACHE_FILE)) {
-    try {
-        const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
-        const data = JSON.parse(raw);
-        for (const key of Object.keys(data)) {
-            tmdbCache.set(key, data[key]);
-        }
-        console.log(`[TMDB] Berhasil memuat ${Object.keys(data).length} entri cache dari disk.`);
-    } catch(e) {
-        console.error('[TMDB] Gagal memuat cache dari disk:', e.message);
-    }
-}
-
-export function saveTMDBCache() {
-    try {
-        const dir = path.dirname(CACHE_FILE);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        
-        const keys = tmdbCache.keys();
-        const dataToSave = {};
-        for (const key of keys) {
-            dataToSave[key] = tmdbCache.get(key);
-        }
-        fs.writeFileSync(CACHE_FILE, JSON.stringify(dataToSave, null, 2));
-    } catch (e) {
-        console.error('[TMDB] Gagal menyimpan cache ke disk:', e.message);
-    }
-}
+import TMDBCache from '../../models/TMDBCache.js';
 
 // Fallback key, users should ideally set TMDB_API_KEY in .env
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '13e71c6778f9fd4a2f67ff77238002df';
@@ -112,12 +75,22 @@ export async function searchTMDB(title, isToku = false) {
     if (!cleanTitle) return null;
 
     const cacheKey = `tmdb_${cleanTitle}`;
-    const cached = tmdbCache.get(cacheKey);
-    if (cached !== undefined) return cached; // Returns null if previously not found
+    
+    // 1. Cek Cache di MongoDB
+    try {
+        const cachedDoc = await TMDBCache.findOne({ key: cacheKey });
+        if (cachedDoc) {
+            return cachedDoc.data; // Return cached data (even if null)
+        }
+    } catch(err) {
+        console.error("[TMDB] Gagal membaca MongoDB cache:", err.message);
+    }
 
     // Beri jeda HANYA jika tidak ada di cache (mencegah rate limit TMDB: 40 req / 10 sec)
     // 250ms delay = max 4 req/sec = 40 req per 10 detik (Batas Aman)
     await new Promise(r => setTimeout(r, 250));
+
+    let resultData = null;
 
     try {
         let results = [];
@@ -202,7 +175,7 @@ export async function searchTMDB(title, isToku = false) {
                 // Ignore detail errors
             }
 
-            const data = {
+            resultData = {
                 title: item.name || item.title,
                 image,
                 score,
@@ -213,21 +186,14 @@ export async function searchTMDB(title, isToku = false) {
                 source: 'TMDB'
             };
 
-            tmdbCache.set(cacheKey, data);
-            return data;
         } else if (!isToku) {
             // Fallback ke Jikan API (DILARANG UNTUK TOKU)
             const jikanData = await searchJikan(cleanTitle);
             if (jikanData) {
                 jikanData.source = 'Jikan';
-                tmdbCache.set(cacheKey, jikanData);
-                return jikanData;
+                resultData = jikanData;
             }
         }
-
-        // Simpan cache kosong agar tidak request terus-terusan
-        tmdbCache.set(cacheKey, null);
-        return null;
 
     } catch (err) {
         console.error(`[TMDB API] Error searching "${cleanTitle}":`, err.message);
@@ -236,12 +202,23 @@ export async function searchTMDB(title, isToku = false) {
             const jikanData = await searchJikan(cleanTitle);
             if (jikanData) {
                 jikanData.source = 'Jikan';
-                tmdbCache.set(cacheKey, jikanData);
-                return jikanData;
+                resultData = jikanData;
             }
         }
-        return null;
     }
+
+    // 2. Simpan hasil (bahkan jika null) ke MongoDB Cache
+    try {
+        await TMDBCache.findOneAndUpdate(
+            { key: cacheKey },
+            { data: resultData },
+            { upsert: true }
+        );
+    } catch(err) {
+        console.error("[TMDB] Gagal menyimpan MongoDB cache:", err.message);
+    }
+
+    return resultData;
 }
 
 export const searchTokusatsu = (title) => searchTMDB(title, true);

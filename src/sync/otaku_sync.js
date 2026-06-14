@@ -1,13 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import fs from 'fs';
-import path from 'path';
 import { fileURLToPath } from 'url';
-import { getDataDir } from '../utils/pathUtils.js';
 import Anime from '../models/Anime.js'; // Model MongoDB
-
-// Gunakan path dari utility
-const DB_PATH = path.join(getDataDir(), 'otakudesu_db.json');
 
 const log = (...args) => {
     if (global.forceLog) {
@@ -91,13 +85,6 @@ export async function syncOtakudesu() {
                     const result = await Anime.bulkWrite(bulkOps);
                     log(`[OtakuSync] ✅ MongoDB Bulk Update berhasil memetakan ${result.modifiedCount} anime dari Otakudesu.`);
                 }
-
-                // 2. Simpan ke lokal sebagai cache raw
-                const dbDir = path.dirname(DB_PATH);
-                if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-                
-                await fs.promises.writeFile(DB_PATH, JSON.stringify(list, null, 2));
-                log(`[OtakuSync] ✅ Berhasil menyimpan ${list.length} anime ke JSON lokal.`);
             } catch (err) {
                 log(`[OtakuSync] ❌ Gagal menyimpan data. Error: ${err.message}`);
             }
@@ -110,20 +97,28 @@ export async function syncOtakudesu() {
     }
 }
 
-export function startBackgroundOtakuSync() {
-    let shouldSyncNow = true;
-    if (fs.existsSync(DB_PATH)) {
-        const stats = fs.statSync(DB_PATH);
-        const ageInMs = Date.now() - stats.mtimeMs;
-        const sixHours = 6 * 60 * 60 * 1000;
-        if (ageInMs < sixHours) {
-            shouldSyncNow = false;
-            log(`[OtakuSync] Database masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
+export async function startBackgroundOtakuSync() {
+    try {
+        const count = await Anime.countDocuments({ 'sources.otakudesu': { $exists: true } });
+        
+        if (count === 0) {
+            log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal...");
+            syncOtakudesu();
+        } else {
+            // Otakudesu A-Z list jarang update secara masif, kita bisa cek dari lastUpdated
+            const latestDoc = await Anime.findOne({ 'sources.otakudesu': { $exists: true } }).sort({ lastUpdated: -1 });
+            const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
+            const sixHours = 6 * 60 * 60 * 1000;
+            
+            if (ageInMs > sixHours || !latestDoc || !latestDoc.lastUpdated) {
+                log(`[OtakuSync] Database Otakudesu usang. Memulai sinkronisasi pembaruan...`);
+                syncOtakudesu();
+            } else {
+                log(`[OtakuSync] Database Otakudesu masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
+            }
         }
-    }
-
-    if (shouldSyncNow) {
-        syncOtakudesu();
+    } catch(err) {
+        log("[OtakuSync] Error mengecek status database:", err.message);
     }
 
     // Jalankan ulang setiap 7 hari karena ini hanya full list A-Z (Update episode diambil alih latest_sync.js)
@@ -133,6 +128,7 @@ export function startBackgroundOtakuSync() {
 }
 
 // Jika dijalankan langsung
+import fs from 'fs';
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
     syncOtakudesu();
 }

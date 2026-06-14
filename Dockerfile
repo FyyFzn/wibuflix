@@ -47,7 +47,6 @@ RUN npm ci --omit=dev
 COPY src/ ./src/
 COPY index.js ./
 COPY server-prod.js ./
-RUN mkdir -p data
 
 # Expose port
 EXPOSE 3000

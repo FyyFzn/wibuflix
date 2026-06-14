@@ -1,13 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import * as cheerio from 'cheerio';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { getDataDir } from '../utils/pathUtils.js';
 import Anime from '../models/Anime.js'; // Model MongoDB
 
-// Gunakan path dari utility
-const DB_PATH = path.join(getDataDir(), 'anime_db.json');
 let isSyncing = false;
 
 const log = (...args) => {
@@ -20,21 +15,26 @@ async function delay(ms) {
 }
 
 export async function startBackgroundAnimeSync() {
-    // Run immediately if DB doesn't exist
-    if (!fs.existsSync(DB_PATH)) {
-        log("[Anime Sync] Database lokal tidak ditemukan. Memulai sinkronisasi awal...");
-        runSync(true); // true = initial sync (don't block server startup)
-    } else {
-        const stats = fs.statSync(DB_PATH);
-        const ageInMs = Date.now() - stats.mtimeMs;
-        const twelveHours = 12 * 60 * 60 * 1000;
+    try {
+        const count = await Anime.countDocuments({ source: 'samehadaku' });
         
-        if (ageInMs > twelveHours) {
-            log(`[Anime Sync] Database sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan (Delay 1 menit)...`);
-            setTimeout(() => runSync(false), 60000);
+        if (count === 0) {
+            log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z...");
+            runSync(true);
         } else {
-            log(`[Anime Sync] Database masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
+            const latestDoc = await Anime.findOne({ source: 'samehadaku' }).sort({ lastUpdated: -1 });
+            const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
+            const twelveHours = 12 * 60 * 60 * 1000;
+            
+            if (ageInMs > twelveHours || !latestDoc || !latestDoc.lastUpdated) {
+                log(`[Anime Sync] Database Samehadaku sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan (Delay 1 menit)...`);
+                setTimeout(() => runSync(false), 60000);
+            } else {
+                log(`[Anime Sync] Database Samehadaku masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
+            }
         }
+    } catch(err) {
+        log("[Anime Sync] Error mengecek status database:", err.message);
     }
 
     // Schedule every 7 days (604800000 ms) karena daftar A-Z jarang berubah
