@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { acquireFromExtractorPool, releaseToPool, getBrowser } from '../../puppeteer/pool.js';
+import { acquireFromExtractorPool, releaseToPool, getBrowser } from '../../../puppeteer/pool.js';
 
 export const name = 'generic';
 

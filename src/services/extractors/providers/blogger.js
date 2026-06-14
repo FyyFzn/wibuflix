@@ -1,4 +1,4 @@
-import { getBrowser } from '../../puppeteer/pool.js';
+import { getBrowser } from '../../../puppeteer/pool.js';
 
 export const name = 'blogger';
 
