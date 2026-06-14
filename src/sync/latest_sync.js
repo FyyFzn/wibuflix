@@ -34,7 +34,7 @@ export async function runLatestSync() {
 
     try {
         await scrapeSamehadakuLatest();
-        // Nanti bisa ditambahkan await scrapeOtakudesuLatest(); di sini
+        await scrapeOtakudesuLatest();
     } catch (e) {
         console.error(`[Latest Sync] Error fatal:`, e.message);
     } finally {
@@ -99,5 +99,67 @@ async function scrapeSamehadakuLatest() {
         log(`[Latest Sync] ✅ Samehadaku: Berhasil mengupdate status ${result.modifiedCount} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Samehadaku.`);
+    }
+}
+
+async function scrapeOtakudesuLatest() {
+    const url = `https://otakudesu.blog/`;
+    log(`[Latest Sync] Mengakses Beranda Otakudesu...`);
+
+    let fetchRes;
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+    } catch (e) {
+        console.error(`[Latest Sync] Gagal memuat Otakudesu:`, e.message);
+        return;
+    }
+
+    if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+        log(`[Latest Sync] Gagal mendapatkan HTML Otakudesu.`);
+        if (fetchRes && fetchRes.slot) releaseToPool(fetchRes.slot);
+        return;
+    }
+
+    const $ = fetchRes.$;
+    const slot = fetchRes.slot;
+    const updates = [];
+
+    $('.venz ul li').each((_, el) => {
+        const title = $(el).find('.jdlflm').text().trim();
+        const ep = $(el).find('.epz').text().trim();
+        
+        if (title && ep) {
+            updates.push({ title, status: ep });
+        }
+    });
+
+    releaseToPool(slot);
+
+    if (updates.length > 0) {
+        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Otakudesu. Melakukan sinkronisasi ke MongoDB...`);
+        
+        const now = Date.now();
+        const bulkOps = updates.map((anime, index) => ({
+            updateOne: {
+                filter: { 
+                    $or: [
+                        { title: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+                        { aliases: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+                    ]
+                },
+                update: { 
+                    $set: { 
+                        status: anime.status,
+                        // Update lastUpdated supaya naik ke beranda aplikasi!
+                        lastUpdated: new Date(now - index * 1000)
+                    } 
+                }
+            }
+        }));
+
+        const result = await Anime.bulkWrite(bulkOps);
+        log(`[Latest Sync] ✅ Otakudesu: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+    } else {
+        log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Otakudesu.`);
     }
 }
