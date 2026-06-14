@@ -86,14 +86,16 @@ async function scrapeSamehadakuLatest() {
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate. Melakukan sinkronisasi ke MongoDB...`);
         
-        const bulkOps = updates.map(anime => ({
-            updateOne: {
-                filter: { title: anime.judul },
-                update: { $set: { status: anime.status } }
-                // Jangan pakai upsert: true di sini, karena beranda mungkin tidak memuat data lengkap seperti URL gambar
-                // Kita hanya ingin mengupdate "status" episode jika anime-nya sudah ada di database.
-            }
-        }));
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+        const bulkOps = updates.map(anime => {
+            const normTitle = normalizeTitleForMatch(anime.judul);
+            return {
+                updateOne: {
+                    filter: { normalizedTitle: normTitle },
+                    update: { $set: { status: anime.status } }
+                }
+            };
+        });
 
         const result = await Anime.bulkWrite(bulkOps);
         log(`[Latest Sync] ✅ Samehadaku: Berhasil mengupdate status ${result.modifiedCount} anime.`);
@@ -144,12 +146,7 @@ async function scrapeOtakudesuLatest() {
             const normTitle = normalizeTitleForMatch(anime.title);
             return {
                 updateOne: {
-                    filter: { 
-                        $or: [
-                            { normalizedTitle: normTitle },
-                            { title: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-                        ]
-                    },
+                    filter: { normalizedTitle: normTitle },
                     update: { 
                         $set: { 
                             status: anime.status,

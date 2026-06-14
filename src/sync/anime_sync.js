@@ -165,7 +165,7 @@ export async function runSync(isInitial = false) {
                     const normTitle = normalizeTitleForMatch(anime.judul);
                     return {
                         updateOne: {
-                            filter: { title: anime.judul },
+                            filter: { normalizedTitle: normTitle },
                             update: { 
                                 $set: { 
                                     title: anime.judul,

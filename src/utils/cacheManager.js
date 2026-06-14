@@ -10,7 +10,8 @@ const caches = {};
  */
 export function getCache(namespace, ttl = 3600) {
     if (!caches[namespace]) {
-        caches[namespace] = new NodeCache({ stdTTL: ttl });
+        // Mencegah Memory Leak di VPS (1GB RAM): batasi maksimal 500 item per namespace.
+        caches[namespace] = new NodeCache({ stdTTL: ttl, maxKeys: 500 });
     }
     return caches[namespace];
 }
