@@ -230,8 +230,8 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
     const chunkFiles = [];
     let downloadedBytes = 0;
     let nextLogThreshold = 5 * 1024 * 1024;
-    // Batasi concurrency sesuai numThreads (16 untuk kraken)
-    const limit = pLimit(numThreads); 
+    // Batasi concurrency maksimal 8 agar aman dari error 429 (Too Many Requests), tapi tetap cepat (~1 MB/s)
+    const limit = pLimit(Math.min(numThreads, 8)); 
     const promises = [];
     
     for (let i = 0; i < numThreads; i++) {
@@ -243,6 +243,11 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
         chunkFiles.push(chunkPath);
         
         promises.push(limit(async () => {
+            // Trik Anti-DDoS: Beri jeda acak 0.5 - 2.5 detik sebelum memulai tiap thread baru
+            // Mencegah tembakan request serentak di milidetik yang sama agar tidak dianggap serangan bot
+            const staggerDelay = 500 + Math.random() * 2000;
+            await new Promise(r => setTimeout(r, staggerDelay));
+
             let attempt = 0;
             const maxAttempts = 3;
             
