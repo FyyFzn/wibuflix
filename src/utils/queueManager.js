@@ -17,10 +17,11 @@ class QueueManager extends EventEmitter {
         // Cek jika sudah ada
         let task = await QueueTask.findOne({ episodeUrl });
         if (task) {
-            // Jika sudah gagal atau di-cancel, kembalikan ke PENDING
+            // Jika sudah gagal atau di-cancel, kembalikan ke PENDING dan langsung taruh di urutan paling atas
             if (task.status === 'FAILED' || task.status === 'CANCELLED') {
                 task.status = 'PENDING';
-                task.progress = 'Masuk ke antrean ulang...';
+                task.progress = 'Masuk ke antrean ulang (Prioritas)...';
+                task.priority = Date.now(); // Jadikan prioritas utama agar langsung dikerjakan
                 await task.save();
                 this.processNext();
             }
@@ -73,10 +74,25 @@ class QueueManager extends EventEmitter {
 
     async getStatus() {
         // Tampilkan semua task (termasuk yang sudah COMPLETED agar user tahu)
-        return await QueueTask.find({ status: { $in: ['PENDING', 'UPLOADING', 'FAILED', 'COMPLETED'] } })
+        const tasks = await QueueTask.find({ status: { $in: ['PENDING', 'UPLOADING', 'FAILED', 'COMPLETED'] } })
             .sort({ priority: -1, createdAt: 1 })
             .limit(100) // Batasi 100 riwayat agar app tidak lag
             .lean();
+            
+        // Urutkan ulang agar UPLOADING selalu paling atas, lalu PENDING, lalu yang lainnya.
+        const statusOrder = { 'UPLOADING': 1, 'PENDING': 2, 'FAILED': 3, 'COMPLETED': 4 };
+        
+        tasks.sort((a, b) => {
+            const orderA = statusOrder[a.status] || 99;
+            const orderB = statusOrder[b.status] || 99;
+            if (orderA !== orderB) return orderA - orderB;
+            
+            // Jika statusnya sama, gunakan urutan prioritas bawaan
+            if (b.priority !== a.priority) return b.priority - a.priority;
+            return new Date(a.createdAt) - new Date(b.createdAt);
+        });
+        
+        return tasks;
     }
 
     async removeByUrl(episodeUrl) {
