@@ -5,11 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { backgroundQueue } from './utils/queueManager.js';
 
-import { syncUnified } from './sync/unified_sync.js';
-import { startBackgroundAnimeSync } from './sync/anime_sync.js';
-import { startBackgroundOtakuSync } from './scraper/otakudesu_sync.js';
-import { startBackgroundLatestSync } from './sync/latest_sync.js';
-import { syncNeosatsu } from './sync/neosatsu_sync.js';
+import { initScheduler } from './jobs/scheduler.js';
+import { errorHandler } from './middlewares/errorHandler.js';
 
 // Route Imports
 import katalogRouter from './routes/katalog.js';
@@ -42,6 +39,9 @@ app.use(proxyRouter);
 app.use(otakudesuRouter);
 app.use(adminRouter);
 
+// Global Error Handler Middleware (Harus diletakkan setelah semua router)
+app.use(errorHandler);
+
 import connectDB from './config/db.js';
 
 function startServer() {
@@ -66,27 +66,11 @@ function startServer() {
         await initPagePool();
         log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
 
-        // Memulai background job
-        startBackgroundAnimeSync();
-        startBackgroundOtakuSync();
-        startBackgroundLatestSync();
-
         // Lanjutkan antrean download HLS yang mungkin terputus saat server restart
         backgroundQueue.resumeOrphanedTasks().catch(err => console.error("Error resuming orphaned tasks:", err));
 
-        // Mulai proses unified sync (akan berjalan sinkron atau asinkron tanpa memblok server)
-        setTimeout(() => {
-            syncUnified();
-            // Jadwalkan sinkronisasi berulang tiap jam
-            setInterval(syncUnified, 60 * 60 * 1000);
-            
-            // Neosatsu sync setiap 7 hari (604800000 ms)
-            syncNeosatsu().catch(err => console.error("Error Neosatsu Sync:", err));
-            setInterval(() => {
-                syncNeosatsu().catch(err => console.error("Error Neosatsu Sync:", err));
-            }, 604800000);
-            
-        }, 10000); // Tunda 10 detik setelah server menyala
+        // Memulai semua jadwal background jobs
+        initScheduler();
 
         });
     });

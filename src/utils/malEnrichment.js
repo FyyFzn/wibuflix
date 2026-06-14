@@ -1,5 +1,5 @@
 import { searchAnime, getAnimeEpisodes } from '../api/jikan.js';
-import { searchTokusatsu } from '../api/tmdb.js';
+import { searchTokusatsu } from '../services/metadata/tmdb.js';
 
 /**
  * Memperkaya daftar episode dengan metadata dari MyAnimeList atau TMDB.

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { searchTokusatsu } from '../api/tmdb.js';
+import { searchTokusatsu } from '../services/metadata/tmdb.js';
 import { filterByTokuType, decryptNeosatsuLink, normalizeGDriveUrl } from '../utils/neosatsuUtils.js';
 import { enrichWithMAL } from '../utils/malEnrichment.js';
 

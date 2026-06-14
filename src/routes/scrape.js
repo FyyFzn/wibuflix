@@ -1,7 +1,7 @@
 import express from 'express';
-import { scrapeVideoServers, resolveSingleServer } from '../scraper/extractor.js';
-import { getNeosatsuServers } from '../scraper/neosatsu.js';
-import * as otakudesu from '../scraper/otakudesu_controller.js';
+import { scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
+import { getNeosatsuServers } from '../controllers/neosatsuController.js';
+import * as otakudesu from '../controllers/otakudesuController.js';
 
 const router = express.Router();
 

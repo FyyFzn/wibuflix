@@ -21,7 +21,7 @@ router.get('/api/force-sync', (req, res) => {
     res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
 
     // Jalankan asinkron tanpa memblokir request
-    import('../scraper/otakudesu_sync.js').then(({ syncOtakudesu }) => {
+    import('../sync/otaku_sync.js').then(({ syncOtakudesu }) => {
         Promise.all([
             runSync(true),
             syncOtakudesu()
@@ -56,7 +56,7 @@ router.get('/api/factory-reset', async (req, res) => {
         if (global.anime_db_cache) global.anime_db_cache = null;
         if (global.otaku_db_cache) global.otaku_db_cache = null;
         
-        const { syncOtakudesu } = await import('../scraper/otakudesu_sync.js');
+        const { syncOtakudesu } = await import('../sync/otaku_sync.js');
 
         res.json({ status: 'ok', message: 'BERHASIL! Semua Database (Unified, TMDB, Samehadaku, Otakudesu) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
 

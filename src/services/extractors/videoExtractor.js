@@ -1,8 +1,8 @@
 import { acquireFromPool, releaseToPool, globalCfCookie, globalUserAgent, refreshCfCookie } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
-import { extractIframeSrc, namaServer } from './extractors/utils.js';
-import { resolveExtractor } from './extractors/index.js';
+import { extractIframeSrc, namaServer } from './providers/utils.js';
+import { resolveExtractor } from './providers/index.js';
 
 import Anime from '../models/Anime.js';
 import { getEpisodes } from './episodes.js';

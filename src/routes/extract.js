@@ -1,8 +1,9 @@
 import express from 'express';
-import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../scraper/extractor.js';
+import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../services/extractors/videoExtractor.js';
 import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, checkRangeSupport } from '../utils/azureUploader.js';
-import { getNeosatsuServers } from '../scraper/neosatsu.js';
-import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../scraper/otakudesu_controller.js';
+import Anime from '../models/Anime.js';
+import { getNeosatsuServers } from '../controllers/neosatsuController.js';
+import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
 import { backgroundQueue } from '../utils/queueManager.js';
 
 // Setup background queue processor

@@ -1,7 +1,7 @@
 import express from 'express';
-import { getEpisodes } from '../scraper/episodes.js';
-import { getNeosatsuEpisodes } from '../scraper/neosatsu.js';
-import * as otakudesu from '../scraper/otakudesu_controller.js';
+import { getEpisodes } from '../controllers/episodeController.js';
+import { getNeosatsuEpisodes } from '../controllers/neosatsuController.js';
+import * as otakudesu from '../controllers/otakudesuController.js';
 
 const router = express.Router();
 

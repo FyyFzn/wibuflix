@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { searchTMDB, saveTMDBCache } from '../api/tmdb.js';
+import { searchTMDB, saveTMDBCache } from '../services/metadata/tmdb.js';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 

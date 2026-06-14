@@ -8,7 +8,8 @@ Fyy Stream adalah aplikasi *streaming* anime tanpa iklan yang mengambil data (*s
 - **Cloudflare Bypass**: Menggunakan *Puppeteer* dan *Cheerio* untuk menembus proteksi Cloudflare Samehadaku secara otomatis.
 - **Azure Blob Storage & Prefetching**: Mengalirkan video dari *hoster* langsung ke Azure Blob Storage untuk kecepatan maksimal. Mendukung sistem *Background Prefetching* (N+1 & N+2) sehingga episode selanjutnya sudah siap ditonton tanpa *buffering*.
 - **Smart Proxying & Fallback**: Memanipulasi *User-Agent* untuk melewati pemblokiran. Jika video sedang dalam proses *UPLOADING* ke Azure, sistem otomatis beralih ke *Proxy Stream Instan*, memungkinkan pengguna menonton tanpa menunggu *upload* selesai!
-- **Smart Caching & Metadata**: Menyimpan hasil *scraping* daftar episode sementara (RAM *caching*) untuk mempercepat pemuatan. Terintegrasi dengan Jikan API (MyAnimeList) untuk menambahkan skor dan genre pada anime.
+- **Unified Metadata (TMDB)**: Otomatis memperkaya (*enrich*) data anime & tokusatsu (poster HD, sinopsis, skor) dari server TMDB menggunakan *Background Workers*.
+- **Multi-Source Scraping**: Menarik data tak hanya dari Samehadaku, namun juga menyedot basis data besar dari Otakudesu dan Neosatsu secara otomatis menggunakan sistem *Cron Job*.
 
 ### 📱 Frontend (Mobile App)
 - **Native & Webview Player**: Menggunakan `expo-video` untuk memutar video secara langsung (*native*) tanpa iklan. Jika *server* tidak bisa diekstrak (seperti Mega, Bstation, Bilibili), pemutar otomatis beralih ke mode *Webview*.
@@ -59,17 +60,29 @@ npx expo start
 ```text
 /samehadaku-scraper/
 │
-├── /src/                 # Folder utama Backend
-│   ├── /scraper/         # Kumpulan logika Puppeteer/Cheerio (extractor.js, dll)
-│   └── server.js         # Entry point server Express & Proxy API
+├── /src/                      # Folder utama Backend (Clean Architecture)
+│   ├── /api/                  # Wrappers untuk API eksternal (Jikan, dll)
+│   ├── /config/               # Konfigurasi MongoDB dan Mongoose
+│   ├── /controllers/          # Logika HTTP (Katalog, Episode, Hot, dll)
+│   ├── /jobs/                 # Skrip Scheduler (Cron)
+│   ├── /middlewares/          # Middleware Express (ErrorHandler, dll)
+│   ├── /models/               # Schema Mongoose (Anime, Video, dll)
+│   ├── /puppeteer/            # Manajemen Pool Browser Puppeteer
+│   ├── /routes/               # Definisi endpoint (Express Router)
+│   ├── /services/             # Logika bisnis terpisah
+│   │   ├── /extractors/       # Script web scraper & video extractors
+│   │   └── /metadata/         # Layanan enrichment data (TMDB)
+│   ├── /sync/                 # Logika background worker & database syncer
+│   ├── /utils/                # Helper Azure Uploader & Queue Manager
+│   └── server.js              # Entry point server Express minimalis
 │
-├── /FYYStreamApp/        # Folder utama Frontend (React Native Expo)
-│   ├── /app/             # Layar utama (Home, Player, Anime Details)
-│   ├── /components/      # Komponen terpisah (PlayerNativeControls, PlayerWebView)
-│   ├── /styles/          # Konfigurasi Tema (Colors) dan StyleSheet
+├── /FYYStreamApp/             # Folder utama Frontend (React Native Expo)
+│   ├── /app/                  # Layar utama (Home, Player, Anime Details)
+│   ├── /components/           # Komponen UI (PlayerNativeControls, CatalogView)
+│   ├── /store/                # Manajemen State (Zustand)
 │   └── ...
 │
-└── package.json          # Konfigurasi dependensi backend
+└── package.json               # Konfigurasi dependensi backend
 ```
 
 ---
