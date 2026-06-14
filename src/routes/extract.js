@@ -5,6 +5,7 @@ import Anime from '../models/Anime.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
 import { backgroundQueue } from '../utils/queueManager.js';
+import QueueTask from '../models/QueueTask.js';
 
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
@@ -602,13 +603,25 @@ router.post('/api/queue/prioritize', express.json(), async (req, res) => {
 });
 
 router.post('/api/queue/cancel', express.json(), async (req, res) => {
-    const { id, seriesSlug, episodeSlug } = req.body;
-    await backgroundQueue.cancel(id);
-    // Jika sedang berjalan di azureUploader (UPLOADING), kita harus membatalkan controller-nya juga
-    if (seriesSlug && episodeSlug) {
-        cancelUpload(seriesSlug, episodeSlug);
+    const { id } = req.body;
+    
+    try {
+        const task = await QueueTask.findOne({ id });
+        if (task && task.status === 'UPLOADING') {
+            const { episodeSlug } = extractSlugs(task.episodeUrl, null);
+            const seriesSlug = task.seriesSlug || extractSlugs(task.episodeUrl, null).seriesSlug;
+            
+            if (seriesSlug && episodeSlug) {
+                cancelUpload(seriesSlug, episodeSlug);
+                console.info(`[Queue] Upload dibatalkan untuk ${episodeSlug}`);
+            }
+        }
+        await backgroundQueue.cancel(id);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(`[Queue] Gagal membatalkan task ${id}:`, e.message);
+        res.status(500).json({ success: false });
     }
-    res.json({ success: true });
 });
 
 router.get('/api/queue/status', async (req, res) => {

@@ -517,6 +517,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             console.info(`[Azure Uploader] Tahap 3: Mengunggah pecahan HLS ke Azure Blob...`);
             
             const uploadAbort = new AbortController();
+            try { setMaxListeners(1000, uploadAbort.signal); } catch(e){}
             const onGlobalAbort = () => uploadAbort.abort();
             globalAbort.signal.addEventListener('abort', onGlobalAbort);
 
