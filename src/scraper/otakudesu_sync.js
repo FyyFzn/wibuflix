@@ -76,8 +76,8 @@ export async function syncOtakudesu() {
                             },
                             $setOnInsert: {
                                 title: anime.title,
-                                type: 'Anime',
-                                status: 'Unknown',
+                                type: 'TV',
+                                status: 'Completed',
                                 image: 'https://via.placeholder.com/225x320?text=No+Cover', // Akan ditimpa oleh TMDB Enrichment nanti
                                 tmdbEnriched: false,
                                 last_sync: new Date()

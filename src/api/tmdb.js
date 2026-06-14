@@ -177,9 +177,6 @@ export async function searchTMDB(title) {
                     } else if (detailRes.data.status === 'Returning Series') {
                         finalStatus = 'Ongoing';
                     }
-                    if (detailRes.data.origin_country && detailRes.data.origin_country.includes('JP')) {
-                        finalType = 'Anime';
-                    }
                 } else {
                     finalStatus = 'Completed';
                 }
