@@ -201,6 +201,39 @@ export function cancelUpload(seriesSlug, episodeSlug) {
     }
 }
 
+/**
+ * Membatalkan semua proses upload aktif KECUALI yang berasal dari antrean (queue).
+ * Digunakan saat user keluar dari player.
+ */
+export function cancelAllUploads() {
+    let canceledCount = 0;
+    const keys = Array.from(activeUploadControllers.keys());
+    for (const blobPath of keys) {
+        const data = activeUploadControllers.get(blobPath);
+        if (data && data.source !== 'queue') {
+            console.info(`[Azure Uploader] Membatalkan prefetch/player upload untuk ${blobPath}`);
+            const controller = data.abortController || data;
+            if (typeof controller.abort === 'function') controller.abort();
+            
+            if (data.tempFilePath) {
+                try {
+                    if (fs.existsSync(data.tempFilePath)) fs.unlinkSync(data.tempFilePath);
+                    for (let i = 0; i < 20; i++) {
+                        const chunkPath = `${data.tempFilePath}.part${i}`;
+                        if (fs.existsSync(chunkPath)) fs.unlinkSync(chunkPath);
+                    }
+                } catch(e) { }
+            }
+
+            activeUploadControllers.delete(blobPath);
+            uploadCache.del(blobPath);
+            uploadProgressCache.delete(blobPath);
+            canceledCount++;
+        }
+    }
+    return canceledCount;
+}
+
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {
