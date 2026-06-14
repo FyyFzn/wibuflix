@@ -77,6 +77,13 @@ function startServer() {
         initScheduler();
 
         });
+    }).catch(err => {
+        // JIKA MONGODB GAGAL (MISAL KARENA IP DIBLOKIR), JALANKAN SAJA SERVERNYA AGAR LOG BISA DILIHAT!
+        console.error("❌ [FATAL] GAGAL TERHUBUNG KE MONGODB PADA SAAT STARTUP!", err.message);
+        
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`Server berjalan di port ${PORT} (DALAM KEADAAN MONGODB MATI/ERROR)`);
+        });
     });
 }
 
