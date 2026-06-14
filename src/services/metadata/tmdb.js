@@ -130,8 +130,18 @@ export async function searchTMDB(title, isToku = false) {
         }
 
         if (results && results.length > 0) {
-            // Ambil hasil pertama yang paling relevan
-            const item = results[0];
+            // Ambil hasil yang paling relevan (mencegah salah pilih sekuel/spinoff)
+            let item = results[0];
+            try {
+                const stringSimilarity = (await import('string-similarity')).default;
+                const titles = results.map(r => r.name || r.title || '');
+                const bestMatch = stringSimilarity.findBestMatch(cleanTitle, titles);
+                if (bestMatch.bestMatch.rating > 0.6) {
+                    item = results[bestMatch.bestMatchIndex];
+                }
+            } catch (e) {
+                console.warn('[TMDB] Gagal import string-similarity, fallback ke hasil pertama.');
+            }
             
             const aliases = [];
             const addAlias = (val) => { if (val && !isJapanese(val)) aliases.push(val); };
