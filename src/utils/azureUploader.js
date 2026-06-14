@@ -9,6 +9,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import pLimit from 'p-limit';
+import { setMaxListeners } from 'events';
 
 const execFileAsync = promisify(execFile);
 
@@ -379,6 +380,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
     // Return the upload promise so callers can wait for it if they want
     return (async () => {
         const globalAbort = new AbortController();
+        
+        // Naikkan batas max listeners agar tidak memicu MaxListenersExceededWarning saat Kraken (16 jalur) berjalan
+        try { setMaxListeners(50, globalAbort.signal); } catch (e) {}
+        
         const tempFileName = crypto.randomUUID() + '.mp4';
         const tempFilePath = path.join(os.tmpdir(), tempFileName);
         
