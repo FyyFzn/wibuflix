@@ -72,9 +72,10 @@ class QueueManager extends EventEmitter {
     }
 
     async getStatus() {
-        // Tampilkan semua task yang belum selesai
-        return await QueueTask.find({ status: { $in: ['PENDING', 'UPLOADING', 'FAILED'] } })
+        // Tampilkan semua task (termasuk yang sudah COMPLETED agar user tahu)
+        return await QueueTask.find({ status: { $in: ['PENDING', 'UPLOADING', 'FAILED', 'COMPLETED'] } })
             .sort({ priority: -1, createdAt: 1 })
+            .limit(100) // Batasi 100 riwayat agar app tidak lag
             .lean();
     }
 
