@@ -89,12 +89,23 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
                 finalId = ''; // Neosatsu menggunakan endpoint URL langsung
             }
 
+            let displayType = item.type;
+            if (item.type === 'Toku') {
+                const lowerTitle = item.title.toLowerCase();
+                if (lowerTitle.includes('kamen rider')) displayType = 'Kamen Rider';
+                else if (lowerTitle.includes('ultraman')) displayType = 'Ultraman';
+                else if (lowerTitle.includes('sentai')) displayType = 'Super Sentai';
+                else if (lowerTitle.includes('power rangers')) displayType = 'Power Rangers';
+                else if (lowerTitle.includes('garo')) displayType = 'Garo';
+                else if (lowerTitle.includes('metal hero') || lowerTitle.includes('gavan')) displayType = 'Metal Hero';
+            }
+
             return {
                 judul: item.title,
                 url: finalUrl,
                 gambar: item.image,
                 gambarScraper: item.image,
-                tipe: item.type,
+                tipe: displayType,
                 skor: item.score,
                 status: item.status,
                 id: finalId,
