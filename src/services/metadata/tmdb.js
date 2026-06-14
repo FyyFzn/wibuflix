@@ -115,20 +115,38 @@ export async function searchTMDB(title, isToku = false) {
     const cached = tmdbCache.get(cacheKey);
     if (cached !== undefined) return cached; // Returns null if previously not found
 
-    // Beri jeda HANYA jika tidak ada di cache (mencegah rate limit TMDB)
-    await new Promise(r => setTimeout(r, 50));
+    // Beri jeda HANYA jika tidak ada di cache (mencegah rate limit TMDB: 40 req / 10 sec)
+    // 250ms delay = max 4 req/sec = 40 req per 10 detik (Batas Aman)
+    await new Promise(r => setTimeout(r, 250));
 
     try {
+        let results = [];
         // Coba cari di TV Shows terlebih dahulu
         let url = `${BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}&language=en-US&page=1`;
-        let response = await axios.get(url, { timeout: 10000 });
-        let results = response.data.results;
+        
+        const fetchWithRetry = async (targetUrl, retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await axios.get(targetUrl, { timeout: 10000 });
+                    return response.data.results;
+                } catch (err) {
+                    if (err.response && err.response.status === 429) {
+                        console.warn(`[TMDB] Terkena Rate Limit (429 Too Many Requests). Menunggu 3 detik... (Percobaan ${i+1}/${retries})`);
+                        await new Promise(r => setTimeout(r, 3000));
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+            return [];
+        };
+
+        results = await fetchWithRetry(url);
 
         // Jika tidak ketemu, coba di Movies
         if (!results || results.length === 0) {
             url = `${BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}&language=en-US&page=1`;
-            response = await axios.get(url, { timeout: 10000 });
-            results = response.data.results;
+            results = await fetchWithRetry(url);
         }
 
         if (results && results.length > 0) {

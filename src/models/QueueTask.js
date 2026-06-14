@@ -18,9 +18,8 @@ const QueueTaskSchema = new mongoose.Schema({
 });
 
 // Update timestamp before saving
-QueueTaskSchema.pre('save', function(next) {
+QueueTaskSchema.pre('save', function() {
     this.updatedAt = Date.now();
-    next();
 });
 
 export default mongoose.model('QueueTask', QueueTaskSchema);
