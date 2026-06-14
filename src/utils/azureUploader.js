@@ -229,7 +229,8 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
     const chunkFiles = [];
     let downloadedBytes = 0;
     let nextLogThreshold = 5 * 1024 * 1024;
-    const limit = pLimit(numThreads);
+    // Batasi concurrency sesuai numThreads (16 untuk kraken)
+    const limit = pLimit(numThreads); 
     const promises = [];
     
     for (let i = 0; i < numThreads; i++) {
@@ -241,36 +242,97 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
         chunkFiles.push(chunkPath);
         
         promises.push(limit(async () => {
-            const res = await axios({
-                method: 'get',
-                url: url,
-                responseType: 'stream',
-                headers: { ...headers, 'Range': `bytes=${start}-${end}` },
-                signal: globalAbort.signal,
-                timeout: 30000
-            });
+            let attempt = 0;
+            const maxAttempts = 3;
             
-            const writer = fs.createWriteStream(chunkPath);
-            res.data.on('data', (chunk) => {
-                downloadedBytes += chunk.length;
-                if (downloadedBytes >= nextLogThreshold) {
-                    const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
-                    const msg = `Mengunduh (${numThreads} Jalur): ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
-                    console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
-                    uploadProgressCache.set(blobPath, msg);
-                    nextLogThreshold += 5 * 1024 * 1024;
+            while (attempt < maxAttempts) {
+                attempt++;
+                let chunkDownloadedBytes = 0;
+                
+                try {
+                    const res = await axios({
+                        method: 'get',
+                        url: url,
+                        responseType: 'stream',
+                        headers: { ...headers, 'Range': `bytes=${start}-${end}` },
+                        signal: globalAbort.signal,
+                        timeout: 30000
+                    });
+                    
+                    const writer = fs.createWriteStream(chunkPath);
+                    let idleTimeout;
+                    
+                    const resetIdleTimeout = () => {
+                        clearTimeout(idleTimeout);
+                        idleTimeout = setTimeout(() => {
+                            if (res.data && typeof res.data.destroy === 'function') {
+                                res.data.destroy(new Error('STREAM_IDLE_TIMEOUT'));
+                            }
+                        }, 20000); // 20 detik tanpa data = timeout
+                    };
+                    
+                    resetIdleTimeout();
+
+                    res.data.on('data', (chunk) => {
+                        resetIdleTimeout();
+                        chunkDownloadedBytes += chunk.length;
+                        downloadedBytes += chunk.length;
+                        if (downloadedBytes >= nextLogThreshold) {
+                            const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
+                            const msg = `Mengunduh (${numThreads} Jalur): ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
+                            console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
+                            uploadProgressCache.set(blobPath, msg);
+                            nextLogThreshold += 5 * 1024 * 1024;
+                        }
+                    });
+                    
+                    res.data.pipe(writer);
+                    
+                    await new Promise((resolve, reject) => {
+                        const onAbort = () => {
+                            clearTimeout(idleTimeout);
+                            writer.destroy(new Error('UPLOAD_CANCELLED'));
+                            reject(new Error('UPLOAD_CANCELLED'));
+                        };
+                        
+                        globalAbort.signal.addEventListener('abort', onAbort);
+                        
+                        writer.on('finish', () => {
+                            clearTimeout(idleTimeout);
+                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            resolve();
+                        });
+                        writer.on('error', (err) => {
+                            clearTimeout(idleTimeout);
+                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            reject(err);
+                        });
+                        res.data.on('error', (err) => {
+                            clearTimeout(idleTimeout);
+                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            reject(err);
+                        });
+                    });
+                    
+                    // Jika sukses, keluar dari loop retry
+                    break;
+                } catch (err) {
+                    // Kurangi bytes yang sudah terhitung agar progress bar tidak rusak
+                    downloadedBytes -= chunkDownloadedBytes;
+                    
+                    if (err.message === 'UPLOAD_CANCELLED' || globalAbort.signal.aborted) {
+                        throw err;
+                    }
+                    
+                    if (attempt >= maxAttempts) {
+                        console.error(`[Azure Uploader] Chunk ${i} gagal setelah ${maxAttempts} percobaan: ${err.message}`);
+                        throw err;
+                    }
+                    
+                    console.warn(`[Azure Uploader] Chunk ${i} gagal/stuck, mengulang (${attempt}/${maxAttempts})... Error: ${err.message}`);
+                    await new Promise(r => setTimeout(r, 2000)); // jeda sebelum retry
                 }
-            });
-            res.data.pipe(writer);
-            return new Promise((resolve, reject) => {
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-                res.data.on('error', reject);
-                globalAbort.signal.addEventListener('abort', () => {
-                    writer.destroy(new Error('UPLOAD_CANCELLED'));
-                    reject(new Error('UPLOAD_CANCELLED'));
-                });
-            });
+            }
         }));
     }
     
