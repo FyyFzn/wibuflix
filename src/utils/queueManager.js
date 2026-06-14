@@ -57,10 +57,10 @@ class QueueManager extends EventEmitter {
     async cancel(id) {
         const task = await QueueTask.findOne({ id });
         if (task) {
-            if (task.status === 'PENDING') {
+            if (task.status === 'PENDING' || task.status === 'FAILED' || task.status === 'COMPLETED') {
                 task.status = 'CANCELLED';
                 await task.save();
-                console.info(`[Queue] Antrean dibatalkan: ${task.episodeTitle}`);
+                console.info(`[Queue] Antrean disembunyikan/dibatalkan: ${task.episodeTitle}`);
             } else if (task.status === 'UPLOADING') {
                 // Biarkan Azure Uploader membatalkannya melalui AbortController
                 // Kita juga update statusnya di DB
