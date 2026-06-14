@@ -550,10 +550,22 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             
         } finally {
             // ========================================================
-            // TAHAP 4: BERSIH-BERSIH DISK VPS
+            // TAHAP 4: BERSIH-BERSIH DISK VPS & ZOMBIE THREADS
             // ========================================================
             try {
+                // Pastikan semua proses background dihentikan agar tidak jadi zombie
+                if (!globalAbort.signal.aborted) {
+                    globalAbort.abort();
+                }
+                
                 if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+                
+                // Hapus semua potongan file .part jika ada
+                for (let i = 0; i < 32; i++) {
+                    const chunkPath = `${tempFilePath}.part${i}`;
+                    if (fs.existsSync(chunkPath)) fs.unlinkSync(chunkPath);
+                }
+                
                 if (hlsOutputDir && fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
                 console.info(`[Azure Uploader] Disk VPS dibersihkan untuk ${blobPath}.`);
             } catch (fsErr) {
