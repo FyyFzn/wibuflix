@@ -51,8 +51,8 @@ export async function syncOtakudesu() {
             
             try {
                 // 1. Simpan ke MongoDB (Bulk Upsert)
-                // Kita update sumber Otakudesu saja, menggunakan "title" sebagai kriteria pencocokan.
-                const bulkOps = list.map(anime => ({
+                const now = Date.now();
+                const bulkOps = list.map((anime, index) => ({
                     updateOne: {
                         filter: { 
                             $or: [
@@ -63,7 +63,8 @@ export async function syncOtakudesu() {
                         update: { 
                             $set: { 
                                 'sources.otakudesu.url': anime.url,
-                                'sources.otakudesu.id': anime.id
+                                'sources.otakudesu.id': anime.id,
+                                lastUpdated: new Date(now - index * 1000)
                             },
                             $setOnInsert: {
                                 title: anime.title,

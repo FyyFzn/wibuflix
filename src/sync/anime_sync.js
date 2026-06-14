@@ -164,7 +164,8 @@ export async function runSync(isInitial = false) {
             
             try {
                 // 1. Simpan ke MongoDB (Bulk Upsert)
-                const bulkOps = allAnime.map(anime => ({
+                const now = Date.now();
+                const bulkOps = allAnime.map((anime, index) => ({
                     updateOne: {
                         filter: { title: anime.judul },
                         update: { 
@@ -174,7 +175,8 @@ export async function runSync(isInitial = false) {
                                 type: anime.tipe,
                                 score: anime.skor,
                                 status: anime.status,
-                                'sources.samehadaku.url': anime.url
+                                'sources.samehadaku.url': anime.url,
+                                lastUpdated: new Date(now - index * 1000)
                             } 
                         },
                         upsert: true
