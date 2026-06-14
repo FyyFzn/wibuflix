@@ -158,6 +158,7 @@ export async function acquireFromExtractorPool() {
 }
 
 export function releaseToPool(slot) {
+    if (!slot) return;
     if (slot.temp) { slot.page.close().catch(() => { }); return; }
     if (slot.type === 'extractor') {
         slot.page.goto('about:blank').catch(() => {});
