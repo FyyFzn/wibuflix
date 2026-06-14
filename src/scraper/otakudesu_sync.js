@@ -31,11 +31,19 @@ export async function syncOtakudesu() {
         const list = [];
         
         $('.penzbar .jdlbar ul li a').each((_, el) => {
-            const title = $(el).text().trim();
+            let title = $(el).text().trim();
             const url = $(el).attr('href');
             if (title && url) {
                 const parts = url.split('/').filter(Boolean);
                 const slug = parts[parts.length - 1];
+                
+                // Bersihkan embel-embel agar bisa dicocokkan dengan Samehadaku
+                title = title.replace(/\s*Subtitle\s*Indonesia\s*/i, '')
+                             .replace(/\s*Sub\s*Indo\s*/i, '')
+                             .replace(/\s*On-Going\s*/i, '')
+                             .replace(/\s*Ongoing\s*/i, '')
+                             .replace(/\s*Batch\s*/i, '')
+                             .trim();
                 
                 list.push({
                     title: title,
