@@ -35,6 +35,21 @@ router.get('/api/episodes', async (req, res) => {
                 daftar_episode: []
             };
             
+            const formatEpisodeTitle = (title) => {
+                if (!title) return "Episode ?";
+                const typeMatch = title.match(/(OVA|OAD|Special|SP)\s*\d*/i);
+                if (typeMatch) return typeMatch[0].toUpperCase();
+                
+                const epMatch = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i);
+                if (epMatch) return `Episode ${epMatch[1]}`;
+                
+                // Coba cari angka saja jika tidak ada kata episode
+                const numMatch = title.match(/\b(\d+(?:\.\d+)?)\b/);
+                if (numMatch) return `Episode ${numMatch[1]}`;
+                
+                return title;
+            };
+            
             const extractEpNum = (title) => {
                 const match = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i) || title.match(/0*(\d+(?:\.\d+)?)/);
                 return match ? parseFloat(match[1]) : title;
@@ -104,7 +119,7 @@ router.get('/api/episodes', async (req, res) => {
                     const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetSame) : ep.judul;
                     
                     epMap.set(num, {
-                        judul: adjustedJudul, // Pakai judul Samehadaku sbg default
+                        judul: formatEpisodeTitle(adjustedJudul), // Pakai judul pendek
                         urls: { samehadaku: ep.url }
                     });
                 });
@@ -123,7 +138,7 @@ router.get('/api/episodes', async (req, res) => {
                     } else {
                         const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetOtaku) : ep.judul;
                         epMap.set(num, {
-                            judul: adjustedJudul, // Jika cuma ada di Otaku
+                            judul: formatEpisodeTitle(adjustedJudul), // Jika cuma ada di Otaku
                             urls: { otakudesu: ep.url }
                         });
                     }
@@ -143,27 +158,55 @@ router.get('/api/episodes', async (req, res) => {
 
         // --- LOGIKA SINGLE WEB (LAMA) ---
         } else if (targetUrl) {
+            
+            const formatEpisodeTitle = (title) => {
+                if (!title) return "Episode ?";
+                const typeMatch = title.match(/(OVA|OAD|Special|SP)\s*\d*/i);
+                if (typeMatch) return typeMatch[0].toUpperCase();
+                
+                const epMatch = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i);
+                if (epMatch) return `Episode ${epMatch[1]}`;
+                
+                const numMatch = title.match(/\b(\d+(?:\.\d+)?)\b/);
+                if (numMatch) return `Episode ${numMatch[1]}`;
+                
+                return title;
+            };
+
             if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
                 data = await getNeosatsuEpisodes(targetUrl);
+                // Neosatsu mungkin tidak perlu diformat ekstrem karena sering ada sub-judul, tapi kita filter batch
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: ep.judul,
+                            urls: { neosatsu: ep.url }
+                        }));
+                }
             } else if (targetUrl.startsWith('/anime/otakudesu:')) {
                 const slug = targetUrl.split(':')[1];
                 data = await otakudesu.getOtakuEpisodesFormatted(slug);
                 if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
                 // Normalisasi agar formatnya sama (menggunakan objek `urls`)
                 if (data && data.daftar_episode) {
-                    data.daftar_episode = data.daftar_episode.map(ep => ({
-                        judul: ep.judul,
-                        urls: { otakudesu: ep.url }
-                    }));
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: formatEpisodeTitle(ep.judul),
+                            urls: { otakudesu: ep.url }
+                        }));
                 }
             } else {
                 data = await getEpisodes(targetUrl);
                 // Normalisasi agar formatnya sama (menggunakan objek `urls`)
                 if (data && data.daftar_episode) {
-                    data.daftar_episode = data.daftar_episode.map(ep => ({
-                        judul: ep.judul,
-                        urls: { samehadaku: ep.url }
-                    }));
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: formatEpisodeTitle(ep.judul),
+                            urls: { samehadaku: ep.url }
+                        }));
                 }
             }
         }
