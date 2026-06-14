@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { getNeosatsuCatalog } from '../scraper/neosatsu.js';
+import { getNeosatsuCatalog } from '../controllers/neosatsuController.js';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 

@@ -2,7 +2,7 @@ import axios from 'axios';
 import NodeCache from 'node-cache';
 import fs from 'fs';
 import path from 'path';
-import { getDataDir } from '../utils/pathUtils.js';
+import { getDataDir } from '../../utils/pathUtils.js';
 
 // TMDB API Cache (24 hours)
 const tmdbCache = new NodeCache({ stdTTL: 86400 });

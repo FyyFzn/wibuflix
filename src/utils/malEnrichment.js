@@ -1,4 +1,4 @@
-import { searchAnime, getAnimeEpisodes } from '../api/jikan.js';
+import { searchAnime, getAnimeEpisodes } from '../services/metadata/jikan.js';
 import { searchTokusatsu } from '../services/metadata/tmdb.js';
 
 /**
