@@ -545,10 +545,12 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 console.info(`[Azure Uploader] Upload dibatalkan oleh pengguna: ${blobPath}`);
                 uploadCache.del(blobPath);
                 uploadProgressCache.delete(blobPath);
+                throw err; // Harus di-throw agar sistem Queue tahu ini dibatalkan, bukan sukses!
             } else {
                 console.error(`[Azure Uploader] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
                 markUploadFailed(seriesSlug, episodeSlug); // Gunakan fungsi terpusat untuk logika retry
                 uploadProgressCache.delete(blobPath);
+                throw err; // Harus di-throw agar sistem Queue mengubah statusnya jadi FAILED, bukan COMPLETED!
             }
             
             activeUploadControllers.delete(blobPath);
