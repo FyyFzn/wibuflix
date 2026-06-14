@@ -345,7 +345,6 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             let numThreads = 1;
             const hostLow = videoUrl.toLowerCase();
             if (hostLow.includes('kraken')) numThreads = 16;
-            else if (hostLow.includes('pixeldrain')) numThreads = 4;
             
             if (rangeCheck.supported && numThreads > 1) {
                 console.info(`[Azure Uploader] Menggunakan JDownloader Mode (${numThreads} Threads) untuk ${blobPath}`);
