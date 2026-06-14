@@ -1,0 +1,1 @@
+fetch('https://api.github.com/repos/FyyFzn/wibuflix/actions/runs').then(r => r.json()).then(d => { if(d.workflow_runs) { d.workflow_runs.slice(0, 10).forEach(r => console.log('Run ' + r.run_number + ' - ' + r.conclusion + ' - ' + r.head_commit.message.split('\n')[0])) } else console.log(d) })
