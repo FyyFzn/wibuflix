@@ -16,13 +16,7 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
     // 1. Build Query MongoDB
     const query = {};
     
-    if (isSearch) {
-        // Menggunakan Regex untuk pencarian fuzzy sederhana
-        query.$or = [
-            { title: { $regex: searchParam, $options: 'i' } },
-            { aliases: { $regex: searchParam, $options: 'i' } }
-        ];
-    }
+    // Jika isSearch, kita tidak menaruhnya di query reguler, melainkan di pipeline $search nanti
     
     if (typeFilter && typeFilter !== 'Semua') {
         if (tabParam === 'toku') {
@@ -59,16 +53,37 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
     const skip = (pageParams - 1) * limit;
 
     try {
-        let dbQuery = Anime.find(query);
-        
-        // 2. Sorting
-        if (!isSearch) {
+        let results = [];
+        if (isSearch) {
+            // Gunakan MongoDB Atlas Search untuk performa dan fuzzy matching yang jauh lebih pintar
+            const pipeline = [
+                {
+                    $search: {
+                        index: 'default', // Pastikan index ini dibuat di Atlas UI
+                        text: {
+                            query: searchParam,
+                            path: ['title', 'aliases'],
+                            fuzzy: {
+                                maxEdits: 2,
+                                prefixLength: 2
+                            }
+                        }
+                    }
+                },
+                { $match: query },
+                { $skip: skip },
+                { $limit: limit + 1 }
+            ];
+            results = await Anime.aggregate(pipeline);
+        } else {
+            // Jika bukan pencarian, gunakan query reguler dan sorting
+            let dbQuery = Anime.find(query);
              // Urutkan berdasarkan yang paling baru diupdate (episode baru rilis)
              dbQuery = dbQuery.sort({ lastUpdated: -1, _id: -1 });
-        }
 
-        // Ambil data + 1 untuk mengetahui apakah masih ada halaman selanjutnya
-        const results = await dbQuery.skip(skip).limit(limit + 1).lean(); 
+            // Ambil data + 1 untuk mengetahui apakah masih ada halaman selanjutnya
+            results = await dbQuery.skip(skip).limit(limit + 1).lean(); 
+        }
 
         const hasNext = results.length > limit;
         const paginated = results.slice(0, limit);

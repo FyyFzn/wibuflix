@@ -11,6 +11,11 @@ const animeSchema = new mongoose.Schema({
         default: [],
         index: true
     },
+    normalizedTitle: {
+        type: String,
+        index: true,
+        default: ''
+    },
     image: { 
         type: String, 
         default: '' 
@@ -51,8 +56,7 @@ const animeSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-// Buat Text Index untuk mempercepat fitur pencarian (search bar)
-animeSchema.index({ title: 'text', aliases: 'text' });
+// Dihapus text index lama karena akan diganti dengan Atlas Search
 
 const Anime = mongoose.model('Anime', animeSchema);
 

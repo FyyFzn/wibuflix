@@ -52,34 +52,85 @@ export async function syncOtakudesu() {
             global.otakudesu_db_cache = list;
             
             try {
-                // 1. Simpan ke MongoDB (Bulk Upsert)
+                // 1. Pre-fetch seluruh database untuk Fuzzy Matching di memori (sangat ringan, < 5MB)
+                const existingAnimes = await Anime.find({}, { title: 1, aliases: 1, 'sources.otakudesu': 1 }).lean();
+                const { normalizeTitleForMatch, isSafeToMerge } = await import('../utils/stringUtils.js');
+                
                 const now = Date.now();
-                const bulkOps = list.map((anime, index) => ({
-                    updateOne: {
-                        filter: { 
-                            $or: [
-                                { title: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
-                                { aliases: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-                            ]
-                        },
-                        update: { 
-                            $set: { 
-                                'sources.otakudesu.url': anime.url,
-                                'sources.otakudesu.id': anime.id,
-                                lastUpdated: new Date(now - index * 1000)
-                            },
-                            $setOnInsert: {
-                                title: anime.title,
-                                type: 'TV',
-                                status: 'Completed',
-                                image: 'https://via.placeholder.com/225x320?text=No+Cover', // Akan ditimpa oleh TMDB Enrichment nanti
-                                tmdbEnriched: false,
-                                last_sync: new Date()
+                const bulkOps = [];
+                
+                for (let i = 0; i < list.length; i++) {
+                    const anime = list[i];
+                    const normTitle = normalizeTitleForMatch(anime.title);
+                    
+                    let matchedId = null;
+                    let bestScore = 0;
+                    
+                    // Coba cari kemiripan Fuzzy > 85% di database
+                    for (const dbAnime of existingAnimes) {
+                        const { isSafe, score } = isSafeToMerge(anime.title, dbAnime.title, 0.85);
+                        
+                        if (isSafe && score > bestScore) {
+                            bestScore = score;
+                            matchedId = dbAnime._id;
+                        }
+                        
+                        // Periksa alias juga
+                        if (bestScore < 0.85 && dbAnime.aliases) {
+                            for (const alias of dbAnime.aliases) {
+                                const { isSafe: isSafeAlias, score: aliasScore } = isSafeToMerge(anime.title, alias, 0.85);
+                                if (isSafeAlias && aliasScore > bestScore) {
+                                    bestScore = aliasScore;
+                                    matchedId = dbAnime._id;
+                                }
                             }
-                        },
-                        upsert: true // Bolehkan pembuatan data baru jika anime tersebut eksklusif HANYA ada di Otakudesu
+                        }
+                        
+                        // Jika sangat identik (> 95%), sudahi pencarian untuk menghemat CPU
+                        if (bestScore >= 0.95) break;
                     }
-                }));
+                    
+                    if (bestScore > 0.85 && matchedId) {
+                        // Gabungkan ke entri yang sudah ada jika kemiripan tinggi
+                        bulkOps.push({
+                            updateOne: {
+                                filter: { _id: matchedId },
+                                update: { 
+                                    $set: { 
+                                        'sources.otakudesu.url': anime.url,
+                                        'sources.otakudesu.id': anime.id,
+                                        lastUpdated: new Date(now - i * 1000)
+                                    }
+                                }
+                            }
+                        });
+                    } else {
+                        // Jika tidak ada yang mirip, buat dokumen baru
+                        bulkOps.push({
+                            updateOne: {
+                                // Fallback filter untuk keamanan ganda jika skrip diinterupsi
+                                filter: { title: anime.title },
+                                update: { 
+                                    $set: { 
+                                        'sources.otakudesu.url': anime.url,
+                                        'sources.otakudesu.id': anime.id,
+                                        normalizedTitle: normTitle,
+                                        lastUpdated: new Date(now - i * 1000)
+                                    },
+                                    $setOnInsert: {
+                                        title: anime.title,
+                                        type: 'TV',
+                                        status: 'Completed',
+                                        image: 'https://via.placeholder.com/225x320?text=No+Cover', 
+                                        tmdbEnriched: false,
+                                        last_sync: new Date()
+                                    }
+                                },
+                                upsert: true
+                            }
+                        });
+                    }
+                }
 
                 if (bulkOps.length > 0) {
                     const result = await Anime.bulkWrite(bulkOps);

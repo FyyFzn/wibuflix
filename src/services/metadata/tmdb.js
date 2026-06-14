@@ -71,6 +71,13 @@ async function searchJikan(cleanTitle) {
 export async function searchTMDB(title, isToku = false) {
     if (!title) return null;
     
+    // Ekstraksi angka Season sebelum dihapus oleh normalizeTitle
+    let seasonNumber = null;
+    const seasonMatch = title.match(/(?:season|s)\s*(\d+)/i);
+    if (seasonMatch) {
+        seasonNumber = parseInt(seasonMatch[1]);
+    }
+    
     const cleanTitle = normalizeTitle(title);
     if (!cleanTitle) return null;
 
@@ -137,42 +144,58 @@ export async function searchTMDB(title, isToku = false) {
             // Format skor: TMDB scale is 0-10, Jikan is 0-10
             const score = item.vote_average ? item.vote_average.toFixed(2) : '-';
             
-            // Thumbnail poster
-            let image = null;
-            if (item.poster_path) {
-                image = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
-            } else if (!isToku) {
-                // Fallback to Jikan just for the image if TMDB lacks a poster (DILARANG UNTUK TOKU)
-                try {
-                    const jikanFallback = await searchJikan(cleanTitle);
-                    if (jikanFallback && jikanFallback.image) {
-                        image = jikanFallback.image;
-                    }
-                    if (jikanFallback && jikanFallback.aliases) {
-                        aliases.push(...jikanFallback.aliases);
-                    }
-                } catch(e) {}
-            }
-
-            // Overview/Synopsis
-            const synopsis = item.overview || 'Sinopsis tidak tersedia di TMDB.';
-            
             let finalStatus = 'Unknown';
             let finalType = url.includes('/search/tv') ? 'TV' : 'Movie';
-
-            try {
-                if (finalType === 'TV') {
+            
+            let image = null;
+            let synopsis = item.overview || 'Sinopsis tidak tersedia di TMDB.';
+            
+            // Coba ambil detail spesifik untuk Season jika ini adalah TV Show dan kita memiliki seasonNumber
+            let specificSeasonFound = false;
+            if (finalType === 'TV') {
+                try {
                     const detailRes = await axios.get(`${BASE_URL}/tv/${item.id}?api_key=${TMDB_API_KEY}`);
                     if (detailRes.data.status === 'Ended' || detailRes.data.status === 'Canceled') {
                         finalStatus = 'Completed';
                     } else if (detailRes.data.status === 'Returning Series') {
                         finalStatus = 'Ongoing';
                     }
-                } else {
-                    finalStatus = 'Completed';
+                    
+                    if (seasonNumber && detailRes.data.seasons) {
+                        const seasonData = detailRes.data.seasons.find(s => s.season_number === seasonNumber);
+                        if (seasonData) {
+                            if (seasonData.poster_path) {
+                                image = `https://image.tmdb.org/t/p/w500${seasonData.poster_path}`;
+                            }
+                            if (seasonData.overview) {
+                                synopsis = seasonData.overview;
+                            }
+                            specificSeasonFound = true;
+                        }
+                    }
+                } catch(e) {
+                    // Ignore detail errors
                 }
-            } catch(e) {
-                // Ignore detail errors
+            } else {
+                finalStatus = 'Completed';
+            }
+
+            // Thumbnail poster fallback jika spesifik season tidak ditemukan
+            if (!image) {
+                if (item.poster_path) {
+                    image = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+                } else if (!isToku) {
+                    // Fallback to Jikan just for the image if TMDB lacks a poster (DILARANG UNTUK TOKU)
+                    try {
+                        const jikanFallback = await searchJikan(cleanTitle);
+                        if (jikanFallback && jikanFallback.image) {
+                            image = jikanFallback.image;
+                        }
+                        if (jikanFallback && jikanFallback.aliases) {
+                            aliases.push(...jikanFallback.aliases);
+                        }
+                    } catch(e) {}
+                }
             }
 
             resultData = {

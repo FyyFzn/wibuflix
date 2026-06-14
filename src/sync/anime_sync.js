@@ -159,24 +159,29 @@ export async function runSync(isInitial = false) {
             
             try {
                 // 1. Simpan ke MongoDB (Bulk Upsert)
+                const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
                 const now = Date.now();
-                const bulkOps = allAnime.map((anime, index) => ({
-                    updateOne: {
-                        filter: { title: anime.judul },
-                        update: { 
-                            $set: { 
-                                title: anime.judul,
-                                image: anime.gambarScraper,
-                                type: anime.tipe,
-                                score: anime.skor,
-                                status: anime.status,
-                                'sources.samehadaku.url': anime.url,
-                                lastUpdated: new Date(now - index * 1000)
-                            } 
-                        },
-                        upsert: true
-                    }
-                }));
+                const bulkOps = allAnime.map((anime, index) => {
+                    const normTitle = normalizeTitleForMatch(anime.judul);
+                    return {
+                        updateOne: {
+                            filter: { title: anime.judul },
+                            update: { 
+                                $set: { 
+                                    title: anime.judul,
+                                    normalizedTitle: normTitle,
+                                    image: anime.gambarScraper,
+                                    type: anime.tipe,
+                                    score: anime.skor,
+                                    status: anime.status,
+                                    'sources.samehadaku.url': anime.url,
+                                    lastUpdated: new Date(now - index * 1000)
+                                } 
+                            },
+                            upsert: true
+                        }
+                    };
+                });
 
                 // Eksekusi operasi massal
                 if (bulkOps.length > 0) {

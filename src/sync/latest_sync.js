@@ -138,24 +138,27 @@ async function scrapeOtakudesuLatest() {
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Otakudesu. Melakukan sinkronisasi ke MongoDB...`);
         
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
         const now = Date.now();
-        const bulkOps = updates.map((anime, index) => ({
-            updateOne: {
-                filter: { 
-                    $or: [
-                        { title: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
-                        { aliases: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-                    ]
-                },
-                update: { 
-                    $set: { 
-                        status: anime.status,
-                        // Update lastUpdated supaya naik ke beranda aplikasi!
-                        lastUpdated: new Date(now - index * 1000)
-                    } 
+        const bulkOps = updates.map((anime, index) => {
+            const normTitle = normalizeTitleForMatch(anime.title);
+            return {
+                updateOne: {
+                    filter: { 
+                        $or: [
+                            { normalizedTitle: normTitle },
+                            { title: { $regex: new RegExp(`^${anime.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+                        ]
+                    },
+                    update: { 
+                        $set: { 
+                            status: anime.status,
+                            lastUpdated: new Date(now - index * 1000)
+                        } 
+                    }
                 }
-            }
-        }));
+            };
+        });
 
         const result = await Anime.bulkWrite(bulkOps);
         log(`[Latest Sync] ✅ Otakudesu: Berhasil mengupdate status ${result.modifiedCount} anime.`);
