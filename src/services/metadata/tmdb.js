@@ -226,4 +226,4 @@ export async function searchTMDB(title, isToku = false) {
     }
 }
 
-export { searchTMDB as searchTokusatsu };
+export const searchTokusatsu = (title) => searchTMDB(title, true);
