@@ -63,8 +63,12 @@ function startServer() {
         log(banner);
 
         log('⏳ [Puppeteer] Memulai inisialisasi pool browser...');
-        await initPagePool();
-        log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
+        try {
+            await initPagePool();
+            log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
+        } catch (err) {
+            log('❌ [Puppeteer] Gagal inisialisasi pool browser pada startup:', err.message);
+        }
 
         // Lanjutkan antrean download HLS yang mungkin terputus saat server restart
         backgroundQueue.resumeOrphanedTasks().catch(err => console.error("Error resuming orphaned tasks:", err));

@@ -26,6 +26,7 @@ export async function getBrowser() {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
             headless: true,
+            protocolTimeout: 120000, // 2 minutes timeout for slow B1 core
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
