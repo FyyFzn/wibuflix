@@ -35,6 +35,10 @@ const animeSchema = new mongoose.Schema({
         otakudesu: {
             url: { type: String, default: null },
             id: { type: String, default: null }
+        },
+        neosatsu: {
+            url: { type: String, default: null },
+            id: { type: String, default: null }
         }
     },
     tmdbEnriched: {
