@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { searchTMDB, saveTMDBCache } from '../services/metadata/tmdb.js';
+import { searchTMDB } from '../services/metadata/tmdb.js';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
@@ -64,7 +64,6 @@ export async function syncUnified() {
         }
 
         log(`[UnifiedSync] ✅ Berhasil memperbarui metadata ${enrichedCount} anime dari TMDB.`);
-        saveTMDBCache();
 
         // Bersihkan seluruh cache API (seperti /api/katalog) agar aplikasi frontend langsung menerima pembaruan gambar/skor
         try {
