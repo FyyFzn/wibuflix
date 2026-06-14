@@ -492,13 +492,15 @@ router.get('/api/smart-play', async (req, res) => {
             // Start upload in background, then chain prefetch window
             const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
 
-            // Trigger prefetch window ONLY AFTER current upload finishes (hemat bandwidth)
-            if (prefetchWindow.length > 0 && uploadTask) {
+            // Pastikan selalu ada .catch() agar Node tidak crash jika terjadi unhandled rejection
+            if (uploadTask) {
                 uploadTask.then(() => {
-                    console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
-                    triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
+                    if (prefetchWindow.length > 0) {
+                        console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
+                        triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
+                    }
                 }).catch(err => {
-                    console.error(`[Smart-Play] Upload gagal, prefetch window dibatalkan:`, err.message);
+                    console.error(`[Smart-Play] Upload latar belakang gagal:`, err.message);
                 });
             }
 
