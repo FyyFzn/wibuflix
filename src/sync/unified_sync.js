@@ -31,7 +31,8 @@ export async function syncUnified() {
             cleanTitle = cleanTitle.replace(/season\s*\d+/i, '').replace(/part\s*\d+/i, '').trim();
             cleanTitle = cleanTitle.replace(/[-:]\s*$/, '').trim();
             
-            const tmdbData = await searchTMDB(cleanTitle);
+            const isToku = anime.type === 'Toku';
+            const tmdbData = await searchTMDB(cleanTitle, isToku);
             
             if (tmdbData) {
                 // Jangan timpa gambar jika gambar asli sudah bagus (kecuali placeholder)

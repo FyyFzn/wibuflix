@@ -105,7 +105,7 @@ async function searchJikan(cleanTitle) {
  * Mencari data Anime dan Tokusatsu di TMDB berdasarkan judul.
  * Mencari di kategori TV Shows, lalu mencari alternatif di Movies.
  */
-export async function searchTMDB(title) {
+export async function searchTMDB(title, isToku = false) {
     if (!title) return null;
     
     const cleanTitle = normalizeTitle(title);
@@ -150,8 +150,8 @@ export async function searchTMDB(title) {
             let image = null;
             if (item.poster_path) {
                 image = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
-            } else {
-                // Fallback to Jikan just for the image if TMDB lacks a poster
+            } else if (!isToku) {
+                // Fallback to Jikan just for the image if TMDB lacks a poster (DILARANG UNTUK TOKU)
                 try {
                     const jikanFallback = await searchJikan(cleanTitle);
                     if (jikanFallback && jikanFallback.image) {
@@ -197,8 +197,8 @@ export async function searchTMDB(title) {
 
             tmdbCache.set(cacheKey, data);
             return data;
-        } else {
-            // Fallback ke Jikan API
+        } else if (!isToku) {
+            // Fallback ke Jikan API (DILARANG UNTUK TOKU)
             const jikanData = await searchJikan(cleanTitle);
             if (jikanData) {
                 jikanData.source = 'Jikan';
@@ -214,11 +214,13 @@ export async function searchTMDB(title) {
     } catch (err) {
         console.error(`[TMDB API] Error searching "${cleanTitle}":`, err.message);
         // Fallback jika network TMDB error
-        const jikanData = await searchJikan(cleanTitle);
-        if (jikanData) {
-            jikanData.source = 'Jikan';
-            tmdbCache.set(cacheKey, jikanData);
-            return jikanData;
+        if (!isToku) {
+            const jikanData = await searchJikan(cleanTitle);
+            if (jikanData) {
+                jikanData.source = 'Jikan';
+                tmdbCache.set(cacheKey, jikanData);
+                return jikanData;
+            }
         }
         return null;
     }
