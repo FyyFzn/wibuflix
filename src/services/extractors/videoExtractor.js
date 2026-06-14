@@ -1,4 +1,4 @@
-import { getBrowser } from '../../puppeteer/pool.js';
+import { getBrowser, acquireFromPool, releaseToPool, globalUserAgent, globalCfCookie, refreshCfCookie } from '../../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer } from './providers/utils.js';

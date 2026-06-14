@@ -3,7 +3,9 @@ import * as cheerio from 'cheerio';
 import { searchTokusatsu } from '../services/metadata/tmdb.js';
 import { filterByTokuType, decryptNeosatsuLink, normalizeGDriveUrl } from '../utils/neosatsuUtils.js';
 import { enrichWithMAL } from '../utils/malEnrichment.js';
+import { getCache } from '../utils/cacheManager.js';
 
+const cache = getCache('neosatsu', 3600); // 1 jam TTL
 const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kamen rider', 'super sentai', 'ultraman', 'metal hero', 'tokusatsu', 'spesial', 'spin-off', 'hyper battle dvd', 'project red', 'dvd', 'tv series', 'series'];
 
 function cleanTitle(title) {
@@ -34,12 +36,12 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
 
     try {
         const cacheKey = 'neosatsu_static_catalog';
-        const CACHE_TTL = 3600000; // 1 hour
         let staticAnimeList = [];
 
         // 1. Pastikan Cache Statis Selalu Terisi
-        if (global[cacheKey] && Date.now() - global[cacheKey].timestamp < CACHE_TTL) {
-            staticAnimeList = global[cacheKey].data;
+        const cachedData = cache.get(cacheKey);
+        if (cachedData) {
+            staticAnimeList = cachedData;
         } else {
             console.info(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
             const staticPages = [
@@ -176,10 +178,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                 }
             }
 
-            global[cacheKey] = {
-                timestamp: Date.now(),
-                data: staticAnimeList
-            };
+            cache.set(cacheKey, staticAnimeList);
         }
 
         // 2. Logika Pencarian
@@ -615,14 +614,13 @@ export async function getNeosatsuEpisodes(targetUrl) {
         const { mal } = await enrichWithMAL(judulSeri, [], cover);
 
         // Simpan cache
-        global.neosatsuCache = global.neosatsuCache || {};
         const finalResult = {
             judul_seri: judulSeri,
             cover_scraper: cover,
             daftar_episode: daftar_episode,
             mal: mal
         };
-        global.neosatsuCache[targetUrl] = finalResult;
+        cache.set(targetUrl, finalResult);
 
         return finalResult;
     } catch (err) {
@@ -640,8 +638,8 @@ export async function getNeosatsuServers(fakeUrl) {
 
     const titleTarget = epId.replace(/_/g, ' ');
 
-    if (global.neosatsuCache && global.neosatsuCache[targetUrl]) {
-        const cacheData = global.neosatsuCache[targetUrl];
+    const cacheData = cache.get(targetUrl);
+    if (cacheData) {
         const episodeList = cacheData.daftar_episode;
         const idx = episodeList.findIndex(e => e.judul === titleTarget);
         if (idx !== -1) {

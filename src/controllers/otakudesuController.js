@@ -230,7 +230,12 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
     if (!seriesTitle || !episodeTitle) return [];
 
     try {
-        const otakuDb = loadOtakuDatabase();
+        const dbItems = await Anime.find({ "sources.otakudesu.url": { $ne: null } }).lean();
+        const otakuDb = dbItems.map(item => {
+            const urlParts = item.sources.otakudesu.url.split('/').filter(Boolean);
+            const slugStr = urlParts[urlParts.length - 1];
+            return { title: item.title, slug: slugStr };
+        });
         if (!otakuDb || otakuDb.length === 0) return [];
 
         const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
