@@ -2,6 +2,7 @@ import express from 'express';
 import { getEpisodes } from '../controllers/episodeController.js';
 import { getNeosatsuEpisodes } from '../controllers/neosatsuController.js';
 import * as otakudesu from '../controllers/otakudesuController.js';
+import Anime from '../models/Anime.js';
 
 const router = express.Router();
 
@@ -209,6 +210,38 @@ router.get('/api/episodes', async (req, res) => {
                         }));
                 }
             }
+        }
+        
+        // --- AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
+        let dbAnime = null;
+        if (urlSamehadaku && urlOtakudesu) {
+            dbAnime = await Anime.findOne({
+                $or: [
+                    { "sources.samehadaku.url": urlSamehadaku },
+                    { "sources.otakudesu.id": urlOtakudesu.split(':')[1] }
+                ]
+            });
+        } else if (targetUrl) {
+            if (targetUrl.startsWith('/anime/otakudesu:')) {
+                dbAnime = await Anime.findOne({ "sources.otakudesu.id": targetUrl.split(':')[1] });
+            } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
+                dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
+            } else {
+                dbAnime = await Anime.findOne({ "sources.samehadaku.url": targetUrl });
+            }
+        }
+
+        if (dbAnime && data) {
+            data.mal = {
+                malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
+                synopsis: dbAnime.synopsis || null,
+                status: dbAnime.status,
+                genres: dbAnime.genres || [],
+                episodes: dbAnime.episodesCount,
+                year: dbAnime.year,
+                cover: dbAnime.image,
+                malId: dbAnime.malId
+            };
         }
         
         res.json({ status: 'success', data });

@@ -234,6 +234,15 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
     const limit = pLimit(Math.min(numThreads, 8)); 
     const promises = [];
     
+    // Gunakan satu event listener terpusat untuk menghindari MaxListenersExceededWarning
+    const abortCallbacks = new Set();
+    const handleGlobalAbort = () => {
+        for (const cb of abortCallbacks) {
+            try { cb(); } catch (e) {}
+        }
+    };
+    globalAbort.signal.addEventListener('abort', handleGlobalAbort);
+    
     for (let i = 0; i < numThreads; i++) {
         const start = i * chunkSize;
         const end = Math.min((i + 1) * chunkSize - 1, totalSize - 1);
@@ -256,12 +265,14 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
                 let chunkDownloadedBytes = 0;
                 
                 try {
+                    const localAbort = new AbortController();
+                    
                     const res = await axios({
                         method: 'get',
                         url: url,
                         responseType: 'stream',
                         headers: { ...headers, 'Range': `bytes=${start}-${end}` },
-                        signal: globalAbort.signal,
+                        signal: localAbort.signal,
                         timeout: 30000
                     });
                     
@@ -297,25 +308,26 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
                     await new Promise((resolve, reject) => {
                         const onAbort = () => {
                             clearTimeout(idleTimeout);
+                            localAbort.abort();
                             writer.destroy(new Error('UPLOAD_CANCELLED'));
                             reject(new Error('UPLOAD_CANCELLED'));
                         };
                         
-                        globalAbort.signal.addEventListener('abort', onAbort);
+                        abortCallbacks.add(onAbort);
                         
                         writer.on('finish', () => {
                             clearTimeout(idleTimeout);
-                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            abortCallbacks.delete(onAbort);
                             resolve();
                         });
                         writer.on('error', (err) => {
                             clearTimeout(idleTimeout);
-                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            abortCallbacks.delete(onAbort);
                             reject(err);
                         });
                         res.data.on('error', (err) => {
                             clearTimeout(idleTimeout);
-                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            abortCallbacks.delete(onAbort);
                             reject(err);
                         });
                     });
@@ -343,6 +355,7 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
     }
     
     await Promise.all(promises);
+    globalAbort.signal.removeEventListener('abort', handleGlobalAbort);
     
     console.info(`[Azure Uploader] Pengunduhan multi-jalur selesai. Menggabungkan ${chunkFiles.length} file...`);
     uploadProgressCache.set(blobPath, 'Menggabungkan potongan file...');

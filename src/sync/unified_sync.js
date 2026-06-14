@@ -49,6 +49,18 @@ export async function syncUnified() {
                 
                 anime.status = tmdbData.status && anime.status === '-' ? tmdbData.status : anime.status;
                 
+                // Simpan metadata lanjutan
+                if (tmdbData.synopsis && tmdbData.synopsis !== 'Sinopsis tidak tersedia di TMDB.' && tmdbData.synopsis !== 'Sinopsis tidak tersedia di Jikan.') {
+                    anime.synopsis = tmdbData.synopsis;
+                }
+                if (tmdbData.genres && tmdbData.genres.length > 0) {
+                    anime.genres = tmdbData.genres;
+                }
+                anime.episodesCount = tmdbData.episodesCount || anime.episodesCount;
+                anime.year = tmdbData.year || anime.year;
+                anime.malId = tmdbData.malId || anime.malId;
+                anime.malScore = tmdbData.score !== '-' ? tmdbData.score : anime.malScore;
+                
                 // Gabungkan array alias untuk pencarian teks yang lebih tangguh
                 const mergedAliases = new Set([...anime.aliases, ...(tmdbData.aliases || [])]);
                 anime.aliases = Array.from(mergedAliases).filter(Boolean);

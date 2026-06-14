@@ -46,6 +46,14 @@ const animeSchema = new mongoose.Schema({
             id: { type: String, default: null }
         }
     },
+    // Metadata Lanjutan dari MAL / TMDB
+    synopsis: { type: String, default: null },
+    genres: { type: [String], default: [] },
+    episodesCount: { type: Number, default: null },
+    year: { type: Number, default: null },
+    malScore: { type: String, default: null },
+    malId: { type: Number, default: null },
+    
     tmdbEnriched: {
         type: Boolean,
         default: false

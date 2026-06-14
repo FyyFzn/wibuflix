@@ -105,18 +105,8 @@ export async function getEpisodes(targetUrl) {
 
         const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
 
-        // ── MAL/TMDB Enrichment ──
-        const { mal, enrichedEpisodes } = await enrichWithMAL(result.judul_seri, result.daftar_episode, result.cover_scraper);
-
-        const enriched = {
-            judul_seri: result.judul_seri,
-            cover_scraper: result.cover_scraper,
-            daftar_episode: enrichedEpisodes,
-            mal: mal
-        };
-
-        cache.set(cacheKey, enriched);
-        return enriched;
+        cache.set(cacheKey, result);
+        return result;
     } catch (err) {
         throw err;
     } finally {

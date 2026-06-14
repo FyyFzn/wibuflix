@@ -76,12 +76,6 @@ export async function getOtakuEpisodesFormatted(slug) {
         })
     };
 
-    // ── MAL Enrichment ──
-    const { mal, enrichedEpisodes } = await enrichWithMAL(finalTitle, result.daftar_episode, details.thumb);
-
-    result.daftar_episode = enrichedEpisodes;
-    result.mal = mal;
-
     return result;
 }
 

@@ -54,7 +54,11 @@ async function searchJikan(cleanTitle) {
                 synopsis: item.synopsis || 'Sinopsis tidak tersedia di Jikan.',
                 status: item.status === 'Finished Airing' ? 'Completed' : (item.status === 'Currently Airing' ? 'Ongoing' : 'Unknown'),
                 type: item.type || 'Anime',
-                aliases: [...new Set(aliases.filter(Boolean))]
+                aliases: [...new Set(aliases.filter(Boolean))],
+                genres: item.genres ? item.genres.map(g => g.name) : [],
+                episodesCount: item.episodes || null,
+                year: item.year || null,
+                malId: item.mal_id || null
             };
         }
         return null;
@@ -159,6 +163,16 @@ export async function searchTMDB(title, isToku = false) {
             
             let image = null;
             let synopsis = item.overview || 'Sinopsis tidak tersedia di TMDB.';
+            let genres = [];
+            let episodesCount = null;
+            let year = null;
+            let tmdbId = item.id;
+            
+            // Ekstrak tahun dari first_air_date atau release_date
+            const releaseDate = item.first_air_date || item.release_date;
+            if (releaseDate) {
+                year = parseInt(releaseDate.split('-')[0]);
+            }
             
             // Coba ambil detail spesifik untuk Season jika ini adalah TV Show dan kita memiliki seasonNumber
             let specificSeasonFound = false;
@@ -171,6 +185,13 @@ export async function searchTMDB(title, isToku = false) {
                         finalStatus = 'Ongoing';
                     }
                     
+                    if (detailRes.data.genres) {
+                        genres = detailRes.data.genres.map(g => g.name);
+                    }
+                    if (detailRes.data.number_of_episodes) {
+                        episodesCount = detailRes.data.number_of_episodes;
+                    }
+                    
                     if (seasonNumber && detailRes.data.seasons) {
                         const seasonData = detailRes.data.seasons.find(s => s.season_number === seasonNumber);
                         if (seasonData) {
@@ -180,6 +201,13 @@ export async function searchTMDB(title, isToku = false) {
                             if (seasonData.overview) {
                                 synopsis = seasonData.overview;
                             }
+                            if (seasonData.episode_count) {
+                                episodesCount = seasonData.episode_count;
+                            }
+                            // Timpa tahun dengan tahun rilis season ini jika ada
+                            if (seasonData.air_date) {
+                                year = parseInt(seasonData.air_date.split('-')[0]);
+                            }
                             specificSeasonFound = true;
                         }
                     }
@@ -188,6 +216,12 @@ export async function searchTMDB(title, isToku = false) {
                 }
             } else {
                 finalStatus = 'Completed';
+                try {
+                    const detailRes = await axios.get(`${BASE_URL}/movie/${item.id}?api_key=${TMDB_API_KEY}`);
+                    if (detailRes.data.genres) {
+                        genres = detailRes.data.genres.map(g => g.name);
+                    }
+                } catch(e) {}
             }
 
             // Thumbnail poster fallback jika spesifik season tidak ditemukan
@@ -204,6 +238,12 @@ export async function searchTMDB(title, isToku = false) {
                         if (jikanFallback && jikanFallback.aliases) {
                             aliases.push(...jikanFallback.aliases);
                         }
+                        if (jikanFallback) {
+                            genres = genres.length > 0 ? genres : (jikanFallback.genres || []);
+                            episodesCount = episodesCount || jikanFallback.episodesCount;
+                            year = year || jikanFallback.year;
+                            tmdbId = jikanFallback.malId || tmdbId;
+                        }
                     } catch(e) {}
                 }
             }
@@ -216,6 +256,10 @@ export async function searchTMDB(title, isToku = false) {
                 status: finalStatus,
                 tipe: finalType,
                 aliases: [...new Set(aliases.filter(Boolean))],
+                genres,
+                episodesCount,
+                year,
+                malId: tmdbId, // For Tokusatsu, use TMDB ID as malId
                 source: 'TMDB'
             };
 

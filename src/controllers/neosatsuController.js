@@ -610,15 +610,11 @@ export async function getNeosatsuEpisodes(targetUrl) {
             });
         }
 
-        // Fetch metadata dari TMDB/MAL Enrichment
-        const { mal } = await enrichWithMAL(judulSeri, [], cover);
-
-        // Simpan cache
+        // Simpan cache (MAL akan diurus oleh rute episodes.js menggunakan DB lokal)
         const finalResult = {
             judul_seri: judulSeri,
             cover_scraper: cover,
-            daftar_episode: daftar_episode,
-            mal: mal
+            daftar_episode: daftar_episode
         };
         cache.set(targetUrl, finalResult);
 
