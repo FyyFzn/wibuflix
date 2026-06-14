@@ -261,9 +261,9 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
         let offsetOtaku = 0;
         if (seriesUrl) {
             try {
-                // To avoid circular dependency with episodes.js, we assume the caller passes the offset, 
+                // To avoid circular dependency with episodeController.js, we assume the caller passes the offset, 
                 // but since we don't have it, we'll try to import dynamically and fetch
-                const episodesModule = await import('./episodes.js');
+                const episodesModule = await import('./episodeController.js');
                 const sameRes = await episodesModule.getEpisodes(seriesUrl);
                 
                 if (sameRes && sameRes.daftar_episode) {
