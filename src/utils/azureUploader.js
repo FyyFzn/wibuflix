@@ -299,9 +299,9 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
                         if (downloadedBytes >= nextLogThreshold) {
                             const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
                             const msg = `Mengunduh (${numThreads} Jalur): ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
-                            process.stdout.write(`\r\x1b[K[Azure Uploader] ${blobPath} - ${msg}`);
+                            console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
                             uploadProgressCache.set(blobPath, msg);
-                            nextLogThreshold += 5 * 1024 * 1024;
+                            nextLogThreshold += 25 * 1024 * 1024;
                         }
                     });
                     
@@ -357,7 +357,6 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
     }
     
     await Promise.all(promises);
-    process.stdout.write('\n'); // Beri baris baru setelah selesai
     globalAbort.signal.removeEventListener('abort', handleGlobalAbort);
     
     console.info(`[Azure Uploader] Pengunduhan multi-jalur selesai. Menggabungkan ${chunkFiles.length} file...`);
@@ -465,9 +464,9 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                             ? `Mengunduh ke Server VPS: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
                             : `Mengunduh ke Server VPS: ${downloadedMB}MB...`;
                             
-                        process.stdout.write(`\r\x1b[K[Azure Uploader] ${blobPath} - ${msg}`);
+                        console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
                         uploadProgressCache.set(blobPath, msg);
-                        nextLogThreshold += 5 * 1024 * 1024;
+                        nextLogThreshold += 25 * 1024 * 1024;
                     }
                 });
 
@@ -492,7 +491,6 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             // ========================================================
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
             
-            process.stdout.write('\n'); // Beri baris baru setelah selesai download
             console.info(`[Azure Uploader] Tahap 2: Mengubah format MP4 ke pecahan HLS...`);
             uploadProgressCache.set(blobPath, 'Memproses video (HLS M3U8)...');
             
