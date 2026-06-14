@@ -16,13 +16,13 @@ async function delay(ms) {
 
 export async function startBackgroundAnimeSync() {
     try {
-        const count = await Anime.countDocuments({ source: 'samehadaku' });
+        const count = await Anime.countDocuments({ 'sources.samehadaku.url': { $exists: true, $ne: null } });
         
         if (count === 0) {
             log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z...");
             runSync(true);
         } else {
-            const latestDoc = await Anime.findOne({ source: 'samehadaku' }).sort({ lastUpdated: -1 });
+            const latestDoc = await Anime.findOne({ 'sources.samehadaku.url': { $exists: true, $ne: null } }).sort({ lastUpdated: -1 });
             const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
             const twelveHours = 12 * 60 * 60 * 1000;
             
