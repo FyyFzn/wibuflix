@@ -8,7 +8,9 @@ export function filterByTokuType(list, typeFilter) {
     if (!typeFilter) return list;
     const fLow = typeFilter.toLowerCase();
     
-    if (fLow === 'kamen rider') {
+    if (fLow === 'semua' || fLow === 'all') {
+        return list;
+    } else if (fLow === 'kamen rider') {
         return list.filter(item => item.title.toLowerCase().includes('kamen rider'));
     } else if (fLow === 'super sentai') {
         return list.filter(item => {

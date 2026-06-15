@@ -14,17 +14,18 @@ const log = (...args) => {
 export async function syncNeosatsu() {
     log('[Neosatsu Sync] Memulai sinkronisasi katalog Tokusatsu ke MongoDB...');
     try {
-        // Panggil dengan parameter default untuk memaksa scraper mengambil seluruh halaman statis
-        // dan mengisi global['neosatsu_static_catalog']
+        // Panggil getNeosatsuCatalog() dengan parameter pencarian kosong untuk memicu build static catalog di dalam cache
         await getNeosatsuCatalog(1, '', '');
         
-        const cacheData = global['neosatsu_static_catalog'];
-        if (!cacheData || !cacheData.data || cacheData.data.length === 0) {
+        const { cache } = await import('../controllers/neosatsuController.js');
+        const cacheData = cache.get('neosatsu_static_catalog');
+        
+        if (!cacheData || cacheData.length === 0) {
             log('[Neosatsu Sync] Cache kosong, tidak ada data Tokusatsu untuk disinkronkan.');
             return;
         }
 
-        const tokuList = cacheData.data;
+        const tokuList = cacheData;
         const bulkOps = [];
 
         for (const toku of tokuList) {
