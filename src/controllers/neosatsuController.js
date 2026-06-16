@@ -5,7 +5,7 @@ import { filterByTokuType, decryptNeosatsuLink, normalizeGDriveUrl } from '../ut
 import { enrichWithMAL } from '../utils/malEnrichment.js';
 import { getCache } from '../utils/cacheManager.js';
 
-const cache = getCache('neosatsu', 3600); // 1 jam TTL
+export const cache = getCache('neosatsu', 3600); // 1 jam TTL
 const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kamen rider', 'super sentai', 'ultraman', 'metal hero', 'tokusatsu', 'spesial', 'spin-off', 'hyper battle dvd', 'project red', 'dvd', 'tv series', 'series'];
 
 function cleanTitle(title) {
