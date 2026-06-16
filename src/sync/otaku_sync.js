@@ -52,8 +52,8 @@ export async function syncOtakudesu() {
             global.otakudesu_db_cache = list;
             
             try {
-                // 1. Pre-fetch seluruh database untuk Fuzzy Matching di memori (sangat ringan, < 5MB)
-                const existingAnimes = await Anime.find({}, { title: 1, aliases: 1, 'sources.otakudesu': 1 }).lean();
+                // 1. Pre-fetch seluruh database untuk Fuzzy Matching (Hindari menyentuh data Tokusatsu dari Neosatsu)
+                const existingAnimes = await Anime.find({ type: { $ne: 'Toku' } }, { title: 1, aliases: 1, 'sources.otakudesu': 1 }).lean();
                 const { normalizeTitleForMatch, isSafeToMerge } = await import('../utils/stringUtils.js');
                 
                 const now = Date.now();
