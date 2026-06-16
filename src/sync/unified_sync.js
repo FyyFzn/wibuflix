@@ -19,7 +19,7 @@ export async function syncUnified() {
         
         if (unenrichedAnimes.length === 0) {
             log('[UnifiedSync] Semua anime di database sudah berstatus diperkaya. Tidak ada pekerjaan.');
-            return;
+            return false;
         }
 
         log(`[UnifiedSync] Ditemukan ${unenrichedAnimes.length} anime baru. Memproses pencarian TMDB...`);
@@ -86,8 +86,11 @@ export async function syncUnified() {
             log('[UnifiedSync] Gagal menghapus cache API:', cacheErr.message);
         }
 
+        return unenrichedAnimes.length === 50;
+
     } catch (err) {
         console.error('[UnifiedSync] Error fatal pada worker:', err.message);
+        return false;
     }
 }
 

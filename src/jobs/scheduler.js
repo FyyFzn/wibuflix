@@ -15,16 +15,25 @@ export function initScheduler() {
 
     // 2. Memulai proses unified sync (dijadwalkan setelah 10 detik agar server stabil)
     setTimeout(() => {
-        syncUnified();
-        // Jadwalkan sinkronisasi berulang tiap jam
-        setInterval(syncUnified, 60 * 60 * 1000);
+        const runUnifiedLoop = async () => {
+            let hasMore = false;
+            try {
+                hasMore = await syncUnified();
+            } catch (err) {
+                console.error("[Scheduler] Error Unified Sync:", err);
+            }
+            
+            // Backoff Cerdas: Jika antrean masih ada, tunggu 2 menit saja. Jika habis, tidur 1 jam.
+            const nextDelay = hasMore ? (2 * 60 * 1000) : (60 * 60 * 1000);
+            setTimeout(runUnifiedLoop, nextDelay);
+        };
+        runUnifiedLoop();
         
-        // Neosatsu sync setiap 7 hari (604800000 ms)
-        syncNeosatsu().catch(err => console.error("[Scheduler] Error Neosatsu Sync:", err));
-        setInterval(() => {
-            syncNeosatsu().catch(err => console.error("[Scheduler] Error Neosatsu Sync:", err));
-        }, 604800000);
-        
+        const runNeosatsuLoop = async () => {
+            await syncNeosatsu().catch(err => console.error("[Scheduler] Error Neosatsu Sync:", err));
+            setTimeout(runNeosatsuLoop, 604800000);
+        };
+        runNeosatsuLoop();
     }, 10000);
 
     log('✅ [Scheduler] Semua background jobs berhasil dijadwalkan!');

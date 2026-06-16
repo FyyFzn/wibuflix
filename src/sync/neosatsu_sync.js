@@ -39,13 +39,13 @@ export async function syncNeosatsu() {
                         $set: {
                             title: baseTitle,
                             type: 'Toku',
-                            cover_url: toku.thumb,
+                            image: toku.thumb,
                             status: toku.status,
                             "sources.neosatsu": {
                                 url: toku.endpoint,
                                 last_updated: new Date()
                             },
-                            last_sync: new Date()
+                            lastUpdated: new Date()
                         }
                     },
                     upsert: true

@@ -11,8 +11,11 @@ export function normalizeTitleForMatch(title) {
     if (!title) return '';
     let t = title.toLowerCase();
     
+    // Konversi ordinal: "2nd season" -> "season 2"
+    t = t.replace(/(\d+)(?:st|nd|rd|th)\s+season/gi, 'season $1');
+    
     // Hapus embel-embel umum
-    t = t.replace(/subtitle indonesia|sub indo|batch|ongoing|on-going|tv series|movie/gi, '');
+    t = t.replace(/subtitle indonesia|sub indo|batch|ongoing|on-going|tv series/gi, '');
     
     // Standarisasi "Season X" menjadi "sX"
     t = t.replace(/season\s*(\d+)/gi, 's$1');
@@ -64,13 +67,26 @@ export function diceCoefficient(str1, str2) {
 export function extractSeasonAndPart(title) {
     if (!title) return { season: null, part: null };
     
+    let t = title.toLowerCase();
+    // Konversi ordinal: "2nd season" -> "season 2"
+    t = t.replace(/(\d+)(?:st|nd|rd|th)\s+season/gi, 'season $1');
+    
     let season = null;
     let part = null;
     
-    const seasonMatch = title.match(/(?:season|s)\s*(\d+)/i);
-    if (seasonMatch) season = parseInt(seasonMatch[1]);
+    const seasonMatch = t.match(/(?:season|s)\s*(\d+)/i);
+    if (seasonMatch) {
+        season = parseInt(seasonMatch[1]);
+    } else {
+        // Fallback untuk angka Romawi di akhir kata (Cth: "Anime Title II")
+        const romanMatch = t.match(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)\b\s*$/i);
+        if (romanMatch) {
+            const romanMap = { 'ii': 2, 'iii': 3, 'iv': 4, 'v': 5, 'vi': 6, 'vii': 7, 'viii': 8, 'ix': 9, 'x': 10 };
+            season = romanMap[romanMatch[1].toLowerCase()];
+        }
+    }
     
-    const partMatch = title.match(/(?:part|p)\s*(\d+)/i);
+    const partMatch = t.match(/(?:part|p|cour)\s*(\d+)/i);
     if (partMatch) part = parseInt(partMatch[1]);
     
     return { season, part };
@@ -78,15 +94,26 @@ export function extractSeasonAndPart(title) {
 
 /**
  * Validasi ekstra apakah dua anime aman untuk digabungkan.
- * Jika threshold > 60%, ini akan memastikan Season dan Part-nya tidak bertabrakan.
- * (Cth: Mencegah 'S2' bergabung dengan 'S3' meskipun stringnya 93% mirip).
  */
-export function isSafeToMerge(title1, title2, scoreThreshold = 0.6) {
+export function isSafeToMerge(title1, title2, scoreThreshold = 0.85) {
     const norm1 = normalizeTitleForMatch(title1);
     const norm2 = normalizeTitleForMatch(title2);
     
-    const score = diceCoefficient(norm1, norm2);
+    let score = diceCoefficient(norm1, norm2);
+    
+    // Penalti jika selisih kata signifikan (Cth: "Naruto" vs "Naruto Shippuden", "Anime" vs "Anime Specials")
+    const words1 = norm1.split(' ');
+    const words2 = norm2.split(' ');
+    if (Math.abs(words1.length - words2.length) >= 1 && score > 0.7 && score < 1.0) {
+        score -= 0.12; // Kurangi kemiripan agar tidak lolos ambang batas 0.85
+    }
+    
     if (score < scoreThreshold) return { isSafe: false, score };
+    
+    // Jangan gabungkan Movie dengan non-Movie
+    const isMovie1 = title1.toLowerCase().includes('movie');
+    const isMovie2 = title2.toLowerCase().includes('movie');
+    if (isMovie1 !== isMovie2) return { isSafe: false, score };
     
     // Validasi ketat angka Season dan Part
     const meta1 = extractSeasonAndPart(title1);
@@ -100,8 +127,7 @@ export function isSafeToMerge(title1, title2, scoreThreshold = 0.6) {
         return { isSafe: false, score }; // Berbeda Part
     }
     
-    // Jika satu punya Season tapi yang lain tidak, kita asumsikan yang tidak punya adalah Season 1
-    // Cth: "Kimetsu no Yaiba" (S1) vs "Kimetsu no Yaiba S2"
+    // Jika satu punya Season tapi yang lain tidak, asumsikan yang tidak punya adalah Season 1
     if (meta1.season === null && meta2.season !== null && meta2.season !== 1) return { isSafe: false, score };
     if (meta2.season === null && meta1.season !== null && meta1.season !== 1) return { isSafe: false, score };
     
