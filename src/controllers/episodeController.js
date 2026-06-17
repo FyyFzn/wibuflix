@@ -68,9 +68,15 @@ export async function getEpisodes(targetUrl) {
                 // Buang "Oshi no Ko Season 3"
                 const titleToStrip = rawTitle.replace(/subtitle\s*indonesia/gi, '').trim();
                 const regexStrip = new RegExp(titleToStrip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-                shortTitle = shortTitle.replace(regexStrip, '').trim();
+                const stripped = shortTitle.replace(regexStrip, '').trim();
                 
-                // Kalau setelah dihapus malah kosong, kembalikan ke awal
+                // Hanya pakai hasil stripping jika masih mengandung penanda episode (angka / OVA / SP dll.)
+                // Jika tidak ada (misal sisa cuma "Moment"), kembalikan ke judul asli
+                const hasEpisodeMarker = /\d|OVA|OAD|Special|SP|Movie|Film/i.test(stripped);
+                if (stripped && stripped.length >= 2 && hasEpisodeMarker) {
+                    shortTitle = stripped;
+                }
+                // Kalau setelah dihapus malah kosong atau tidak bermakna, kembalikan ke awal
                 if (!shortTitle || shortTitle.length < 2) shortTitle = title;
                 
                 // Pastikan diawali kapital
@@ -105,7 +111,10 @@ export async function getEpisodes(targetUrl) {
 
         const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
 
-        cache.set(cacheKey, result);
+        // Jangan cache jika episode kosong — bisa jadi Cloudflare masih memblokir, bukan episode memang 0
+        if (daftar_episode.length > 0) {
+            cache.set(cacheKey, result);
+        }
         return result;
     } catch (err) {
         throw err;

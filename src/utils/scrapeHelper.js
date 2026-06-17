@@ -1,4 +1,4 @@
-import { acquireFromPool, releaseToPool, globalCfCookie, globalUserAgent, refreshCfCookie } from '../puppeteer/pool.js';
+import { acquireFromPool, releaseToPool, globalCfCookie, globalUserAgent, refreshCfCookie, waitForCloudflare } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 
@@ -42,7 +42,16 @@ export async function fetchWithCF(url, options = {}) {
             if (response && response.status() === 404) {
                 return { html: '404_NOT_FOUND', $: null, slot };
             }
+            // ⚠️ FIX: Tunggu sampai Cloudflare JS challenge selesai sebelum membaca HTML
+            // waitUntil:'domcontentloaded' terlalu cepat — halaman CF masih bertuliskan
+            // "Just a moment..." saat page.content() dipanggil tanpa tunggu ini.
+            await waitForCloudflare(page);
             html = await page.content();
+
+            // Validasi tambahan: jika CF masih lolos setelah tunggu, jangan cache hasilnya
+            if (html.includes('Just a moment') || html.includes('cf-browser-verification')) {
+                throw new Error('Cloudflare challenge tidak dapat diselesaikan oleh Puppeteer.');
+            }
         }
 
         if (!html) throw new Error("Gagal mengambil HTML dari target");

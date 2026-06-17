@@ -147,12 +147,17 @@ router.get('/api/episodes', async (req, res) => {
             }
             
             // Convert Map ke Array dan pastikan terurut menurun (episode terbaru di atas)
+            // Episode non-numerik (Moment, OVA, Special, dll.) selalu ditempatkan di AKHIR daftar
             const mergedEps = Array.from(epMap.values());
             mergedEps.sort((a, b) => {
                 const numA = extractEpNum(a.judul);
                 const numB = extractEpNum(b.judul);
-                if (typeof numA === 'number' && typeof numB === 'number') return numB - numA;
-                return 0;
+                const aIsNum = typeof numA === 'number';
+                const bIsNum = typeof numB === 'number';
+                if (aIsNum && bIsNum) return numB - numA; // Keduanya angka: urutan menurun
+                if (aIsNum) return -1;  // a angka, b bukan → a lebih dulu (atas)
+                if (bIsNum) return 1;   // b angka, a bukan → b lebih dulu (atas)
+                return String(numA).localeCompare(String(numB)); // Keduanya string: urut alfabet
             });
             
             data.daftar_episode = mergedEps;

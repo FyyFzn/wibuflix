@@ -27,9 +27,29 @@ export function extractSlugs(episodeUrl, seriesUrl) {
 
     if (episodeUrl.includes('___neosatsu_ep___')) {
         const parts = episodeUrl.split('___neosatsu_ep___');
-        let seriesPart = parts[0].replace(/\/$/, '').split('/').pop() || 'neosatsu_series';
-        seriesSlug = seriesPart.replace(/\.html/g, '');
+        const seriesPart = parts[0];
         episodeSlug = parts[1];
+
+        // Neosatsu targetUrl bisa berupa "neosatsu-merge:Title||Label" (tanpa slash)
+        // atau URL biasa seperti "https://www.neosatsu.com/p/kamen-rider-..."
+        // Kita harus membuat slug Azure-safe dari keduanya.
+        if (seriesPart.startsWith('neosatsu-merge:') || seriesPart.startsWith('neosatsu-label:')) {
+            // Ambil hanya bagian judul (sebelum "||"), buang prefix "neosatsu-merge:"
+            const dataStr = seriesPart.split(':').slice(1).join(':'); // hapus "neosatsu-merge:"
+            const titlePart = dataStr.split('||')[0].trim(); // ambil title saja, buang label
+            // Jadikan slug: lowercase, hapus karakter non-alfanumerik (kecuali spasi & dash), ganti spasi → dash
+            seriesSlug = titlePart
+                .toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .trim()
+                .replace(/\s+/g, '-')
+                || 'neosatsu_series';
+        } else {
+            // URL biasa — ambil segmen path terakhir
+            let cleanPart = seriesPart.replace(/\/$/, '');
+            seriesSlug = cleanPart.split('/').pop() || 'neosatsu_series';
+            seriesSlug = seriesSlug.replace(/\.html/g, '');
+        }
     } else {
         let realEpUrl = episodeUrl;
         if (episodeUrl.includes('?url=')) {
@@ -154,14 +174,43 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
             if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
         }
 
+        // Sama seperti smart-play: urutkan server berdasarkan skor kecepatan provider
+        const serverScore = (host) => {
+            if (!host) return 0;
+            const h = host.toLowerCase();
+            if (h.includes('mega')) return 100;
+            if (h.includes('wibufile')) return 90;
+            if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
+            if (h.includes('pixeldrain')) return 70;
+            if (h.includes('acefile')) return 60;
+            if (h.includes('vidhide')) return 50;
+            if (h.includes('kraken')) return -100; // Super lambat, last resort
+            return 0;
+        };
+
         for (const res of [1080, 720, 480, 360]) {
+            if (groups[res].length > 0) {
+                groups[res].sort((a, b) => serverScore(b.namaHost) - serverScore(a.namaHost));
+                const serverNames = groups[res].map(s => s.namaHost).join(', ');
+                console.info(`${logPrefix} Menguji server ${res}p: ${serverNames}`);
+            }
             for (const srv of groups[res]) {
                 try {
                     const extracted = await extractVideoUrl(srv.iframeUrl);
                     if (extracted && extracted.url && !extracted.webviewOnly) {
                         if (!extracted.isM3U8 && !extracted.url.includes('.m3u8')) {
+                            // Ping server untuk mengecek limit bandwidth (HTTP 429)
+                            try {
+                                await checkRangeSupport(extracted.url, extracted.headers || {});
+                            } catch (pingErr) {
+                                if (pingErr.message === 'HTTP_429_LIMIT') {
+                                    console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
+                                    continue;
+                                }
+                                throw pingErr;
+                            }
                             matchedSource = { url: extracted.url, headers: extracted.headers || {} };
-                            console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source}`);
+                            console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
                             break;
                         }
                     }
