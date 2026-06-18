@@ -102,6 +102,9 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
             } else if (item.sources?.neosatsu?.url) {
                 finalUrl = item.sources.neosatsu.url;
                 finalId = ''; // Neosatsu menggunakan endpoint URL langsung
+            } else if (item.sources?.kuronime?.url) {
+                finalUrl = item.sources.kuronime.url;
+                finalId = item.sources.kuronime.id || '';
             }
 
             let displayType = item.type;
