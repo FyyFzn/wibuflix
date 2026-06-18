@@ -103,7 +103,10 @@ export async function fetchWithCF(url, options = {}) {
             });
 
             if (response && response.status() === 404) {
-                return { html: '404_NOT_FOUND', $: null, slot };
+                // Pastikan slot dilepas agar pool tidak bocor
+                releaseToPool(slot);
+                slot = null;
+                return { html: '404_NOT_FOUND', $: null, slot: null };
             }
 
             // ⚠️ FIX 3: Tunggu CF challenge selesai (timeout 12 detik)

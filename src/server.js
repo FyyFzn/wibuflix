@@ -4,6 +4,7 @@ import { initPagePool } from './puppeteer/pool.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { backgroundQueue } from './utils/queueManager.js';
+import connectDB from './config/db.js';
 
 import { initScheduler } from './jobs/scheduler.js';
 import { errorHandler } from './middlewares/errorHandler.js';
@@ -25,6 +26,8 @@ app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.set('json spaces', 2);
 
 // Sajikan file statis (HTML, CSS, JS) dari direktori root proyek
@@ -42,16 +45,16 @@ app.use(adminRouter);
 // Global Error Handler Middleware (Harus diletakkan setelah semua router)
 app.use(errorHandler);
 
-import connectDB from './config/db.js';
-
 function startServer() {
     // 1. Hubungkan ke MongoDB terlebih dahulu
     connectDB().then(() => {
         // 2. Jalankan Express App
         app.listen(PORT, '0.0.0.0', async () => {
-            const log = global.forceLog || console.log;
+            const log = typeof global.forceLog === 'function' ? global.forceLog : console.log;
 
-        const modeText = global.forceLog ? `\n💡 Mode         : PRODUCTION (Log standar dinonaktifkan)` : '';
+        const modeText = typeof global.forceLog === 'function'
+          ? `\n💡 Mode         : PRODUCTION (Log standar dinonaktifkan)`
+          : '';
         const banner = `
 =============================================
 🚀 WIBUFLIX BACKEND SERVER BERHASIL RESTART!
