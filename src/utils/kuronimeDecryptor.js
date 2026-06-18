@@ -55,10 +55,10 @@ export async function fetchKuronimeSourcesFromHtml(html) {
     try {
         const { data: apiResp } = await axios.post(
             'https://animeku.org/api/v9/sources',
-            `id=${encodeURIComponent(token)}`,
+            { id: token },
             {
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/json',
                     'Referer': 'https://kuronime.sbs/',
                     'Origin': 'https://kuronime.sbs',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
