@@ -248,6 +248,16 @@ router.get('/api/episodes', async (req, res) => {
                             urls: { otakudesu: ep.url }
                         }));
                 }
+            } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
+                data = await getKuronimeEpisodes(targetUrl);
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: formatEpisodeTitle(ep.judul),
+                            urls: { kuronime: ep.url }
+                        }));
+                }
             } else {
                 data = await getEpisodes(targetUrl);
                 // Normalisasi agar formatnya sama (menggunakan objek `urls`)
@@ -287,18 +297,21 @@ router.get('/api/episodes', async (req, res) => {
 
         // --- AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
         let dbAnime = null;
-        if (urlSamehadaku && urlOtakudesu) {
-            dbAnime = await Anime.findOne({
-                $or: [
-                    { "sources.samehadaku.url": urlSamehadaku },
-                    { "sources.otakudesu.id": urlOtakudesu.split(':')[1] }
-                ]
-            });
+        const orQuery = [];
+        
+        if (urlSamehadaku) orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
+        if (urlOtakudesu) orQuery.push({ "sources.otakudesu.id": urlOtakudesu.split(':')[1] });
+        if (urlKuronime) orQuery.push({ "sources.kuronime.url": urlKuronime });
+        
+        if (orQuery.length > 0) {
+            dbAnime = await Anime.findOne({ $or: orQuery });
         } else if (targetUrl) {
             if (targetUrl.startsWith('/anime/otakudesu:')) {
                 dbAnime = await Anime.findOne({ "sources.otakudesu.id": targetUrl.split(':')[1] });
             } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
                 dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
+            } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
+                dbAnime = await Anime.findOne({ "sources.kuronime.url": targetUrl });
             } else {
                 dbAnime = await Anime.findOne({ "sources.samehadaku.url": targetUrl });
             }
