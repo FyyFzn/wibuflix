@@ -11,10 +11,10 @@ import QueueTask from '../models/QueueTask.js';
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
     // Jalankan prefetchOneEpisode dengan source 'queue'
-    const success = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue');
-    if (!success) {
+    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue');
+    if (!result.success) {
         // Jika skip atau gagal, ubah status di antrean
-        throw new Error('Prefetch failed or skipped');
+        throw new Error(result.reason || 'Prefetch failed or skipped');
     }
 });
 
@@ -148,17 +148,18 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
     if (status === 'READY' || status === 'UPLOADING' || (status === 'FAILED' && source !== 'queue')) {
         console.info(`${logPrefix} Skip ${episodeSlug} — status: ${status}`);
-        return false;
+        return { success: false, reason: 'Already processing or failed' };
     }
 
     if (activeExtractions.has(blobPath)) {
         console.info(`${logPrefix} Skip ${episodeSlug} — sedang diekstrak`);
-        return false;
+        return { success: false, reason: 'Already extracting' };
     }
 
     console.info(`${logPrefix} Memulai proses untuk: ${episodeSlug}`);
     activeExtractions.add(blobPath);
     let matchedSource = null;
+    let m3u8Found = false;
 
     try {
         const pageData = await getServersBasedOnUrl(episodeUrl);
@@ -194,7 +195,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         if (!servers || servers.length === 0) {
             console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
             markUploadFailed(seriesSlug, episodeSlug);
-            return false;
+            return { success: false, reason: 'Tidak ada server tersedia' };
         }
 
         const groups = { 1080: [], 720: [], 480: [], 360: [] };
@@ -228,6 +229,8 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             matchedSource = { url: extracted.url, headers: extracted.headers || {} };
                             console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
                             break;
+                        } else {
+                            m3u8Found = true;
                         }
                     }
                 } catch (e) {
@@ -244,10 +247,10 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         global[`prefetch_src_${seriesSlug}_${episodeSlug}`] = matchedSource;
         await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug, source);
         delete global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
-        return true;
+        return { success: true };
     } else {
         markUploadFailed(seriesSlug, episodeSlug);
-        return false;
+        return { success: false, reason: m3u8Found ? 'Hanya tersedia format M3U8 (Tidak bisa diunduh antrean). Tonton langsung saja.' : 'Semua server gagal atau limit.' };
     }
 }
 
