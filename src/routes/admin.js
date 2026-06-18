@@ -88,13 +88,17 @@ router.get('/api/admin/logs', (req, res) => {
 // RUTE 8: GET /api/force-sync  [MANUAL TRIGGER]
 // ============================================================
 router.get('/api/force-sync', (req, res) => {
-    res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
+    res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku, Otakudesu, Kuronime & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
 
     // Jalankan asinkron tanpa memblokir request
-    import('../sync/otaku_sync.js').then(({ syncOtakudesu }) => {
+    Promise.all([
+        import('../sync/otaku_sync.js'),
+        import('../sync/kuronime_sync.js')
+    ]).then(([ { syncOtakudesu }, { syncKuronime } ]) => {
         Promise.all([
             runSync(true),
-            syncOtakudesu()
+            syncOtakudesu(),
+            syncKuronime()
         ]).then(() => {
             console.log('[ForceSync] Raw Sync selesai. Memulai Unified Sync...');
             return syncUnified();
@@ -154,12 +158,14 @@ router.get('/api/factory-reset', async (req, res) => {
         if (global.otaku_db_cache) global.otaku_db_cache = null;
         
         const { syncOtakudesu } = await import('../sync/otaku_sync.js');
+        const { syncKuronime } = await import('../sync/kuronime_sync.js');
 
         res.json({ status: 'ok', message: 'BERHASIL! Semua Database MongoDB (Anime & TMDB Cache) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
 
         Promise.all([
             runSync(true),
-            syncOtakudesu()
+            syncOtakudesu(),
+            syncKuronime()
         ]).then(() => {
             console.log('[FactoryReset] Raw Sync selesai. Memulai Unified Sync...');
             return syncUnified();
