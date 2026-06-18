@@ -52,8 +52,17 @@ router.get('/api/episodes', async (req, res) => {
             };
             
             const extractEpNum = (title) => {
-                const match = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i) || title.match(/0*(\d+(?:\.\d+)?)/);
-                return match ? parseFloat(match[1]) : title;
+                if (!title) return title;
+                // Prioritas 1: ada kata "episode/ep/eps" diikuti angka
+                const epMatch = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i);
+                if (epMatch) return parseFloat(epMatch[1]);
+                
+                // Prioritas 2: judul hanya berisi angka (misal "01", "12")
+                const pureNumMatch = title.match(/^\s*0*(\d+(?:\.\d+)?)\s*$/);
+                if (pureNumMatch) return parseFloat(pureNumMatch[1]);
+
+                // Tidak cocok → kembalikan judul asli sebagai key string (OVA, Special, dll.)
+                return title;
             };
 
             const adjustTitleEpisodeNumber = (title, offset) => {
@@ -217,6 +226,29 @@ router.get('/api/episodes', async (req, res) => {
             }
         }
         
+        // --- DEDUPLIKASI AKHIR: Hapus episode ganda berdasarkan nomor episode ---
+        // Ini sebagai jaring pengaman terakhir setelah semua path merge selesai.
+        // Contoh kasus: Samehadaku "Episode 1" dan "Episode 01" keduanya lolos tapi
+        // sebenarnya episode yang sama.
+        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
+            const dedupeMap = new Map();
+            for (const ep of data.daftar_episode) {
+                // Buat key dedup: normalkan judul ke format "episode_N" atau gunakan judul apa adanya
+                const titleLower = ep.judul.toLowerCase().trim();
+                const epNumMatch = titleLower.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/);
+                const key = epNumMatch ? `ep_${parseFloat(epNumMatch[1])}` : titleLower;
+                
+                if (!dedupeMap.has(key)) {
+                    dedupeMap.set(key, ep);
+                } else {
+                    // Sudah ada — merge URLs agar tidak kehilangan source mana pun
+                    const existing = dedupeMap.get(key);
+                    existing.urls = { ...existing.urls, ...ep.urls };
+                }
+            }
+            data.daftar_episode = Array.from(dedupeMap.values());
+        }
+
         // --- AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
         let dbAnime = null;
         if (urlSamehadaku && urlOtakudesu) {
