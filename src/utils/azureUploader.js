@@ -424,10 +424,16 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             // ========================================================
             // TAHAP 1: UNDUH UTUH KE SERVER LOKAL (VPS)
             // ========================================================
-            console.info(`[Azure Uploader] Tahap 1: Mengecek JDownloader Mode untuk ${videoUrl}`);
-            uploadProgressCache.set(blobPath, 'Menghubungkan ke server...');
+            const isM3u8Input = videoUrl.includes('.m3u8');
             
-            const rangeCheck = await checkRangeSupport(videoUrl, requestHeaders);
+            if (isM3u8Input) {
+                console.info(`[Azure Uploader] URL input adalah M3U8. Melewati Tahap 1 (Unduh Tunggal) dan langsung ke FFmpeg.`);
+                uploadProgressCache.set(blobPath, 'Menghubungkan ke stream M3U8...');
+            } else {
+                console.info(`[Azure Uploader] Tahap 1: Mengecek JDownloader Mode untuk ${videoUrl}`);
+                uploadProgressCache.set(blobPath, 'Menghubungkan ke server...');
+                
+                const rangeCheck = await checkRangeSupport(videoUrl, requestHeaders);
             
             let numThreads = 1;
             const hostLow = videoUrl.toLowerCase();
@@ -485,27 +491,49 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video.`);
                 }
             }
+            } // end if (!isM3u8Input)
 
             // ========================================================
             // TAHAP 2: POTONG VIDEO JADI HLS (M3U8)
             // ========================================================
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
             
-            console.info(`[Azure Uploader] Tahap 2: Mengubah format MP4 ke pecahan HLS...`);
-            uploadProgressCache.set(blobPath, 'Memproses video (HLS M3U8)...');
+            console.info(`[Azure Uploader] Tahap 2: Mengubah format ke pecahan HLS...`);
+            uploadProgressCache.set(blobPath, 'Memproses video (FFmpeg HLS)...');
             
             try {
-                // Eksekusi FFmpeg: -y, -i (input), -c copy (tanpa konversi), -f hls, potongan 10 detik
-                await execFileAsync(ffmpegPath, [
-                    '-y',
-                    '-i', tempFilePath,
-                    '-c', 'copy',
-                    '-f', 'hls',
-                    '-hls_time', '10',
-                    '-hls_playlist_type', 'vod',
-                    '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
-                    path.join(hlsOutputDir, 'playlist.m3u8')
-                ]);
+                let ffmpegArgs = [];
+                if (isM3u8Input) {
+                    const headersArray = [];
+                    if (requestHeaders['Referer']) headersArray.push(`Referer: ${requestHeaders['Referer']}`);
+                    if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
+                    if (requestHeaders['User-Agent']) headersArray.push(`User-Agent: ${requestHeaders['User-Agent']}`);
+                    
+                    ffmpegArgs = [
+                        '-y',
+                        '-headers', headersArray.join('\r\n') + '\r\n',
+                        '-i', videoUrl,
+                        '-c', 'copy',
+                        '-f', 'hls',
+                        '-hls_time', '10',
+                        '-hls_playlist_type', 'vod',
+                        '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
+                        path.join(hlsOutputDir, 'playlist.m3u8')
+                    ];
+                } else {
+                    ffmpegArgs = [
+                        '-y',
+                        '-i', tempFilePath,
+                        '-c', 'copy',
+                        '-f', 'hls',
+                        '-hls_time', '10',
+                        '-hls_playlist_type', 'vod',
+                        '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
+                        path.join(hlsOutputDir, 'playlist.m3u8')
+                    ];
+                }
+
+                await execFileAsync(ffmpegPath, ffmpegArgs);
                 console.info(`[Azure Uploader] Pemotongan HLS sukses diterapkan untuk ${blobPath}.`);
             } catch (fastErr) {
                  throw new Error('FFmpeg HLS gagal: ' + fastErr.message);

@@ -215,23 +215,19 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 try {
                     const extracted = await extractVideoUrl(srv.iframeUrl);
                     if (extracted && extracted.url && !extracted.webviewOnly) {
-                        if (!extracted.isM3U8 && !extracted.url.includes('.m3u8')) {
-                            // Ping server untuk mengecek limit bandwidth (HTTP 429)
-                            try {
-                                await checkRangeSupport(extracted.url, extracted.headers || {});
-                            } catch (pingErr) {
-                                if (pingErr.message === 'HTTP_429_LIMIT') {
-                                    console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
-                                    continue;
-                                }
-                                throw pingErr;
+                        // Ping server untuk mengecek limit bandwidth (HTTP 429)
+                        try {
+                            await checkRangeSupport(extracted.url, extracted.headers || {});
+                        } catch (pingErr) {
+                            if (pingErr.message === 'HTTP_429_LIMIT') {
+                                console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
+                                continue;
                             }
-                            matchedSource = { url: extracted.url, headers: extracted.headers || {} };
-                            console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
-                            break;
-                        } else {
-                            m3u8Found = true;
+                            throw pingErr;
                         }
+                        matchedSource = { url: extracted.url, headers: extracted.headers || {} };
+                        console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
+                        break;
                     }
                 } catch (e) {
                     console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
@@ -516,32 +512,23 @@ router.get('/api/smart-play', async (req, res) => {
                     try {
                         const extracted = await extractVideoUrl(srv.iframeUrl, req);
                         if (extracted && extracted.url && !extracted.webviewOnly) {
-                            const isDirectVideo = !extracted.isM3U8 && !extracted.url.includes('.m3u8');
-                            if (isDirectVideo) {
-                                // Ping host to ensure it's not rate-limited (e.g., Pixeldrain 5GB limit)
-                                console.info(`[Smart-Play] Ping ${srv.namaHost} untuk mengecek limit bandwidth...`);
-                                try {
-                                    await checkRangeSupport(extracted.url, extracted.headers || {});
-                                    // If no error, we proceed
-                                    matchedSource = {
-                                        url: extracted.url,
-                                        headers: extracted.headers || {}
-                                    };
-                                    console.info(`[Smart-Play] Menemukan source video (Direct) (${resVal}p) dari ${srv.source}: ${extracted.url}`);
-                                    break;
-                                } catch (pingErr) {
-                                    if (pingErr.message === 'HTTP_429_LIMIT') {
-                                        console.warn(`[Smart-Play] ${srv.namaHost} terkena Limit Kuota (429)! Melompat ke server berikutnya...`);
-                                        continue;
-                                    }
-                                    throw pingErr;
-                                }
-                            } else if (!m3u8Source) {
-                                // Fallback M3U8 (seperti KuroPlayer) jika sama sekali tidak ada MP4
-                                m3u8Source = {
+                            // Ping host to ensure it's not rate-limited (e.g., Pixeldrain 5GB limit)
+                            console.info(`[Smart-Play] Ping ${srv.namaHost} untuk mengecek limit bandwidth...`);
+                            try {
+                                await checkRangeSupport(extracted.url, extracted.headers || {});
+                                // If no error, we proceed
+                                matchedSource = {
                                     url: extracted.url,
                                     headers: extracted.headers || {}
                                 };
+                                console.info(`[Smart-Play] Menemukan source video (${resVal}p) dari ${srv.source}: ${extracted.url}`);
+                                break;
+                            } catch (pingErr) {
+                                if (pingErr.message === 'HTTP_429_LIMIT') {
+                                    console.warn(`[Smart-Play] ${srv.namaHost} terkena Limit Kuota (429)! Melompat ke server berikutnya...`);
+                                    continue;
+                                }
+                                throw pingErr;
                             }
                         }
                     } catch (e) {
@@ -574,7 +561,7 @@ router.get('/api/smart-play', async (req, res) => {
             let proxyUrl = matchedSource.url;
             if (matchedSource.headers && matchedSource.headers.token) {
                 proxyUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(matchedSource.url)}&token=${encodeURIComponent(matchedSource.headers.token)}&referer=${encodeURIComponent(matchedSource.headers.Referer || '')}`;
-            } else {
+            } else if (!matchedSource.url.includes('.m3u8')) {
                 proxyUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(matchedSource.url)}`;
             }
 
@@ -586,14 +573,6 @@ router.get('/api/smart-play', async (req, res) => {
                 status: 'UPLOADING',
                 // url dihapus agar player tidak memutar proxy stream dan tetap menampilkan progress upload
                 message: 'Video sedang dialirkan ke Azure Blob (Proxy dimatikan agar progress terlihat).'
-            });
-        } else if (m3u8Source) {
-            console.info(`[Smart-Play] Menggunakan M3U8 Fallback: ${m3u8Source.url}`);
-            return res.json({
-                success: true,
-                status: 'READY',
-                url: m3u8Source.url,
-                message: 'Memutar langsung M3U8 stream tanpa diunduh ke Azure.'
             });
         } else {
             markUploadFailed(seriesSlug, episodeSlug);
