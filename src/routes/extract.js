@@ -502,6 +502,7 @@ router.get('/api/smart-play', async (req, res) => {
 
             // Try extracting in priority order
             const resolutions = [1080, 720, 480, 360];
+            let m3u8Source = null;
 
             for (const resVal of resolutions) {
                 if (groups[resVal].length > 0) {
@@ -535,6 +536,12 @@ router.get('/api/smart-play', async (req, res) => {
                                     }
                                     throw pingErr;
                                 }
+                            } else if (!m3u8Source) {
+                                // Fallback M3U8 (seperti KuroPlayer) jika sama sekali tidak ada MP4
+                                m3u8Source = {
+                                    url: extracted.url,
+                                    headers: extracted.headers || {}
+                                };
                             }
                         }
                     } catch (e) {
@@ -580,12 +587,20 @@ router.get('/api/smart-play', async (req, res) => {
                 // url dihapus agar player tidak memutar proxy stream dan tetap menampilkan progress upload
                 message: 'Video sedang dialirkan ke Azure Blob (Proxy dimatikan agar progress terlihat).'
             });
+        } else if (m3u8Source) {
+            console.info(`[Smart-Play] Menggunakan M3U8 Fallback: ${m3u8Source.url}`);
+            return res.json({
+                success: true,
+                status: 'READY',
+                url: m3u8Source.url,
+                message: 'Memutar langsung M3U8 stream tanpa diunduh ke Azure.'
+            });
         } else {
             markUploadFailed(seriesSlug, episodeSlug);
             return res.status(404).json({
                 success: false,
                 status: 'FAILED',
-                message: 'Tidak ada server MP4 yang didukung untuk resolusi yang tersedia.'
+                message: 'Tidak ada server MP4 atau M3U8 yang didukung untuk resolusi yang tersedia.'
             });
         }
 
