@@ -23,10 +23,10 @@ export async function getKuronimeEpisodes(animeUrl) {
 
         const daftar_episode = [];
         // Selector daftar episode di halaman anime Kuronime
-        $('.eplister ul li').each((_, el) => {
+        $('div.bixbox.bxcl ul li').each((_, el) => {
             const a = $(el).find('a');
             const href = a.attr('href');
-            const epTitle = $(el).find('.epl-num').text().trim() || a.text().trim();
+            const epTitle = $(el).find('.lchx').text().trim() || $(el).find('.epl-num').text().trim() || a.text().trim();
             if (href && epTitle) {
                 daftar_episode.push({
                     judul: cleanEpisodeTitle(epTitle),
