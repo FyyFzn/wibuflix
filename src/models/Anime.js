@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
 
 const animeSchema = new mongoose.Schema({
-    title: { 
-        type: String, 
+    title: {
+        type: String,
         required: true,
-        index: true 
+        index: true
     },
     aliases: {
         type: [String],
@@ -16,21 +16,21 @@ const animeSchema = new mongoose.Schema({
         index: true,
         default: ''
     },
-    image: { 
-        type: String, 
-        default: '' 
+    image: {
+        type: String,
+        default: ''
     },
-    type: { 
-        type: String, 
-        default: 'TV' 
+    type: {
+        type: String,
+        default: 'TV'
     },
-    score: { 
-        type: String, 
-        default: '-' 
+    score: {
+        type: String,
+        default: '-'
     },
-    status: { 
-        type: String, 
-        default: 'Completed' 
+    status: {
+        type: String,
+        default: 'Completed'
     },
     sources: {
         samehadaku: {
@@ -44,6 +44,10 @@ const animeSchema = new mongoose.Schema({
         neosatsu: {
             url: { type: String, default: null },
             id: { type: String, default: null }
+        },
+        kuronime: {
+            url: { type: String, default: null },
+            id: { type: String, default: null }
         }
     },
     // Metadata Lanjutan dari MAL / TMDB
@@ -53,7 +57,7 @@ const animeSchema = new mongoose.Schema({
     year: { type: Number, default: null },
     malScore: { type: String, default: null },
     malId: { type: Number, default: null },
-    
+
     tmdbEnriched: {
         type: Boolean,
         default: false

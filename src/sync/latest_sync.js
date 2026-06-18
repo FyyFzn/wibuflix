@@ -35,6 +35,7 @@ export async function runLatestSync() {
     try {
         await scrapeSamehadakuLatest();
         await scrapeOtakudesuLatest();
+        await scrapeKuronimeLatest();
     } catch (e) {
         console.error(`[Latest Sync] Error fatal:`, e.message);
     } finally {
@@ -163,3 +164,69 @@ async function scrapeOtakudesuLatest() {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Otakudesu.`);
     }
 }
+
+async function scrapeKuronimeLatest() {
+    const url = `https://kuronime.sbs/`;
+    log(`[Latest Sync] Mengakses Beranda Kuronime...`);
+
+    let fetchRes;
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+    } catch (e) {
+        console.error(`[Latest Sync] Gagal memuat Kuronime:`, e.message);
+        return;
+    }
+
+    if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+        log(`[Latest Sync] Gagal mendapatkan HTML Kuronime.`);
+        if (fetchRes && fetchRes.slot) releaseToPool(fetchRes.slot);
+        return;
+    }
+
+    const $ = fetchRes.$;
+    const slot = fetchRes.slot;
+    const updates = [];
+    const seenUrls = new Set();
+
+    // Hanya ambil section "New Episodes" pertama, bukan "Top Episodes Of The Week"
+    $('.bixbox').first().find('article.bsu').each((_, el) => {
+        const title = $(el).find('.bsuxtt h2').text().trim();
+        const ep = $(el).find('.bt .ep').text().trim();
+        const href = $(el).find('a').attr('href');
+
+        if (title && ep && href && !seenUrls.has(href)) {
+            seenUrls.add(href);
+            updates.push({ title, status: ep });
+        }
+    });
+
+    releaseToPool(slot);
+
+    if (updates.length > 0) {
+        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Kuronime.`);
+
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+        const now = Date.now();
+        const bulkOps = updates.map((anime, index) => {
+            const normTitle = normalizeTitleForMatch(anime.title);
+            return {
+                updateOne: {
+                    filter: { normalizedTitle: normTitle },
+                    update: {
+                        $set: {
+                            status: anime.status,
+                            lastUpdated: new Date(now - index * 1000)
+                        }
+                    }
+                    // Tidak pakai upsert — hanya update yang sudah ada di database
+                }
+            };
+        });
+
+        const result = await Anime.bulkWrite(bulkOps);
+        log(`[Latest Sync] ✅ Kuronime: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+    } else {
+        log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Kuronime.`);
+    }
+}
+

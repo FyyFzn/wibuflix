@@ -4,6 +4,7 @@ import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFai
 import Anime from '../models/Anime.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
+import { getKuronimeServers } from '../controllers/kuronimeController.js';
 import { backgroundQueue } from '../utils/queueManager.js';
 import QueueTask from '../models/QueueTask.js';
 
@@ -66,7 +67,11 @@ export function extractSlugs(episodeUrl, seriesUrl) {
             seriesSlug = realSeriesUrl.replace(/\/$/, '').split('/').pop() || 'uncategorized';
         } else {
             seriesSlug = episodeSlug.replace(/-episode-\d+.*$/i, '').replace(/-dan-sub-indo.*$/i, '');
+            if (episodeUrl.includes('kuronime.sbs') && seriesSlug.startsWith('nonton-')) {
+                seriesSlug = seriesSlug.replace(/^nonton-/, '');
+            }
         }
+
     }
     if (!seriesSlug) seriesSlug = 'uncategorized';
 
@@ -82,6 +87,12 @@ async function getServersBasedOnUrl(episodeUrl) {
             realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
         }
         return await getOtakuServers(realUrl);
+    } else if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) {
+        let realUrl = episodeUrl;
+        if (episodeUrl.includes('?url=')) {
+            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
+        }
+        return await getKuronimeServers(realUrl);
     } else {
         return await scrapeVideoServers(episodeUrl);
     }
@@ -167,8 +178,13 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
             }
         }
 
-        const primarySource = (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
-        const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
+        let primarySource = 'Samehadaku';
+        if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
+        if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
+        
+        let altSource = 'Otakudesu';
+        if (primarySource === 'Otakudesu') altSource = 'Samehadaku';
+        if (primarySource === 'Kuronime') altSource = 'Samehadaku'; // Fallback logic for now
 
         const servers = [
             ...(primaryServers || []).map(s => ({ ...s, source: primarySource })),
@@ -450,8 +466,13 @@ router.get('/api/smart-play', async (req, res) => {
             const primaryServers = primaryData.servers || [];
 
             // Mark source websites for clarity in logging / resolution priority
-            const primarySource = (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) ? 'Otakudesu' : 'Samehadaku';
-            const altSource = primarySource === 'Otakudesu' ? 'Samehadaku' : 'Otakudesu';
+            let primarySource = 'Samehadaku';
+            if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
+            if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
+            
+            let altSource = 'Otakudesu';
+            if (primarySource === 'Otakudesu') altSource = 'Samehadaku';
+            if (primarySource === 'Kuronime') altSource = 'Samehadaku';
 
             const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
             const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));

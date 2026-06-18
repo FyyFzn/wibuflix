@@ -2,6 +2,7 @@ import express from 'express';
 import { getEpisodes } from '../controllers/episodeController.js';
 import { getNeosatsuEpisodes } from '../controllers/neosatsuController.js';
 import * as otakudesu from '../controllers/otakudesuController.js';
+import { getKuronimeEpisodes } from '../controllers/kuronimeController.js';
 import Anime from '../models/Anime.js';
 
 const router = express.Router();
@@ -13,26 +14,28 @@ router.get('/api/episodes', async (req, res) => {
     const targetUrl = req.query.url;
     const urlSamehadaku = req.query.urlSamehadaku;
     const urlOtakudesu = req.query.urlOtakudesu;
+    const urlKuronime = req.query.urlKuronime;
     
-    if (!targetUrl && !urlSamehadaku && !urlOtakudesu) {
+    if (!targetUrl && !urlSamehadaku && !urlOtakudesu && !urlKuronime) {
         return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
     }
 
     try {
         let data;
         
-        // --- LOGIKA MERGE 2 WEB ---
-        if (urlSamehadaku && urlOtakudesu) {
-            const slug = urlOtakudesu.split(':')[1];
+        // --- LOGIKA MERGE MULTI-SUMBER ---
+        if (urlSamehadaku || urlOtakudesu || urlKuronime) {
+            const slug = urlOtakudesu ? urlOtakudesu.split(':')[1] : null;
             
-            const [sameRes, otakuRes] = await Promise.all([
-                getEpisodes(urlSamehadaku).catch(() => null),
-                otakudesu.getOtakuEpisodesFormatted(slug).catch(() => null)
+            const [sameRes, otakuRes, kuroRes] = await Promise.all([
+                urlSamehadaku ? getEpisodes(urlSamehadaku).catch(() => null) : Promise.resolve(null),
+                slug ? otakudesu.getOtakuEpisodesFormatted(slug).catch(() => null) : Promise.resolve(null),
+                urlKuronime ? getKuronimeEpisodes(urlKuronime).catch(() => null) : Promise.resolve(null),
             ]);
             
             // Format merge
             data = {
-                judul_seri: (sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || 'Unknown',
+                judul_seri: (sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || (kuroRes && kuroRes.judul_seri) || 'Unknown',
                 daftar_episode: []
             };
             
@@ -89,6 +92,7 @@ router.get('/api/episodes', async (req, res) => {
             // --- DETEKSI OFFSET OTOMATIS ---
             let offsetSame = 0;
             let offsetOtaku = 0;
+            let offsetKuro = 0;
 
             const getValidEpNums = (epsList) => {
                 if (!epsList) return [];
@@ -100,20 +104,30 @@ router.get('/api/episodes', async (req, res) => {
 
             const sameEps = getValidEpNums(sameRes?.daftar_episode);
             const otakuEps = getValidEpNums(otakuRes?.daftar_episode);
+            const kuroEps = getValidEpNums(kuroRes?.daftar_episode);
 
+            // Kalkulasi offset Samehadaku vs Otakudesu
             if (sameEps.length > 0 && otakuEps.length > 0) {
                 const minSame = Math.min(...sameEps);
                 const minOtaku = Math.min(...otakuEps);
-
                 const sameSet = new Set(sameEps);
                 const hasOverlap = otakuEps.some(num => sameSet.has(num));
-
                 if (!hasOverlap) {
-                    if (minOtaku === 1 && minSame > 1) {
-                        offsetOtaku = minSame - 1;
-                    } else if (minSame === 1 && minOtaku > 1) {
-                        offsetSame = minOtaku - 1;
-                    }
+                    if (minOtaku === 1 && minSame > 1) offsetOtaku = minSame - 1;
+                    else if (minSame === 1 && minOtaku > 1) offsetSame = minOtaku - 1;
+                }
+            }
+
+            // Kalkulasi offset Kuronime vs referensi utama (Samehadaku atau Otakudesu)
+            const refEps = sameEps.length > 0 ? sameEps : otakuEps;
+            if (refEps.length > 0 && kuroEps.length > 0) {
+                const minRef = Math.min(...refEps);
+                const minKuro = Math.min(...kuroEps);
+                const refSet = new Set(refEps);
+                const hasOverlap = kuroEps.some(num => refSet.has(num));
+                if (!hasOverlap) {
+                    if (minKuro === 1 && minRef > 1) offsetKuro = minRef - 1;
+                    else if (minRef === 1 && minKuro > 1) offsetKuro = 0; // Kuronime yang lanjutan
                 }
             }
 
@@ -148,8 +162,30 @@ router.get('/api/episodes', async (req, res) => {
                     } else {
                         const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetOtaku) : ep.judul;
                         epMap.set(num, {
-                            judul: formatEpisodeTitle(adjustedJudul), // Jika cuma ada di Otaku
+                            judul: formatEpisodeTitle(adjustedJudul),
                             urls: { otakudesu: ep.url }
+                        });
+                    }
+                });
+            }
+
+            // Gabungkan/Tambahkan data Kuronime
+            if (kuroRes && kuroRes.daftar_episode) {
+                kuroRes.daftar_episode.forEach(ep => {
+                    if (ep.judul.toLowerCase().includes('batch')) return;
+                    const rawNum = extractEpNum(ep.judul);
+                    const num = typeof rawNum === 'number' ? rawNum + offsetKuro : rawNum;
+                    const adjustedJudul = typeof rawNum === 'number'
+                        ? adjustTitleEpisodeNumber(ep.judul, offsetKuro)
+                        : ep.judul;
+
+                    if (epMap.has(num)) {
+                        const existing = epMap.get(num);
+                        existing.urls.kuronime = ep.url;
+                    } else {
+                        epMap.set(num, {
+                            judul: formatEpisodeTitle(adjustedJudul),
+                            urls: { kuronime: ep.url }
                         });
                     }
                 });

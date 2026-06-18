@@ -13,6 +13,7 @@ import { runSync } from './src/sync/anime_sync.js';
 import { syncOtakudesu } from './src/sync/otaku_sync.js';
 import { syncNeosatsu } from './src/sync/neosatsu_sync.js';
 import { syncUnified } from './src/sync/unified_sync.js';
+import { syncKuronime } from './src/sync/kuronime_sync.js';
 import { initPagePool, getBrowser } from './src/puppeteer/pool.js';
 
 async function rebuildDatabase() {
@@ -41,12 +42,14 @@ async function rebuildDatabase() {
     await runSync();
     console.log("✅ Sinkronisasi Samehadaku tuntas!");
     
-    // 5. Sinkronisasi Otakudesu & Neosatsu (Akan dicocokkan secara ketat dengan algoritma baru)
-    console.log("\n[5/6] Mengambil data tambahan & menggabungkan (Otakudesu & Neosatsu)...");
+    // 5. Sinkronisasi Otakudesu, Neosatsu & Kuronime
+    console.log("\n[5/6] Mengambil data tambahan & menggabungkan (Otakudesu, Neosatsu & Kuronime)...");
     await syncOtakudesu();
     console.log("✅ Sinkronisasi Otakudesu tuntas!");
     await syncNeosatsu();
     console.log("✅ Sinkronisasi Tokusatsu (Neosatsu) tuntas!");
+    await syncKuronime();
+    console.log("✅ Sinkronisasi Kuronime tuntas!");
     
     // 6. Enrichment TMDB (Proses berulang sampai antrean habis terpoles semua)
     console.log("\n[6/6] Memulai pengayaan metadata dari TMDB (Bisa memakan waktu)...");

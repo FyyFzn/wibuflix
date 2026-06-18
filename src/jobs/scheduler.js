@@ -3,6 +3,7 @@ import { startBackgroundAnimeSync } from '../sync/anime_sync.js';
 import { startBackgroundOtakuSync } from '../sync/otaku_sync.js';
 import { startBackgroundLatestSync } from '../sync/latest_sync.js';
 import { syncNeosatsu } from '../sync/neosatsu_sync.js';
+import { startBackgroundKuronimeSync } from '../sync/kuronime_sync.js';
 
 export function initScheduler() {
     const log = global.forceLog || console.log;
@@ -12,6 +13,7 @@ export function initScheduler() {
     startBackgroundAnimeSync();
     startBackgroundOtakuSync();
     startBackgroundLatestSync();
+    startBackgroundKuronimeSync();
 
     // 2. Memulai proses unified sync (dijadwalkan setelah 10 detik agar server stabil)
     setTimeout(() => {

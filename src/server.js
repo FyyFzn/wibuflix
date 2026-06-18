@@ -16,6 +16,7 @@ import scrapeRouter from './routes/scrape.js';
 import extractRouter from './routes/extract.js';
 import proxyRouter from './routes/proxy.js';
 import otakudesuRouter from './routes/otakudesu.js';
+import kuronimeRouter from './routes/kuronime.js';
 import adminRouter from './routes/admin.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,7 +41,9 @@ app.use(scrapeRouter);
 app.use(extractRouter);
 app.use(proxyRouter);
 app.use(otakudesuRouter);
+app.use(kuronimeRouter);
 app.use(adminRouter);
+
 
 // Global Error Handler Middleware (Harus diletakkan setelah semua router)
 app.use(errorHandler);
