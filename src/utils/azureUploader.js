@@ -602,6 +602,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     
                     ffmpegArgs.push(
                         '-i', videoUrl,
+                        '-map', '0:v?',
+                        '-map', '0:a?',
                         '-c', 'copy',
                         '-f', 'hls',
                         '-hls_time', '10',
@@ -613,6 +615,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     ffmpegArgs = [
                         '-y',
                         '-i', tempFilePath,
+                        '-map', '0:v?',
+                        '-map', '0:a?',
                         '-c', 'copy',
                         '-f', 'hls',
                         '-hls_time', '10',
