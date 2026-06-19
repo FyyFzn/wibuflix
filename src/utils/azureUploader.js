@@ -341,7 +341,12 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
                         writer.on('finish', () => {
                             clearTimeout(idleTimeout);
                             abortCallbacks.delete(onAbort);
-                            resolve();
+                            const expectedSize = end - start + 1;
+                            if (chunkDownloadedBytes < expectedSize && attempt < maxAttempts) {
+                                reject(new Error(`INCOMPLETE_CHUNK: Expected ${expectedSize}, got ${chunkDownloadedBytes}`));
+                            } else {
+                                resolve();
+                            }
                         });
                         writer.on('error', (err) => {
                             clearTimeout(idleTimeout);
@@ -575,6 +580,15 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                             uploadProgressCache.set(blobPath, 'Menyelesaikan playlist akhir...');
                             
                             const remainingFiles = fs.readdirSync(hlsOutputDir);
+                            const finalTsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
+                            
+                            // VALIDASI ANTI-TERPUTUS: Anime/Film minimal harus punya lebih dari 2 segmen (20 detik)
+                            // Jika hanya ada 1-2 segmen, berarti koneksi terputus / diblokir cloud server!
+                            if (finalTsFiles.length <= 2 && !blobPath.includes('trailer')) {
+                                reject(new Error('Koneksi terputus di tengah jalan: Hanya mendapatkan 1-2 segmen video. Silakan coba server lain.'));
+                                return;
+                            }
+
                             await Promise.all(remainingFiles.map(file => uploadLimit(async () => {
                                 const localPath = path.join(hlsOutputDir, file);
                                 const azureDest = `${baseAzurePath}/${file}`;
