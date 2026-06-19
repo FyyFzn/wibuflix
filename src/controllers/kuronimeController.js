@@ -64,13 +64,14 @@ export async function getKuronimeServers(episodeUrl) {
         $ = fetchRes.$;
         html = fetchRes.html;
         slot = fetchRes.slot;
-        
+
         if (!html) debugInfo = "HTML is entirely empty.";
         else if (html.includes('Just a moment') || html.includes('cf-browser-verification')) debugInfo = "Blocked by Cloudflare Captcha Page";
         else if (!html.includes('_0xa100d42aa')) debugInfo = "Token _0xa100d42aa not found in HTML. HTML snippet: " + html.substring(0, 300);
 
         // Judul episode
-        const judul = ($('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
+        let judul = ($('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
+        judul = judul.replace(/^Nonton\s+/i, ''); // Hapus kata "Nonton" di awal judul
 
         // Navigasi prev/next
         let nav_prev = null, nav_next = null;
