@@ -572,17 +572,17 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
                 let totalUploadedChunks = 0;
                 let finalSweepTriggered = false; // Mencegah double resolve
+                let isProcessingInterval = false; // Mencegah overlap interval
                 
                 const intervalId = setInterval(async () => {
+                    if (isProcessingInterval) return;
+                    isProcessingInterval = true;
                     try {
                         if (isUploadError) {
                             clearInterval(intervalId);
                             return;
                         }
                         
-                        // BUG FIX KEKRITISAN (Insting Anda benar):
-                        // Cek kondisi selesai (isFfmpegDone) di AWAL interval,
-                        // agar tidak terkena "early return" jika tsFiles kosong di akhir.
                         if (isFfmpegDone && !finalSweepTriggered) {
                             finalSweepTriggered = true;
                             clearInterval(intervalId);
@@ -591,8 +591,6 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                             const remainingFiles = fs.readdirSync(hlsOutputDir);
                             const finalTsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
                             
-                            // VALIDASI ANTI-TERPUTUS: Anime/Film minimal harus punya lebih dari 2 segmen (20 detik)
-                            // Jika hanya ada 1-2 segmen, berarti koneksi terputus / diblokir cloud server!
                             if (finalTsFiles.length <= 2 && !blobPath.includes('trailer')) {
                                 reject(new Error('Koneksi terputus di tengah jalan: Hanya mendapatkan 1-2 segmen video. Silakan coba server lain.'));
                                 return;
@@ -603,6 +601,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                                 const azureDest = `${baseAzurePath}/${file}`;
                                 const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
                                 
+                                if (!fs.existsSync(localPath)) return;
+
                                 const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
                                 await blockBlobClient.uploadFile(localPath, {
                                     blobHTTPHeaders: { 
@@ -624,8 +624,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                             tsFiles.pop(); 
                         }
 
-                        // Jika kosong, lompat ke detik berikutnya
-                        if (tsFiles.length === 0) return;
+                        if (tsFiles.length === 0) {
+                            isProcessingInterval = false;
+                            return;
+                        }
 
                         await Promise.all(tsFiles.map(file => uploadLimit(async () => {
                             if (isUploadError) return;
@@ -634,6 +636,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                             
                             if (!fs.existsSync(localPath)) return;
                             
+                            // Tambahan cek ukuran file agar tidak crash (Azure ReadStream error)
+                            const stats = fs.statSync(localPath);
+                            if (stats.size === 0) return;
+
                             const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
                             await blockBlobClient.uploadFile(localPath, {
                                 blobHTTPHeaders: { 
@@ -653,6 +659,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                         clearInterval(intervalId);
                         try { ffmpegProcess.kill(); } catch(e){}
                         reject(new Error('Gagal mencicil ke Azure: ' + err.message));
+                    } finally {
+                        isProcessingInterval = false;
                     }
                 }, 4000);
             });
