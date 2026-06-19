@@ -104,6 +104,7 @@ function serverScore(host) {
     if (h.includes('mega')) return 100;
     if (h.includes('wibufile')) return 90;
     if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
+    if (h.includes('mediafire')) return 75;
     if (h.includes('pixeldrain')) return 70;
     if (h.includes('acefile')) return 60;
     if (h.includes('vidhide')) return 50;
