@@ -76,8 +76,8 @@ export async function getKuronimeServers(episodeUrl) {
             if (cls.includes('next') || $(el).text().toLowerCase().includes('next')) nav_next = href;
         });
 
-        // Ambil sources via dekripsi AES (tanpa Puppeteer)
-        const sources = await fetchKuronimeSourcesFromHtml(html);
+        // Ambil sources via dekripsi AES, bawa Puppeteer page untuk fallback CF
+        const sources = await fetchKuronimeSourcesFromHtml(html, slot ? slot.page : null);
 
         const servers = [];
 

@@ -41,9 +41,10 @@ export function decryptKuronimeField(encryptedBase64) {
  * Mengambil token dari halaman episode Kuronime dan menembak API animeku.org
  * untuk mendapatkan link stream/download yang sudah didekripsi.
  * @param {string} html - HTML mentah dari halaman episode Kuronime
+ * @param {object} page - (Opsional) Objek Puppeteer page untuk fallback
  * @returns {object|null} - { stream: { src, src_sd }, mirror: { embed, download } }
  */
-export async function fetchKuronimeSourcesFromHtml(html) {
+export async function fetchKuronimeSourcesFromHtml(html, page = null) {
     const tokenMatch = html.match(/var\s+_0xa100d42aa\s*=\s*["']([^"']+)["']/i);
     if (!tokenMatch) {
         console.log('[KuronimeDecryptor] Token _0xa100d42aa tidak ditemukan di halaman.');
@@ -52,8 +53,9 @@ export async function fetchKuronimeSourcesFromHtml(html) {
     const token = tokenMatch[1];
     console.log(`[KuronimeDecryptor] Token ditemukan: ${token.substring(0, 20)}...`);
 
+    let apiResp;
     try {
-        const { data: apiResp } = await axios.post(
+        const res = await axios.post(
             'https://animeku.org/api/v9/sources',
             { id: token },
             {
@@ -66,16 +68,44 @@ export async function fetchKuronimeSourcesFromHtml(html) {
                 timeout: 10000
             }
         );
+        apiResp = res.data;
+    } catch (err) {
+        console.error('[KuronimeDecryptor] Gagal fetch API dengan Axios:', err.message);
+        if (!page) {
+            console.error('[KuronimeDecryptor] Tidak ada page untuk fallback Puppeteer.');
+            return null;
+        }
+        
+        console.log('[KuronimeDecryptor] Mencoba fallback fetch API menggunakan Puppeteer page.evaluate...');
+        try {
+            apiResp = await page.evaluate(async (tokenId) => {
+                const fetchRes = await fetch('https://animeku.org/api/v9/sources', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ id: tokenId })
+                });
+                if (!fetchRes.ok) throw new Error('HTTP ' + fetchRes.status);
+                return await fetchRes.json();
+            }, token);
+        } catch (pageErr) {
+            console.error('[KuronimeDecryptor] Puppeteer fallback juga gagal:', pageErr.message);
+            return null;
+        }
+    }
+
+    try {
 
         const result = {};
 
-        if (apiResp.src) result.stream = decryptKuronimeField(apiResp.src);
-        if (apiResp.src_sd) result.stream_sd = decryptKuronimeField(apiResp.src_sd);
-        if (apiResp.mirror) result.mirror = decryptKuronimeField(apiResp.mirror);
+        if (apiResp && apiResp.src) result.stream = decryptKuronimeField(apiResp.src);
+        if (apiResp && apiResp.src_sd) result.stream_sd = decryptKuronimeField(apiResp.src_sd);
+        if (apiResp && apiResp.mirror) result.mirror = decryptKuronimeField(apiResp.mirror);
 
         return result;
     } catch (err) {
-        console.error('[KuronimeDecryptor] Gagal fetch API atau dekripsi:', err.message);
+        console.error('[KuronimeDecryptor] Gagal dekripsi respons API:', err.message);
         return null;
     }
 }
