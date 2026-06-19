@@ -264,6 +264,8 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     }
 }
 
+const activePrefetchLoops = new Set();
+
 /**
  * Prefetch sliding window — unduh episode dalam `upcomingUrls` satu per satu
  * secara sekuensial dengan jeda antar episode.
@@ -275,6 +277,12 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
 
     const validUrls = upcomingUrls.filter(Boolean);
     if (validUrls.length === 0) return;
+
+    const loopKey = `${seriesSlug}-${validUrls.join(',')}`;
+    if (activePrefetchLoops.has(loopKey)) return;
+    activePrefetchLoops.add(loopKey);
+
+    try {
 
     for (const epUrl of validUrls) {
         try {
@@ -328,6 +336,9 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
         } catch (err) {
             console.error(`[PrefetchWindow Error] ${epUrl}:`, err.message);
         }
+    }
+    } finally {
+        activePrefetchLoops.delete(loopKey);
     }
 }
 
