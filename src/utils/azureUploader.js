@@ -507,11 +507,20 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     const headersArray = [];
                     if (requestHeaders['Referer']) headersArray.push(`Referer: ${requestHeaders['Referer']}`);
                     if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
-                    if (requestHeaders['User-Agent']) headersArray.push(`User-Agent: ${requestHeaders['User-Agent']}`);
                     
                     ffmpegArgs = [
-                        '-y',
-                        '-headers', headersArray.join('\r\n') + '\r\n',
+                        '-y'
+                    ];
+                    
+                    if (requestHeaders['User-Agent']) {
+                        ffmpegArgs.push('-user_agent', requestHeaders['User-Agent']);
+                    }
+                    
+                    if (headersArray.length > 0) {
+                        ffmpegArgs.push('-headers', headersArray.join('\r\n') + '\r\n');
+                    }
+                    
+                    ffmpegArgs.push(
                         '-i', videoUrl,
                         '-c', 'copy',
                         '-f', 'hls',
@@ -519,7 +528,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                         '-hls_playlist_type', 'vod',
                         '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
                         path.join(hlsOutputDir, 'playlist.m3u8')
-                    ];
+                    );
                 } else {
                     ffmpegArgs = [
                         '-y',
@@ -536,7 +545,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 await execFileAsync(ffmpegPath, ffmpegArgs);
                 console.info(`[Azure Uploader] Pemotongan HLS sukses diterapkan untuk ${blobPath}.`);
             } catch (fastErr) {
-                 throw new Error('FFmpeg HLS gagal: ' + fastErr.message);
+                 const stderrMsg = fastErr.stderr ? fastErr.stderr.toString() : '';
+                 throw new Error('FFmpeg HLS gagal: ' + fastErr.message + '\n' + stderrMsg);
             }
 
             // ========================================================
