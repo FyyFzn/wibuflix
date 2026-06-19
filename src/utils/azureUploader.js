@@ -455,7 +455,15 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 let numThreads = 1;
                 const hostLow = videoUrl.toLowerCase();
                 if (hostLow.includes('kraken')) numThreads = 16;
-                if (hostLow.includes('pixeldrain') || hostLow.includes('pixeldra.in')) numThreads = 4;
+                if (
+                    hostLow.includes('pixeldrain') || 
+                    hostLow.includes('pixeldra.in') ||
+                    hostLow.includes('googleapis') ||
+                    hostLow.includes('drive.google') ||
+                    hostLow.includes('mediafire')
+                ) {
+                    numThreads = 4;
+                }
                 
                 if (rangeCheck.supported && numThreads > 1) {
                     console.info(`[Azure Uploader] Mode JDownloader/Kraken. Mengunduh ke VPS lokal...`);
