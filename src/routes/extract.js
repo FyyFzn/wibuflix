@@ -147,7 +147,6 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
     if (status === 'READY' || status === 'UPLOADING' || (status === 'FAILED' && source !== 'queue')) {
-        console.info(`${logPrefix} Skip ${episodeSlug} — status: ${status}`);
         return { success: false, reason: 'Already processing or failed' };
     }
 
@@ -283,7 +282,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
 
             if (status === 'READY' || status === 'FAILED') {
                 // Sudah done atau sudah gagal — skip
-                console.info(`[PrefetchWindow] Skip ${episodeSlug} — status: ${status}`);
+                // console.info(`[PrefetchWindow] Skip ${episodeSlug} — status: ${status}`);
                 continue;
             }
 
