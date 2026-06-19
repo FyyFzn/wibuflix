@@ -97,7 +97,7 @@ export async function extract(embedUrl, req) {
             if (mirrorMatch) {
                 mirrorArr = JSON.parse(mirrorMatch[0]);
             } else {
-                const idMatch = unpacked.match(/"id"\s*:\s*"(\d+)"/);
+                const idMatch = unpacked.match(/(?:"id"\s*:\s*"(\d+)"|var\s+id\s*=\s*(\d+))/);
                 const keyMatch = unpacked.match(/var\s+[a-zA-Z0-9_]+\s*=\s*["']([a-f0-9]{32,})["']/g);
                 if (idMatch && keyMatch && keyMatch.length > 0) {
                     let foundKey = '';
@@ -110,19 +110,46 @@ export async function extract(embedUrl, req) {
                     if (!foundKey) {
                         foundKey = keyMatch[keyMatch.length-1].match(/["']([a-f0-9]{32,})["']/)[1];
                     }
-                    mirrorArr = [{ v: idMatch[1], J: foundKey }];
+                    const validId = idMatch[1] || idMatch[2];
+                    mirrorArr = [{ v: validId, J: foundKey }];
                 }
             }
             
             if (mirrorArr.length > 0) {
                 console.log(`[Acefile] Ditemukan ${mirrorArr.length} mirror`);
+                
+                const customHeaders = { 'User-Agent': 'Mozilla/5.0' };
+                if (process.env.ACEFILE_COOKIE) {
+                    customHeaders['Cookie'] = process.env.ACEFILE_COOKIE;
+                    console.log(`[Acefile] Menggunakan cookie login dari env.`);
+                }
+
                 for (const m of mirrorArr) {
                     const localUrl = `https://acefile.co/local/${m.v}?key=${m.J}`;
                     try {
-                        const { data: localHtml } = await axios.get(localUrl, {
+                        let { data: localHtml } = await axios.get(localUrl, {
                             timeout: 10000,
-                            headers: { 'User-Agent': 'Mozilla/5.0' }
+                            headers: customHeaders
                         });
+                        
+                        // Cek apakah video dilindungi dan harus disalin (butuh login)
+                        const copyMatch = localHtml.match(/href=["']([^"']+files\/do_copy[^"']+)["']/i);
+                        if (copyMatch) {
+                            if (!process.env.ACEFILE_COOKIE) {
+                                console.warn(`[Acefile] Video minta dicopy ke akun, tapi ACEFILE_COOKIE tidak diset! Membatalkan...`);
+                            } else {
+                                const copyUrl = copyMatch[1].startsWith('http') ? copyMatch[1] : `https://acefile.co${copyMatch[1]}`;
+                                console.log(`[Acefile] Video dilindungi. Menjalankan fungsi auto-copy ke akun Anda...`);
+                                try {
+                                    await axios.get(copyUrl, { timeout: 10000, headers: customHeaders });
+                                    console.log(`[Acefile] Auto-copy sukses! Mengambil ulang URL sumber...`);
+                                    const retryRes = await axios.get(localUrl, { timeout: 10000, headers: customHeaders });
+                                    localHtml = retryRes.data;
+                                } catch (copyErr) {
+                                    console.error(`[Acefile] Auto-copy gagal: ${copyErr.message}`);
+                                }
+                            }
+                        }
                         
                         const sourceMatch = localHtml.match(/sources:\s*JSON\.parse\(atob\("([^"]+)"\)\)/);
                         if (sourceMatch) {
@@ -136,7 +163,7 @@ export async function extract(embedUrl, req) {
                                     maxRedirects: 0,
                                     validateStatus: null,
                                     headers: { 
-                                        'User-Agent': 'Mozilla/5.0',
+                                        ...customHeaders,
                                         'Referer': 'https://acefile.co/'
                                     }
                                 });
