@@ -198,45 +198,57 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
             return { success: false, reason: 'Tidak ada server tersedia' };
         }
 
-        const groups = { 1080: [], 720: [], 480: [], 360: [] };
+        // Check M3U8 from direct stream first (Kuronime)
         for (const srv of servers) {
-            const resGroup = getResolutionGroup(srv.nama);
-            if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
+            if (srv.type === 'direct' && srv.iframeUrl && srv.iframeUrl.includes('.m3u8')) {
+                matchedSource = { url: srv.iframeUrl, headers: srv.headers || {} };
+                m3u8Found = true;
+                console.info(`${logPrefix} Menemukan source M3U8 langsung dari ${srv.source}: ${srv.iframeUrl}`);
+                break;
+            }
         }
 
-        // Sama seperti smart-play: urutkan server berdasarkan skor kecepatan provider
-        for (const res of [1080, 720, 480, 360]) {
-            if (groups[res].length > 0) {
-                groups[res].sort((a, b) => serverScore(b.namaHost) - serverScore(a.namaHost));
-                const serverNames = groups[res].map(s => s.namaHost).join(', ');
-                console.info(`${logPrefix} Menguji server ${res}p: ${serverNames}`);
+        if (!m3u8Found) {
+            const groups = { 1080: [], 720: [], 480: [], 360: [] };
+            for (const srv of servers) {
+                const resGroup = getResolutionGroup(srv.nama);
+                if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
             }
-            for (const srv of groups[res]) {
-                try {
-                    const extracted = await extractVideoUrl(srv.iframeUrl);
-                    if (extracted && extracted.url && !extracted.webviewOnly) {
-                        // Merge headers, prioritizing the ones provided by the server extraction
-                        const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
-                        
-                        // Ping server untuk mengecek limit bandwidth (HTTP 429)
-                        try {
-                            await checkRangeSupport(extracted.url, finalHeaders);
-                        } catch (pingErr) {
-                            if (pingErr.message === 'HTTP_429_LIMIT') {
-                                console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
-                                continue;
-                            }
-                            throw pingErr;
-                        }
-                        matchedSource = { url: extracted.url, headers: finalHeaders };
-                        console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
-                        break;
-                    }
-                } catch (e) {
-                    console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
+
+            // Sama seperti smart-play: urutkan server berdasarkan skor kecepatan provider
+            for (const res of [1080, 720, 480, 360]) {
+                if (groups[res].length > 0) {
+                    groups[res].sort((a, b) => serverScore(b.namaHost) - serverScore(a.namaHost));
+                    const serverNames = groups[res].map(s => s.namaHost).join(', ');
+                    console.info(`${logPrefix} Menguji server ${res}p: ${serverNames}`);
                 }
+                for (const srv of groups[res]) {
+                    try {
+                        const extracted = await extractVideoUrl(srv.iframeUrl);
+                        if (extracted && extracted.url && !extracted.webviewOnly) {
+                            // Merge headers, prioritizing the ones provided by the server extraction
+                            const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
+                            
+                            // Ping server untuk mengecek limit bandwidth (HTTP 429)
+                            try {
+                                await checkRangeSupport(extracted.url, finalHeaders);
+                            } catch (pingErr) {
+                                if (pingErr.message === 'HTTP_429_LIMIT') {
+                                    console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
+                                    continue;
+                                }
+                                throw pingErr;
+                            }
+                            matchedSource = { url: extracted.url, headers: finalHeaders };
+                            console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
+                            break;
+                        }
+                    } catch (e) {
+                        console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
+                    }
+                }
+                if (matchedSource) break;
             }
-            if (matchedSource) break;
         }
     } finally {
         activeExtractions.delete(blobPath);
