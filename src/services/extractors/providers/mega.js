@@ -10,7 +10,14 @@ export const extract = async (url, req) => {
             cleanUrl = `https://mega.nz/file/${parts[0]}#${parts[1]}`;
         }
         
-        const baseUrl = req ? `${req.protocol}://${req.get('host')}` : `http://127.0.0.1:${process.env.PORT || 3000}`;
+        let localBaseUrl = `http://127.0.0.1:${process.env.PORT || 3000}`;
+        if (process.env.APP_URL) {
+            localBaseUrl = process.env.APP_URL.replace(/\/$/, '');
+        } else if (process.env.WEBSITE_HOSTNAME) {
+            // Azure WebApp environment
+            localBaseUrl = `https://${process.env.WEBSITE_HOSTNAME}`;
+        }
+        const baseUrl = req ? `${req.protocol}://${req.get('host')}` : localBaseUrl;
         const proxyUrl = `${baseUrl}/api/proxy/mega?url=${encodeURIComponent(cleanUrl)}`;
         
         return {
