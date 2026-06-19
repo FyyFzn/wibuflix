@@ -2,6 +2,10 @@ import * as cheerio from 'cheerio';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronimeDecryptor.js';
+import { getCache } from '../utils/cacheManager.js';
+
+const cache = getCache('kuronime', 3600);
+
 
 /**
  * Mengambil daftar episode dari halaman detail anime Kuronime.
@@ -9,6 +13,13 @@ import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronime
  * @returns {object} - { judul_seri, cover_scraper, daftar_episode }
  */
 export async function getKuronimeEpisodes(animeUrl) {
+    const cacheKey = `kuro_eps_${animeUrl}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+        console.log(`[Kuronime Cache Hit] ${cacheKey}`);
+        return cachedData;
+    }
+
     console.log(`[Kuronime] Fetching episodes: ${animeUrl}`);
 
     // BUG FIX: Deklarasikan slot di luar try agar selalu bisa di-release di finally
@@ -40,7 +51,9 @@ export async function getKuronimeEpisodes(animeUrl) {
         // Kuronime menampilkan episode dari terbaru ke terlama, reverse agar ascending
         daftar_episode.reverse();
 
-        return { judul_seri: judul, cover_scraper: cover, daftar_episode };
+        const result = { judul_seri: judul, cover_scraper: cover, daftar_episode };
+        cache.set(cacheKey, result);
+        return result;
     } finally {
         // Selalu release slot, bahkan jika fetchWithCF throw
         if (slot) releaseToPool(slot);

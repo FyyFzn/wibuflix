@@ -3,6 +3,10 @@ import * as cheerio from 'cheerio';
 import { OtakudesuInstance } from 'otakudesu-scraper';
 import Anime from '../models/Anime.js';
 import { enrichWithMAL } from '../utils/malEnrichment.js';
+import { getCache } from '../utils/cacheManager.js';
+
+const cache = getCache('otakudesu', 3600);
+
 
 const otaku = new OtakudesuInstance('https://otakudesu.blog');
 
@@ -19,6 +23,13 @@ export async function getEpisodes(req, res) {
 }
 
 export async function getOtakuEpisodesFormatted(slug) {
+    const cacheKey = `otaku_eps_${slug}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+        console.log(`[Otakudesu Cache Hit] ${cacheKey}`);
+        return cachedData;
+    }
+
     console.log(`[Otakudesu] Fetching episodes for: ${slug}`);
     const details = await otaku.getExtraAnime(slug);
 
@@ -76,6 +87,7 @@ export async function getOtakuEpisodesFormatted(slug) {
         })
     };
 
+    cache.set(cacheKey, result);
     return result;
 }
 
