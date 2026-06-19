@@ -206,6 +206,11 @@ export function cancelUpload(seriesSlug, episodeSlug) {
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {
+        if (url.includes('/api/proxy/mega')) {
+            // Bypass HTTP ping untuk Mega karena kita akan download native
+            return { supported: false, totalSize: 0 };
+        }
+        
         console.log(`[Ping] Memeriksa Range Support untuk URL: ${url.substring(0, 150)}`);
         const axiosConfig = {
             method: 'get',
@@ -458,6 +463,57 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             if (rangeCheck.supported && numThreads > 1) {
                 console.info(`[Azure Uploader] Menggunakan JDownloader Mode (${numThreads} Threads) untuk ${blobPath}`);
                 await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);
+            } else if (videoUrl.includes('/api/proxy/mega')) {
+                console.info(`[Azure Uploader] Tahap 1: Mengunduh Mega secara NATIVE (8 Jalur)...`);
+                uploadProgressCache.set(blobPath, 'Menyiapkan koneksi native Mega...');
+                
+                const megaUrl = new URL(videoUrl).searchParams.get('url');
+                const { File } = await import('megajs');
+                const file = File.fromURL(megaUrl);
+                await file.loadAttributes();
+                
+                const totalSize = file.size;
+                const stream = file.download({ maxConnections: 8 });
+                
+                await new Promise((resolve, reject) => {
+                    const writer = fs.createWriteStream(tempFilePath);
+                    let downloadedBytes = 0;
+                    let nextLogThreshold = 5 * 1024 * 1024;
+                    
+                    stream.on('data', (chunk) => {
+                        downloadedBytes += chunk.length;
+                        if (downloadedBytes >= nextLogThreshold) {
+                            const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
+                            const msg = `Mengunduh Native Mega: ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
+                            uploadProgressCache.set(blobPath, msg);
+                            nextLogThreshold += 25 * 1024 * 1024;
+                        }
+                    });
+                    
+                    const onAbort = () => {
+                        stream.destroy(new Error('UPLOAD_CANCELLED'));
+                        writer.destroy(new Error('UPLOAD_CANCELLED'));
+                        reject(new Error('UPLOAD_CANCELLED'));
+                    };
+                    globalAbort.signal.addEventListener('abort', onAbort);
+                    
+                    stream.pipe(writer);
+                    
+                    writer.on('finish', () => {
+                        globalAbort.signal.removeEventListener('abort', onAbort);
+                        resolve();
+                    });
+                    
+                    stream.on('error', (err) => {
+                        globalAbort.signal.removeEventListener('abort', onAbort);
+                        reject(err);
+                    });
+                    
+                    writer.on('error', (err) => {
+                        globalAbort.signal.removeEventListener('abort', onAbort);
+                        reject(err);
+                    });
+                });
             } else {
                 console.info(`[Azure Uploader] Tahap 1: Mengunduh Single-Stream ke server lokal...`);
                 uploadProgressCache.set(blobPath, 'Mengunduh ke Server VPS... 0%');
