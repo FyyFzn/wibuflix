@@ -504,17 +504,17 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             try {
                 let ffmpegArgs = [];
                 if (isM3u8Input) {
-                    const headersArray = [];
-                    if (requestHeaders['Referer']) headersArray.push(`Referer: ${requestHeaders['Referer']}`);
-                    if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
-                    
-                    ffmpegArgs = [
-                        '-y'
-                    ];
+                    ffmpegArgs = ['-y'];
                     
                     if (requestHeaders['User-Agent']) {
                         ffmpegArgs.push('-user_agent', requestHeaders['User-Agent']);
                     }
+                    if (requestHeaders['Referer']) {
+                        ffmpegArgs.push('-referer', requestHeaders['Referer']);
+                    }
+                    
+                    const headersArray = [];
+                    if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
                     
                     if (headersArray.length > 0) {
                         ffmpegArgs.push('-headers', headersArray.join('\r\n') + '\r\n');
