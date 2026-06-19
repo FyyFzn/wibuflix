@@ -10,7 +10,7 @@ export const extract = async (url, req) => {
             cleanUrl = `https://mega.nz/file/${parts[0]}#${parts[1]}`;
         }
         
-        const baseUrl = req ? `${req.protocol}://${req.get('host')}` : `http://localhost:${process.env.PORT || 3000}`;
+        const baseUrl = req ? `${req.protocol}://${req.get('host')}` : `http://127.0.0.1:${process.env.PORT || 3000}`;
         const proxyUrl = `${baseUrl}/api/proxy/mega?url=${encodeURIComponent(cleanUrl)}`;
         
         return {
