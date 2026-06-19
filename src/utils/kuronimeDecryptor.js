@@ -71,7 +71,7 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         );
         apiResp = res.data;
     } catch (err) {
-        console.error('[KuronimeDecryptor] Gagal fetch API dengan Axios:', err.message);
+        console.warn('[KuronimeDecryptor] Axios di-blokir oleh CDN (403), mengaktifkan Puppeteer fallback...');
         
         let tempSlot = null;
         let evalPage = page;
