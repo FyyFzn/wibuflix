@@ -219,12 +219,17 @@ export async function checkRangeSupport(url, headers) {
                 if (match) return { supported: true, totalSize: parseInt(match[1], 10) };
             }
         }
+        // Jika status 200 OK, berarti file ada tapi tidak support resume
+        return { supported: false, totalSize: 0 };
     } catch (e) {
-        if (e.response && e.response.status === 429) {
-            throw new Error('HTTP_429_LIMIT');
+        if (e.response) {
+            if (e.response.status === 429) throw new Error('HTTP_429_LIMIT');
+            if (e.response.status === 404) throw new Error('HTTP_404_NOT_FOUND');
+            if (e.response.status === 403) throw new Error('HTTP_403_FORBIDDEN');
+            if (e.response.status >= 500) throw new Error(`HTTP_${e.response.status}_SERVER_ERROR`);
         }
+        throw new Error('NETWORK_ERROR: ' + e.message);
     }
-    return { supported: false, totalSize: 0 };
 }
 
 async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads, globalAbort, blobPath) {
@@ -504,7 +509,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             try {
                 let ffmpegArgs = [];
                 if (isM3u8Input) {
-                    ffmpegArgs = ['-y'];
+                    ffmpegArgs = [
+                        '-y',
+                        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto'
+                    ];
                     
                     if (requestHeaders['User-Agent']) {
                         ffmpegArgs.push('-user_agent', requestHeaders['User-Agent']);

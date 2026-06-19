@@ -201,10 +201,19 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         // Check M3U8 from direct stream first (Kuronime)
         for (const srv of servers) {
             if (srv.type === 'direct' && srv.iframeUrl && srv.iframeUrl.includes('.m3u8')) {
-                matchedSource = { url: srv.iframeUrl, headers: srv.headers || {} };
-                m3u8Found = true;
-                console.info(`${logPrefix} Menemukan source M3U8 langsung dari ${srv.source}: ${srv.iframeUrl}`);
-                break;
+                const isHighQuality = srv.nama.includes('1080') || srv.nama.includes('720');
+                if (!isHighQuality) continue; // Biarkan logika resolusi (groups) yang menangani jika hanya ada SD
+
+                try {
+                    const tempHeaders = srv.headers || {};
+                    await checkRangeSupport(srv.iframeUrl, tempHeaders);
+                    matchedSource = { url: srv.iframeUrl, headers: tempHeaders };
+                    m3u8Found = true;
+                    console.info(`${logPrefix} Menemukan source M3U8 Valid langsung dari ${srv.source}: ${srv.iframeUrl}`);
+                    break;
+                } catch (pingErr) {
+                    console.warn(`${logPrefix} Source M3U8 dari ${srv.source} mati/404 (${pingErr.message}), mencari alternatif lain...`);
+                }
             }
         }
 
