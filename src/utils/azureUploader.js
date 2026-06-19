@@ -414,23 +414,18 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
     }
 
     await ensureContainerExists();
-    // Set UPLOADING state with a 30-minute TTL to prevent it from getting stuck forever if the upload crashes
     uploadCache.set(blobPath, 'UPLOADING', 1800);
     console.info(`[Azure Uploader] Starting upload for ${blobPath} from ${videoUrl}`);
 
-    // Return the upload promise so callers can wait for it if they want
     return (async () => {
         const globalAbort = new AbortController();
-        
-        // Naikkan batas max listeners agar tidak memicu MaxListenersExceededWarning saat Kraken (16 jalur) berjalan
         try { setMaxListeners(50, globalAbort.signal); } catch (e) {}
         
         const tempFileName = crypto.randomUUID() + '.mp4';
         const tempFilePath = path.join(os.tmpdir(), tempFileName);
+        const hlsOutputDir = path.join(os.tmpdir(), `hls_${crypto.randomUUID()}`);
         
         activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath, source });
-        
-        const hlsOutputDir = path.join(os.tmpdir(), `hls_${crypto.randomUUID()}`);
         
         try {
             if (fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
@@ -440,285 +435,239 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 ...headers
             };
 
-            const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+            let isM3u8Input = videoUrl.includes('.m3u8');
+            let isPipeMode = false;
+            let ffmpegInputSource = videoUrl;
+            let streamSource = null;
 
-            // ========================================================
-            // TAHAP 1: UNDUH UTUH KE SERVER LOKAL (VPS)
-            // ========================================================
-            const isM3u8Input = videoUrl.includes('.m3u8');
-            
             if (isM3u8Input) {
-                console.info(`[Azure Uploader] URL input adalah M3U8. Melewati Tahap 1 (Unduh Tunggal) dan langsung ke FFmpeg.`);
+                console.info(`[Azure Uploader] Mode M3U8: FFmpeg membaca dari URL.`);
                 uploadProgressCache.set(blobPath, 'Menghubungkan ke stream M3U8...');
             } else {
-                console.info(`[Azure Uploader] Tahap 1: Mengecek JDownloader Mode untuk ${videoUrl}`);
                 uploadProgressCache.set(blobPath, 'Menghubungkan ke server...');
-                
                 const rangeCheck = await checkRangeSupport(videoUrl, requestHeaders);
-            
-            let numThreads = 1;
-            const hostLow = videoUrl.toLowerCase();
-            if (hostLow.includes('kraken')) numThreads = 16;
-            
-            if (rangeCheck.supported && numThreads > 1) {
-                console.info(`[Azure Uploader] Menggunakan JDownloader Mode (${numThreads} Threads) untuk ${blobPath}`);
-                await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);
-            } else if (videoUrl.includes('/api/proxy/mega')) {
-                console.info(`[Azure Uploader] Tahap 1: Mengunduh Mega secara NATIVE (8 Jalur)...`);
-                uploadProgressCache.set(blobPath, 'Menyiapkan koneksi native Mega...');
                 
-                const megaUrl = new URL(videoUrl).searchParams.get('url');
-                const { File } = await import('megajs');
-                const file = File.fromURL(megaUrl);
-                await file.loadAttributes();
+                let numThreads = 1;
+                const hostLow = videoUrl.toLowerCase();
+                if (hostLow.includes('kraken')) numThreads = 16;
                 
-                const totalSize = file.size;
-                const stream = file.download({ maxConnections: 8 });
-                
-                await new Promise((resolve, reject) => {
-                    const writer = fs.createWriteStream(tempFilePath);
-                    let downloadedBytes = 0;
-                    let nextLogThreshold = 5 * 1024 * 1024;
+                if (rangeCheck.supported && numThreads > 1) {
+                    console.info(`[Azure Uploader] Mode JDownloader/Kraken. Mengunduh ke VPS lokal...`);
+                    ffmpegInputSource = tempFilePath;
+                    await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);
+                } else if (videoUrl.includes('/api/proxy/mega')) {
+                    console.info(`[Azure Uploader] Mode Mega: Mengalirkan data (Pipe) ke FFmpeg...`);
+                    isPipeMode = true;
+                    uploadProgressCache.set(blobPath, 'Menyiapkan aliran Mega...');
                     
-                    stream.on('data', (chunk) => {
-                        downloadedBytes += chunk.length;
-                        if (downloadedBytes >= nextLogThreshold) {
-                            const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
-                            const msg = `Mengunduh Native Mega: ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
-                            uploadProgressCache.set(blobPath, msg);
-                            nextLogThreshold += 25 * 1024 * 1024;
-                        }
-                    });
-                    
-                    const onAbort = () => {
-                        stream.destroy(new Error('UPLOAD_CANCELLED'));
-                        writer.destroy(new Error('UPLOAD_CANCELLED'));
-                        reject(new Error('UPLOAD_CANCELLED'));
-                    };
-                    globalAbort.signal.addEventListener('abort', onAbort);
-                    
-                    stream.pipe(writer);
-                    
-                    writer.on('finish', () => {
-                        globalAbort.signal.removeEventListener('abort', onAbort);
-                        resolve();
-                    });
-                    
-                    stream.on('error', (err) => {
-                        globalAbort.signal.removeEventListener('abort', onAbort);
-                        reject(err);
-                    });
-                    
-                    writer.on('error', (err) => {
-                        globalAbort.signal.removeEventListener('abort', onAbort);
-                        reject(err);
-                    });
-                });
-            } else {
-                console.info(`[Azure Uploader] Tahap 1: Mengunduh Single-Stream ke server lokal...`);
-                uploadProgressCache.set(blobPath, 'Mengunduh ke Server VPS... 0%');
-                
-                const axiosConfig = {
-                    method: 'get',
-                    url: videoUrl,
-                    responseType: 'stream',
-                    headers: requestHeaders,
-                    timeout: 30000,
-                    signal: globalAbort.signal
-                };
-                if (videoUrl.includes('127.0.0.1') || videoUrl.includes('localhost')) {
-                    axiosConfig.proxy = false;
-                }
-                
-                const response = await axios(axiosConfig);
-
-                const contentLengthStr = response.headers['content-length'];
-                const contentLength = contentLengthStr ? parseInt(contentLengthStr) : 0;
-                let totalDownloadedBytes = 0;
-
-                const writer = fs.createWriteStream(tempFilePath);
-                
-                let nextLogThreshold = 5 * 1024 * 1024;
-                response.data.on('data', (chunk) => {
-                    totalDownloadedBytes += chunk.length;
-                    if (totalDownloadedBytes >= nextLogThreshold) {
-                        const downloadedMB = Math.round(totalDownloadedBytes / 1024 / 1024);
-                        const msg = contentLength > MIN_VIDEO_SIZE 
-                            ? `Mengunduh ke Server VPS: ${Math.round((totalDownloadedBytes / contentLength) * 100)}% (${downloadedMB}MB / ${Math.round(contentLength / 1024 / 1024)}MB)`
-                            : `Mengunduh ke Server VPS: ${downloadedMB}MB...`;
-                            
-                        console.info(`[Azure Uploader] ${blobPath} - ${msg}`);
-                        uploadProgressCache.set(blobPath, msg);
-                        nextLogThreshold += 25 * 1024 * 1024;
-                    }
-                });
-
-                response.data.pipe(writer);
-
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                    globalAbort.signal.addEventListener('abort', () => {
-                        writer.destroy(new Error('UPLOAD_CANCELLED'));
-                        reject(new Error('UPLOAD_CANCELLED'));
-                    });
-                });
-
-                if (totalDownloadedBytes < MIN_VIDEO_SIZE) {
-                    throw new Error(`[Azure Uploader] File terlalu kecil (${totalDownloadedBytes} bytes) — URL mungkin bukan direct link video.`);
-                }
-            }
-            } // end if (!isM3u8Input)
-
-            // ========================================================
-            // TAHAP 2: POTONG VIDEO JADI HLS (M3U8)
-            // ========================================================
-            if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
-            
-            console.info(`[Azure Uploader] Tahap 2: Mengubah format ke pecahan HLS...`);
-            uploadProgressCache.set(blobPath, 'Memproses video (FFmpeg HLS)...');
-            
-            try {
-                let ffmpegArgs = [];
-                if (isM3u8Input) {
-                    ffmpegArgs = [
-                        '-y',
-                        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto'
-                    ];
-                    
-                    if (requestHeaders['User-Agent']) {
-                        ffmpegArgs.push('-user_agent', requestHeaders['User-Agent']);
-                    }
-                    if (requestHeaders['Referer']) {
-                        ffmpegArgs.push('-referer', requestHeaders['Referer']);
-                    }
-                    
-                    const headersArray = [];
-                    if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
-                    
-                    if (headersArray.length > 0) {
-                        ffmpegArgs.push('-headers', headersArray.join('\r\n') + '\r\n');
-                    }
-                    
-                    ffmpegArgs.push(
-                        '-i', videoUrl,
-                        '-map', '0:v?',
-                        '-map', '0:a?',
-                        '-c', 'copy',
-                        '-f', 'hls',
-                        '-hls_time', '10',
-                        '-hls_playlist_type', 'vod',
-                        '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
-                        path.join(hlsOutputDir, 'playlist.m3u8')
-                    );
+                    const megaUrl = new URL(videoUrl).searchParams.get('url');
+                    const { File } = await import('megajs');
+                    const file = File.fromURL(megaUrl);
+                    await file.loadAttributes();
+                    streamSource = file.download({ maxConnections: 8 });
+                    streamSource.on('error', (err) => console.error('[Azure Uploader] Mega Stream Error:', err.message));
                 } else {
-                    ffmpegArgs = [
-                        '-y',
-                        '-i', tempFilePath,
-                        '-map', '0:v?',
-                        '-map', '0:a?',
-                        '-c', 'copy',
-                        '-f', 'hls',
-                        '-hls_time', '10',
-                        '-hls_playlist_type', 'vod',
-                        '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
-                        path.join(hlsOutputDir, 'playlist.m3u8')
-                    ];
+                    console.info(`[Azure Uploader] Mode Single Stream: Mengalirkan data (Pipe)...`);
+                    isPipeMode = true;
+                    uploadProgressCache.set(blobPath, 'Mengalirkan video ke mesin...');
+                    
+                    const axiosConfig = {
+                        method: 'get',
+                        url: videoUrl,
+                        responseType: 'stream',
+                        headers: requestHeaders,
+                        timeout: 30000,
+                        signal: globalAbort.signal
+                    };
+                    if (videoUrl.includes('127.0.0.1') || videoUrl.includes('localhost')) {
+                        axiosConfig.proxy = false;
+                    }
+                    const response = await axios(axiosConfig);
+                    streamSource = response.data;
                 }
-
-                await execFileAsync(ffmpegPath, ffmpegArgs);
-                console.info(`[Azure Uploader] Pemotongan HLS sukses diterapkan untuk ${blobPath}.`);
-            } catch (fastErr) {
-                 const stderrMsg = fastErr.stderr ? fastErr.stderr.toString() : '';
-                 throw new Error('FFmpeg HLS gagal: ' + fastErr.message + '\n' + stderrMsg);
             }
 
-            // ========================================================
-            // TAHAP 3: UNGGAH KE AZURE STORAGE
-            // ========================================================
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
 
-            console.info(`[Azure Uploader] Tahap 3: Mengunggah pecahan HLS ke Azure Blob...`);
+            console.info(`[Azure Uploader] Memulai pemotongan HLS paralel untuk ${blobPath}`);
+            uploadProgressCache.set(blobPath, 'Memproses video & Mengunggah cicilan HLS...');
             
-            const uploadAbort = new AbortController();
-            try { setMaxListeners(1000, uploadAbort.signal); } catch(e){}
-            const onGlobalAbort = () => uploadAbort.abort();
-            globalAbort.signal.addEventListener('abort', onGlobalAbort);
-
-            const filesToUpload = fs.readdirSync(hlsOutputDir);
-            uploadProgressCache.set(blobPath, `Mengunggah HLS ke Azure Cloud (0/${filesToUpload.length})...`);
-
-            const limit = pLimit(15);
-            let uploadedCount = 0;
             const baseAzurePath = `${seriesSlug}/${episodeSlug}`;
+            const m3u8Path = path.join(hlsOutputDir, 'playlist.m3u8');
+            
+            let ffmpegArgs = ['-y'];
+            if (isM3u8Input) {
+                ffmpegArgs.push(
+                    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+                    '-reconnect', '1', 
+                    '-reconnect_streamed', '1', 
+                    '-reconnect_delay_max', '10'
+                );
+                if (requestHeaders['User-Agent']) ffmpegArgs.push('-user_agent', requestHeaders['User-Agent']);
+                if (requestHeaders['Referer']) ffmpegArgs.push('-referer', requestHeaders['Referer']);
+                const headersArray = [];
+                if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
+                if (headersArray.length > 0) ffmpegArgs.push('-headers', headersArray.join('\r\n') + '\r\n');
+            }
 
-            const uploadPromises = filesToUpload.map(filename => limit(async () => {
-                if (uploadAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
-                const filePath = path.join(hlsOutputDir, filename);
-                const azurePath = `${baseAzurePath}/${filename}`;
-                const fileType = filename.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
-                const blockBlobClient = containerClient.getBlockBlobClient(azurePath);
+            ffmpegArgs.push(
+                '-i', isPipeMode ? 'pipe:0' : ffmpegInputSource,
+                '-map', '0:v?',
+                '-map', '0:a?',
+                '-c', 'copy',
+                '-f', 'hls',
+                '-hls_time', '10',
+                '-hls_playlist_type', 'vod',
+                '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
+                m3u8Path
+            );
+
+            await new Promise((resolve, reject) => {
+                let isFfmpegDone = false;
+                let isUploadError = false;
+                const uploadLimit = pLimit(3);
+                let ffmpegProcess;
                 
-                await blockBlobClient.uploadFile(filePath, {
-                    blobHTTPHeaders: { 
-                        blobContentType: fileType,
-                        blobCacheControl: 'public, max-age=31536000' // Cache 1 tahun
-                    },
-                    abortSignal: uploadAbort.signal
+                const onAbort = () => {
+                    isUploadError = true;
+                    if (ffmpegProcess) {
+                        try { ffmpegProcess.kill(); } catch(e){}
+                    }
+                    reject(new Error('UPLOAD_CANCELLED'));
+                };
+                globalAbort.signal.addEventListener('abort', onAbort);
+
+                ffmpegProcess = execFile(ffmpegPath, ffmpegArgs, (error, stdout, stderr) => {
+                    globalAbort.signal.removeEventListener('abort', onAbort);
+                    if (error && !isUploadError) {
+                        const errOutput = stderr ? stderr.toString() : '';
+                        reject(new Error(`FFmpeg Gagal: ${error.message}\n${errOutput}`));
+                        return;
+                    }
+                    isFfmpegDone = true;
                 });
 
-                uploadedCount++;
-                if (uploadedCount % 5 === 0 || uploadedCount === filesToUpload.length) {
-                    uploadProgressCache.set(blobPath, `Mengunggah HLS ke Azure Cloud (${uploadedCount}/${filesToUpload.length})...`);
+                if (isPipeMode && streamSource) {
+                    streamSource.pipe(ffmpegProcess.stdin);
+                    streamSource.on('error', (err) => {
+                        isUploadError = true;
+                        try { ffmpegProcess.kill(); } catch(e){}
+                        reject(new Error(`Stream putus: ${err.message}`));
+                    });
                 }
-            }));
 
-            await Promise.all(uploadPromises);
-            
-            globalAbort.signal.removeEventListener('abort', onGlobalAbort);
+                let totalUploadedChunks = 0;
+                let finalSweepTriggered = false; // Mencegah double resolve
+                
+                const intervalId = setInterval(async () => {
+                    try {
+                        if (isUploadError) {
+                            clearInterval(intervalId);
+                            return;
+                        }
+                        
+                        // BUG FIX KEKRITISAN (Insting Anda benar):
+                        // Cek kondisi selesai (isFfmpegDone) di AWAL interval,
+                        // agar tidak terkena "early return" jika tsFiles kosong di akhir.
+                        if (isFfmpegDone && !finalSweepTriggered) {
+                            finalSweepTriggered = true;
+                            clearInterval(intervalId);
+                            uploadProgressCache.set(blobPath, 'Menyelesaikan playlist akhir...');
+                            
+                            const remainingFiles = fs.readdirSync(hlsOutputDir);
+                            await Promise.all(remainingFiles.map(file => uploadLimit(async () => {
+                                const localPath = path.join(hlsOutputDir, file);
+                                const azureDest = `${baseAzurePath}/${file}`;
+                                const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
+                                
+                                const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
+                                await blockBlobClient.uploadFile(localPath, {
+                                    blobHTTPHeaders: { 
+                                        blobContentType: type, 
+                                        blobCacheControl: 'public, max-age=31536000' 
+                                    },
+                                    abortSignal: globalAbort.signal
+                                });
+                            })));
 
-            console.info(`[Azure Uploader] Berhasil mengunggah versi HLS ke Azure: ${blobPath}`);
+                            resolve();
+                            return;
+                        }
+                        
+                        const files = fs.readdirSync(hlsOutputDir);
+                        const tsFiles = files.filter(f => f.endsWith('.ts')).sort();
+                        
+                        if (tsFiles.length > 1 && !isFfmpegDone) {
+                            tsFiles.pop(); 
+                        }
+
+                        // Jika kosong, lompat ke detik berikutnya
+                        if (tsFiles.length === 0) return;
+
+                        await Promise.all(tsFiles.map(file => uploadLimit(async () => {
+                            if (isUploadError) return;
+                            const localPath = path.join(hlsOutputDir, file);
+                            const azureDest = `${baseAzurePath}/${file}`;
+                            
+                            if (!fs.existsSync(localPath)) return;
+                            
+                            const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
+                            await blockBlobClient.uploadFile(localPath, {
+                                blobHTTPHeaders: { 
+                                    blobContentType: 'video/mp2t', 
+                                    blobCacheControl: 'public, max-age=31536000' 
+                                },
+                                abortSignal: globalAbort.signal
+                            });
+                            
+                            try { fs.unlinkSync(localPath); } catch (e) {}
+                            totalUploadedChunks++;
+                            uploadProgressCache.set(blobPath, `Mencicil unggahan pecahan video... (${totalUploadedChunks} pecahan terkirim)`);
+                        })));
+
+                    } catch (err) {
+                        isUploadError = true;
+                        clearInterval(intervalId);
+                        try { ffmpegProcess.kill(); } catch(e){}
+                        reject(new Error('Gagal mencicil ke Azure: ' + err.message));
+                    }
+                }, 4000);
+            });
+
+            console.info(`[Azure Uploader] Berhasil mengunggah versi HLS ke Azure secara Estafet: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
             uploadProgressCache.delete(blobPath);
             activeUploadControllers.delete(blobPath);
-            failureCountCache.delete(blobPath); // Hapus count jika sukses
+            failureCountCache.delete(blobPath);
 
         } catch (err) {
             if (globalAbort.signal.aborted || err.message === 'UPLOAD_CANCELLED' || err.code === 'ERR_CANCELED') {
-                console.info(`[Azure Uploader] Upload dibatalkan oleh pengguna: ${blobPath}`);
+                console.info(`[Azure Uploader] Upload dibatalkan: ${blobPath}`);
                 uploadCache.del(blobPath);
                 uploadProgressCache.delete(blobPath);
             } else {
                 console.error(`[Azure Uploader] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
-                markUploadFailed(seriesSlug, episodeSlug); // Gunakan fungsi terpusat untuk logika retry
+                markUploadFailed(seriesSlug, episodeSlug);
                 uploadProgressCache.delete(blobPath);
             }
-            // Bersihkan controller aktif — selalu dijalankan, baik cancel maupun error
             activeUploadControllers.delete(blobPath);
-            // Lempar lagi agar caller (queue / smart-play) tahu ini error
             throw err;
         } finally {
-            // ========================================================
-            // TAHAP 4: BERSIH-BERSIH DISK VPS & ZOMBIE THREADS
-            // ========================================================
             try {
-                // Pastikan semua proses background dihentikan agar tidak jadi zombie
                 if (!globalAbort.signal.aborted) {
                     globalAbort.abort();
                 }
                 
                 if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
                 
-                // Hapus semua potongan file .part jika ada
                 for (let i = 0; i < 32; i++) {
                     const chunkPath = `${tempFilePath}.part${i}`;
                     if (fs.existsSync(chunkPath)) fs.unlinkSync(chunkPath);
                 }
                 
                 if (hlsOutputDir && fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
-                console.info(`[Azure Uploader] Disk VPS dibersihkan untuk ${blobPath}.`);
             } catch (fsErr) {
-                console.warn(`[Azure Uploader] Gagal menghapus file temporary: ${fsErr.message}`);
+                // Abaikan
             }
         }
     })();
