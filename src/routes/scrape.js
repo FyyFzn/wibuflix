@@ -2,6 +2,7 @@ import express from 'express';
 import { scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import * as otakudesu from '../controllers/otakudesuController.js';
+import { getKuronimeServers } from '../controllers/kuronimeController.js';
 
 const router = express.Router();
 
@@ -32,29 +33,37 @@ router.get('/api/scrape', async (req, res) => {
         }
 
         // --- MULTIPLE URLS SCENARIO ---
-        if (urlsObj && urlsObj.samehadaku && urlsObj.otakudesu) {
+        if (urlsObj && (urlsObj.samehadaku || urlsObj.otakudesu || urlsObj.kuronime)) {
             // urlsObj.otakudesu is often in the format: /api/otakudesu/servers?url=https...
             let realOtakuUrl = urlsObj.otakudesu;
-            if (realOtakuUrl.startsWith('/api/otakudesu/servers')) {
+            if (realOtakuUrl && realOtakuUrl.startsWith('/api/otakudesu/servers')) {
                 realOtakuUrl = new URL('http://localhost' + realOtakuUrl).searchParams.get('url') || realOtakuUrl;
             }
 
-            const [sameRes, otakuRes] = await Promise.all([
-                scrapeVideoServers(urlsObj.samehadaku).catch(() => null),
-                otakudesu.getServersInternal(realOtakuUrl).catch(() => null)
+            const [sameRes, otakuRes, kuroRes] = await Promise.all([
+                urlsObj.samehadaku ? scrapeVideoServers(urlsObj.samehadaku).catch(() => null) : Promise.resolve(null),
+                realOtakuUrl ? otakudesu.getServersInternal(realOtakuUrl).catch(() => null) : Promise.resolve(null),
+                urlsObj.kuronime ? getKuronimeServers(urlsObj.kuronime).catch(() => null) : Promise.resolve(null)
             ]);
             
+            if (kuroRes) {
+                data.judul = kuroRes.judul || episodeTitle;
+                data.nav_prev = kuroRes.nav_prev;
+                data.nav_next = kuroRes.nav_next;
+                if (kuroRes.servers) {
+                    data.servers = [...data.servers, ...kuroRes.servers.map(s => ({ ...s, source: 'Kuronime' }))];
+                }
+            }
             if (sameRes) {
-                data.judul = sameRes.judul || episodeTitle;
-                data.nav_prev = sameRes.nav_prev;
-                data.nav_next = sameRes.nav_next;
+                if (!data.judul) data.judul = sameRes.judul || episodeTitle;
+                if (!data.nav_prev) data.nav_prev = sameRes.nav_prev;
+                if (!data.nav_next) data.nav_next = sameRes.nav_next;
                 if (sameRes.servers) {
                     data.servers = [...data.servers, ...sameRes.servers.map(s => ({ ...s, source: 'Samehadaku' }))];
                 }
             }
             if (otakuRes) {
                 if (!data.judul) data.judul = otakuRes.judul || episodeTitle;
-                // Prefer Samehadaku navigation if available
                 if (!data.nav_prev) data.nav_prev = otakuRes.nav_prev;
                 if (!data.nav_next) data.nav_next = otakuRes.nav_next;
                 if (otakuRes.servers) {
@@ -88,6 +97,18 @@ router.get('/api/scrape', async (req, res) => {
                 nav_prev: neoData.nav_prev,
                 nav_next: neoData.nav_next,
                 servers: neoData.servers.map(s => ({ ...s, source: 'Neosatsu' }))
+            };
+        } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/servers')) {
+            let realUrl = targetUrl;
+            if (targetUrl.startsWith('/api/kuronime/servers')) {
+                realUrl = new URL('http://localhost' + targetUrl).searchParams.get('url') || targetUrl;
+            }
+            const kuroData = await getKuronimeServers(realUrl);
+            data = {
+                judul: kuroData.judul || episodeTitle,
+                nav_prev: kuroData.nav_prev,
+                nav_next: kuroData.nav_next,
+                servers: (kuroData.servers || []).map(s => ({ ...s, source: 'Kuronime' }))
             };
         } else if (!isOtakudesu && targetUrl) {
             data = await scrapeVideoServers(targetUrl);
