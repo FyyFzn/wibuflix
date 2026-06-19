@@ -58,11 +58,16 @@ export async function getKuronimeServers(episodeUrl) {
 
     // BUG FIX: Deklarasikan slot di luar try agar selalu bisa di-release di finally
     let $, html, slot;
+    let debugInfo = "OK";
     try {
         const fetchRes = await fetchWithCF(episodeUrl, { timeout: 60000, fetchTimeout: 8000 });
         $ = fetchRes.$;
         html = fetchRes.html;
         slot = fetchRes.slot;
+        
+        if (!html) debugInfo = "HTML is entirely empty.";
+        else if (html.includes('Just a moment') || html.includes('cf-browser-verification')) debugInfo = "Blocked by Cloudflare Captcha Page";
+        else if (!html.includes('_0xa100d42aa')) debugInfo = "Token _0xa100d42aa not found in HTML. HTML snippet: " + html.substring(0, 300);
 
         // Judul episode
         const judul = ($('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
@@ -113,7 +118,13 @@ export async function getKuronimeServers(episodeUrl) {
             }
         }
 
-        return { judul, servers, nav_prev, nav_next };
+        if (servers.length === 0 && debugInfo === "OK") {
+            debugInfo = "Sources API returned null or empty. Possibly blocked by animeku.org.";
+        }
+
+        return { judul, servers, nav_prev, nav_next, debug_info: debugInfo };
+    } catch (err) {
+        return { judul: "Error", servers: [], debug_info: err.message };
     } finally {
         // Selalu release slot
         if (slot) releaseToPool(slot);
