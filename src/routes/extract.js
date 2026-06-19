@@ -197,67 +197,57 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
             markUploadFailed(seriesSlug, episodeSlug);
             return { success: false, reason: 'Tidak ada server tersedia' };
         }
-
-        // Check M3U8 from direct stream first (Kuronime)
+        const groups = { 1080: [], 720: [], 480: [], 360: [] };
         for (const srv of servers) {
-            if (srv.type === 'direct' && srv.iframeUrl && srv.iframeUrl.includes('.m3u8')) {
-                const isHighQuality = srv.nama.includes('1080') || srv.nama.includes('720');
-                if (!isHighQuality) continue; // Biarkan logika resolusi (groups) yang menangani jika hanya ada SD
-
-                try {
-                    const tempHeaders = srv.headers || {};
-                    await checkRangeSupport(srv.iframeUrl, tempHeaders);
-                    matchedSource = { url: srv.iframeUrl, headers: tempHeaders };
-                    m3u8Found = true;
-                    console.info(`${logPrefix} Menemukan source M3U8 Valid langsung dari ${srv.source}: ${srv.iframeUrl}`);
-                    break;
-                } catch (pingErr) {
-                    console.warn(`${logPrefix} Source M3U8 dari ${srv.source} mati/404 (${pingErr.message}), mencari alternatif lain...`);
-                }
-            }
+            const resGroup = getResolutionGroup(srv.nama);
+            if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
         }
 
-        if (!m3u8Found) {
-            const groups = { 1080: [], 720: [], 480: [], 360: [] };
-            for (const srv of servers) {
-                const resGroup = getResolutionGroup(srv.nama);
-                if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
+        // Urutkan server berdasarkan kualitas dan skor
+        for (const res of [1080, 720, 480, 360]) {
+            if (groups[res].length > 0) {
+                groups[res].sort((a, b) => {
+                    const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
+                    const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
+                    
+                    if (aIsM3u8 !== bIsM3u8) {
+                        return bIsM3u8 - aIsM3u8; // M3U8 ditaruh paling depan (prioritas tertinggi dalam resolusi yang sama)
+                    }
+                    
+                    // Jika keduanya m3u8 atau keduanya mp4, adu skor kecepatan
+                    return serverScore(b.namaHost) - serverScore(a.namaHost);
+                });
+                
+                const serverNames = groups[res].map(s => s.namaHost).join(', ');
+                console.info(`${logPrefix} Menguji kandidat ${res}p: ${serverNames}`);
             }
 
-            // Sama seperti smart-play: urutkan server berdasarkan skor kecepatan provider
-            for (const res of [1080, 720, 480, 360]) {
-                if (groups[res].length > 0) {
-                    groups[res].sort((a, b) => serverScore(b.namaHost) - serverScore(a.namaHost));
-                    const serverNames = groups[res].map(s => s.namaHost).join(', ');
-                    console.info(`${logPrefix} Menguji server ${res}p: ${serverNames}`);
-                }
-                for (const srv of groups[res]) {
-                    try {
-                        const extracted = await extractVideoUrl(srv.iframeUrl);
-                        if (extracted && extracted.url && !extracted.webviewOnly) {
-                            // Merge headers, prioritizing the ones provided by the server extraction
-                            const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
-                            
-                            // Ping server untuk mengecek limit bandwidth (HTTP 429)
-                            try {
-                                await checkRangeSupport(extracted.url, finalHeaders);
-                            } catch (pingErr) {
-                                if (pingErr.message === 'HTTP_429_LIMIT') {
-                                    console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
-                                    continue;
-                                }
-                                throw pingErr;
+            for (const srv of groups[res]) {
+                try {
+                    const extracted = await extractVideoUrl(srv.iframeUrl);
+                    if (extracted && extracted.url && !extracted.webviewOnly) {
+                        // Merge headers, prioritizing the ones provided by the server extraction
+                        const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
+                        
+                        // Ping server untuk mengecek limit bandwidth (HTTP 429)
+                        try {
+                            await checkRangeSupport(extracted.url, finalHeaders);
+                        } catch (pingErr) {
+                            if (pingErr.message === 'HTTP_429_LIMIT') {
+                                console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
+                                continue;
                             }
-                            matchedSource = { url: extracted.url, headers: finalHeaders };
-                            console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
-                            break;
+                            throw pingErr;
                         }
-                    } catch (e) {
-                        console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
+                        matchedSource = { url: extracted.url, headers: finalHeaders };
+                        console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
+                        break;
                     }
+                } catch (e) {
+                    console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
                 }
-                if (matchedSource) break;
             }
+            if (matchedSource) break;
         }
     } finally {
         activeExtractions.delete(blobPath);
@@ -526,11 +516,15 @@ router.get('/api/smart-play', async (req, res) => {
 
             for (const resVal of resolutions) {
                 if (groups[resVal].length > 0) {
-                    // Urutkan server berdasarkan prioritas kecepatan dan keandalan (Mega, Wibufile > Krakenfiles)
-                    groups[resVal].sort((a, b) => serverScore(b.namaHost) - serverScore(a.namaHost));
+                    groups[resVal].sort((a, b) => {
+                        const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
+                        const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
+                        if (aIsM3u8 !== bIsM3u8) return bIsM3u8 - aIsM3u8;
+                        return serverScore(b.namaHost) - serverScore(a.namaHost);
+                    });
 
                     const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
-                    console.info(`[Smart-Play] Menguji server ${resVal}p: ${serverNames}`);
+                    console.info(`[Smart-Play] Menguji kandidat ${resVal}p: ${serverNames}`);
                 }
                 for (const srv of groups[resVal]) {
                     try {
