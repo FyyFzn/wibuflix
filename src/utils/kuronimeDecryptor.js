@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import axios from 'axios';
+import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
 
@@ -71,14 +72,27 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         apiResp = res.data;
     } catch (err) {
         console.error('[KuronimeDecryptor] Gagal fetch API dengan Axios:', err.message);
-        if (!page) {
-            console.error('[KuronimeDecryptor] Tidak ada page untuk fallback Puppeteer.');
-            return null;
+        
+        let tempSlot = null;
+        let evalPage = page;
+
+        if (!evalPage) {
+            console.log('[KuronimeDecryptor] Meminjam page Puppeteer sementara untuk fallback...');
+            try {
+                tempSlot = await acquireFromPool();
+                evalPage = tempSlot.page;
+                // Harus navigate ke origin yang sama agar CORS Origin header sesuai
+                await evalPage.goto('https://kuronime.sbs/', { waitUntil: 'domcontentloaded' });
+            } catch (poolErr) {
+                console.error('[KuronimeDecryptor] Gagal mendapatkan/menyiapkan page dari pool:', poolErr.message);
+                if (tempSlot) releaseToPool(tempSlot);
+                return null;
+            }
         }
         
         console.log('[KuronimeDecryptor] Mencoba fallback fetch API menggunakan Puppeteer page.evaluate...');
         try {
-            apiResp = await page.evaluate(async (tokenId) => {
+            apiResp = await evalPage.evaluate(async (tokenId) => {
                 const fetchRes = await fetch('https://animeku.org/api/v9/sources', {
                     method: 'POST',
                     headers: {
@@ -92,6 +106,10 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         } catch (pageErr) {
             console.error('[KuronimeDecryptor] Puppeteer fallback juga gagal:', pageErr.message);
             return null;
+        } finally {
+            if (tempSlot) {
+                releaseToPool(tempSlot);
+            }
         }
     }
 
