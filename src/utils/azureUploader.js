@@ -206,6 +206,7 @@ export function cancelUpload(seriesSlug, episodeSlug) {
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {
+        console.log(`[Ping] Memeriksa Range Support untuk URL: ${url.substring(0, 150)}`);
         const axiosConfig = {
             method: 'get',
             url: url,
