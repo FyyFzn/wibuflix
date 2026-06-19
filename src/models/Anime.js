@@ -34,20 +34,20 @@ const animeSchema = new mongoose.Schema({
     },
     sources: {
         samehadaku: {
-            url: { type: String, default: null },
-            id: { type: String, default: null }
+            url: { type: String, default: null, index: true },
+            id: { type: String, default: null, index: true }
         },
         otakudesu: {
-            url: { type: String, default: null },
-            id: { type: String, default: null }
+            url: { type: String, default: null, index: true },
+            id: { type: String, default: null, index: true }
         },
         neosatsu: {
-            url: { type: String, default: null },
-            id: { type: String, default: null }
+            url: { type: String, default: null, index: true },
+            id: { type: String, default: null, index: true }
         },
         kuronime: {
-            url: { type: String, default: null },
-            id: { type: String, default: null }
+            url: { type: String, default: null, index: true },
+            id: { type: String, default: null, index: true }
         }
     },
     // Metadata Lanjutan dari MAL / TMDB

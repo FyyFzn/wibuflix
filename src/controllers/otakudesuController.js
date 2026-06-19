@@ -25,7 +25,7 @@ export async function getOtakuEpisodesFormatted(slug) {
     if (!details) return null;
 
     // Fallback title dari database MongoDB jika parser scraper gagal mendapatkan nama
-    const found = await Anime.findOne({ "sources.otakudesu.url": new RegExp(slug, 'i') }).lean();
+    const found = await Anime.findOne({ "sources.otakudesu.id": slug }).lean();
     let fallbackTitle = found ? found.title : slug;
     
     // Bersihkan teks status dari judul database (misal: "Anime Title On-Going")
