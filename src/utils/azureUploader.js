@@ -206,12 +206,18 @@ export function cancelUpload(seriesSlug, episodeSlug) {
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {
-        const res = await axios({
+        const axiosConfig = {
             method: 'get',
             url: url,
             headers: { ...headers, 'Range': 'bytes=0-0' },
             timeout: 10000
-        });
+        };
+        // Bypass global proxy (seperti SOCKS/WARP) untuk koneksi internal
+        if (url.includes('127.0.0.1') || url.includes('localhost')) {
+            axiosConfig.proxy = false;
+        }
+        
+        const res = await axios(axiosConfig);
         if (res.status === 206) {
             const contentRange = res.headers['content-range'];
             if (contentRange) {
@@ -274,14 +280,18 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
                 try {
                     const localAbort = new AbortController();
                     
-                    const res = await axios({
+                    const axiosConfig = {
                         method: 'get',
                         url: url,
                         responseType: 'stream',
                         headers: { ...headers, 'Range': `bytes=${start}-${end}` },
                         signal: localAbort.signal,
                         timeout: 30000
-                    });
+                    };
+                    if (url.includes('127.0.0.1') || url.includes('localhost')) {
+                        axiosConfig.proxy = false;
+                    }
+                    const res = await axios(axiosConfig);
                     
                     const writer = fs.createWriteStream(chunkPath);
                     let idleTimeout;
@@ -451,14 +461,19 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 console.info(`[Azure Uploader] Tahap 1: Mengunduh Single-Stream ke server lokal...`);
                 uploadProgressCache.set(blobPath, 'Mengunduh ke Server VPS... 0%');
                 
-                const response = await axios({
+                const axiosConfig = {
                     method: 'get',
                     url: videoUrl,
                     responseType: 'stream',
                     headers: requestHeaders,
                     timeout: 30000,
                     signal: globalAbort.signal
-                });
+                };
+                if (videoUrl.includes('127.0.0.1') || videoUrl.includes('localhost')) {
+                    axiosConfig.proxy = false;
+                }
+                
+                const response = await axios(axiosConfig);
 
                 const contentLengthStr = response.headers['content-length'];
                 const contentLength = contentLengthStr ? parseInt(contentLengthStr) : 0;
