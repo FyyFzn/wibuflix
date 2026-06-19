@@ -215,9 +215,12 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 try {
                     const extracted = await extractVideoUrl(srv.iframeUrl);
                     if (extracted && extracted.url && !extracted.webviewOnly) {
+                        // Merge headers, prioritizing the ones provided by the server extraction
+                        const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
+                        
                         // Ping server untuk mengecek limit bandwidth (HTTP 429)
                         try {
-                            await checkRangeSupport(extracted.url, extracted.headers || {});
+                            await checkRangeSupport(extracted.url, finalHeaders);
                         } catch (pingErr) {
                             if (pingErr.message === 'HTTP_429_LIMIT') {
                                 console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
@@ -225,7 +228,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             }
                             throw pingErr;
                         }
-                        matchedSource = { url: extracted.url, headers: extracted.headers || {} };
+                        matchedSource = { url: extracted.url, headers: finalHeaders };
                         console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
                         break;
                     }
@@ -246,7 +249,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         return { success: true };
     } else {
         markUploadFailed(seriesSlug, episodeSlug);
-        return { success: false, reason: m3u8Found ? 'Hanya tersedia format M3U8 (Tidak bisa diunduh antrean). Tonton langsung saja.' : 'Semua server gagal atau limit.' };
+        return { success: false, reason: 'Semua server gagal atau limit.' };
     }
 }
 
@@ -515,11 +518,12 @@ router.get('/api/smart-play', async (req, res) => {
                             // Ping host to ensure it's not rate-limited (e.g., Pixeldrain 5GB limit)
                             console.info(`[Smart-Play] Ping ${srv.namaHost} untuk mengecek limit bandwidth...`);
                             try {
-                                await checkRangeSupport(extracted.url, extracted.headers || {});
+                                const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
+                                await checkRangeSupport(extracted.url, finalHeaders);
                                 // If no error, we proceed
                                 matchedSource = {
                                     url: extracted.url,
-                                    headers: extracted.headers || {}
+                                    headers: finalHeaders
                                 };
                                 console.info(`[Smart-Play] Menemukan source video (${resVal}p) dari ${srv.source}: ${extracted.url}`);
                                 break;
