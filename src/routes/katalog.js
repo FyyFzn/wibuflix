@@ -11,11 +11,12 @@ const router = express.Router();
 router.get('/api/katalog', async (req, res) => {
     const pageParams = parseInt(req.query.page) || 1;
     const searchParam = req.query.s || '';
-    const tabParam = req.query.tab || 'anime';
+    const tabParam = req.query.tab || 'all';
     const typeFilter = req.query.typeFilter || '';
+    const genreFilter = req.query.genre || '';
 
     try {
-        const data = await getKatalog(pageParams, searchParam, typeFilter, tabParam);
+        const data = await getKatalog(pageParams, searchParam, typeFilter, tabParam, genreFilter);
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Katalog Error]', err.message);

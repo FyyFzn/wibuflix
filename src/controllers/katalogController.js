@@ -3,9 +3,9 @@ import { getCache } from '../utils/cacheManager.js';
 
 const cache = getCache('katalog', 3600);
 
-export async function getKatalog(pageParams, searchParam, typeFilter = '', tabParam = 'all') {
+export async function getKatalog(pageParams, searchParam, typeFilter = '', tabParam = 'all', genreFilter = '') {
     const isSearch = searchParam.trim() !== '';
-    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}_${tabParam}`;
+    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}_${tabParam}_${genreFilter}`;
     
     const cachedData = cache.get(cacheKey);
     if (cachedData) {
@@ -19,7 +19,8 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
     // Jika isSearch, kita tidak menaruhnya di query reguler, melainkan di pipeline $search nanti
     
     if (typeFilter && typeFilter !== 'Semua') {
-        if (tabParam === 'toku') {
+        const tokuFilters = ['kamen rider', 'super sentai', 'power rangers', 'ultraman', 'lainnya'];
+        if (tabParam === 'toku' || tokuFilters.includes(typeFilter.toLowerCase())) {
             // Tokusatsu tidak punya kolom tipe spesifik (semuanya 'Toku'), jadi filternya dicari di Judul
             if (typeFilter.toLowerCase() === 'lainnya') {
                 // Yang bukan kamen rider, super sentai, power rangers, ultraman
@@ -38,6 +39,11 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
             // Anime menggunakan tipe yang spesifik (TV, OVA, Movie, dll)
             query.type = { $regex: new RegExp(`^${typeFilter}$`, 'i') };
         }
+    }
+
+    if (genreFilter && genreFilter !== 'Semua') {
+        // Query database mengecek apakah array genres memiliki genreFilter ini
+        query.genres = { $regex: new RegExp(`^${genreFilter}$`, 'i') };
     }
 
     // Filter berdasarkan tab (wajib dieksekusi setelah typeFilter)
