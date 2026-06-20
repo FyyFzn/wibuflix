@@ -138,6 +138,40 @@ export function isSafeToMerge(title1, title2, scoreThreshold = 0.85) {
     return { isSafe: true, score };
 }
 
+/**
+ * Validasi ekstra khusus untuk peleburan berbasis ID (TMDB/AniList).
+ * Mengabaikan kemiripan string (karena nama pendek vs nama panjang sering berbeda jauh),
+ * HANYA memvalidasi bahwa mereka adalah Season, Part, dan Tipe (Movie/TV) yang sama.
+ */
+export function isSafeToMergeById(title1, title2) {
+    // Jangan gabungkan Movie dengan non-Movie
+    const isMovie1 = title1.toLowerCase().includes('movie');
+    const isMovie2 = title2.toLowerCase().includes('movie');
+    if (isMovie1 !== isMovie2) return false;
+    
+    // Validasi ketat angka Season dan Part
+    const meta1 = extractSeasonAndPart(title1);
+    const meta2 = extractSeasonAndPart(title2);
+    
+    if (meta1.season !== null && meta2.season !== null && meta1.season !== meta2.season) {
+        return false; // Berbeda Season
+    }
+    
+    if (meta1.part !== null && meta2.part !== null && meta1.part !== meta2.part) {
+        return false; // Berbeda Part
+    }
+    
+    // Jika satu punya Part tapi yang lain tidak, asumsikan yang tidak punya adalah Part 1
+    if (meta1.part === null && meta2.part !== null && meta2.part !== 1) return false;
+    if (meta2.part === null && meta1.part !== null && meta1.part !== 1) return false;
+    
+    // Jika satu punya Season tapi yang lain tidak, asumsikan yang tidak punya adalah Season 1
+    if (meta1.season === null && meta2.season !== null && meta2.season !== 1) return false;
+    if (meta2.season === null && meta1.season !== null && meta1.season !== 1) return false;
+    
+    return true;
+}
+
 export function formatEpisodeTitle(title) {
     if (!title) return 'Episode ?';
     if (title.toLowerCase().includes('batch')) return 'Batch';
