@@ -12,15 +12,20 @@ function isJapanese(text) {
 /**
  * Normalisasi judul untuk mempermudah pencarian.
  */
-export function normalizeTitle(title) {
+export function normalizeTitle(title, isToku = false) {
     if (!title) return '';
     let t = title.toLowerCase();
     // Hapus embel-embel umum tanpa menghapus isi di dalamnya (kasus [Oshi No Ko])
     t = t.replace(/subtitle indonesia|sub indo|batch|bd/gi, '');
     // Ganti kurung menjadi spasi agar isinya tetap bisa dicari TMDB
     t = t.replace(/[\[\]【】()]/g, ' ');
-    // Hapus season
-    t = t.replace(/season \d+|s\d+/gi, '');
+    
+    // HANYA hapus kata 'season' untuk Tokusatsu (TMDB), karena di TMDB season digabung.
+    // Untuk Anime (AniList), Season sangat penting karena ID-nya berbeda tiap season!
+    if (isToku) {
+        t = t.replace(/season \d+|s\d+/gi, '');
+    }
+    
     return t.replace(/\s+/g, ' ').trim();
 }
 
@@ -111,14 +116,14 @@ async function searchAniList(cleanTitle, retries = 3) {
 export async function searchTMDB(title, isToku = false) {
     if (!title) return null;
     
-    // Ekstraksi angka Season sebelum dihapus oleh normalizeTitle
+    // Ekstraksi angka Season sebelum dihapus (jika isToku=true)
     let seasonNumber = null;
     const seasonMatch = title.match(/(?:season|s)\s*(\d+)/i);
     if (seasonMatch) {
         seasonNumber = parseInt(seasonMatch[1]);
     }
     
-    const cleanTitle = normalizeTitle(title);
+    const cleanTitle = normalizeTitle(title, isToku);
     if (!cleanTitle) return null;
 
     const cacheKey = `meta_${cleanTitle}_${isToku ? 'toku' : 'anime'}`;
