@@ -1,5 +1,5 @@
 import express from 'express';
-import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku } from '../services/extractors/videoExtractor.js';
+import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku, resolveSingleServer } from '../services/extractors/videoExtractor.js';
 import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport } from '../utils/azureUploader.js';
 import Anime from '../models/Anime.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
@@ -539,7 +539,24 @@ router.get('/api/smart-play', async (req, res) => {
                 }
                 for (const srv of groups[resVal]) {
                     try {
-                        const extracted = await extractVideoUrl(srv.iframeUrl, req);
+                        let iframeUrlToExtract = srv.iframeUrl;
+                        
+                        // Jika iframeUrl kosong tapi punya nume (khas Samehadaku), resolve dulu
+                        if (!iframeUrlToExtract && srv.nume) {
+                            try {
+                                console.info(`[Smart-Play] Resolving AJAX iframe untuk server ${srv.nama} (nume: ${srv.nume})`);
+                                const res = await resolveSingleServer(episodeUrl, srv.nume, req);
+                                if (res && res.iframeUrl) {
+                                    iframeUrlToExtract = res.iframeUrl;
+                                    srv.namaHost = res.namaHost; // Update host name untuk log
+                                }
+                            } catch (resolveErr) {
+                                console.error(`[Smart-Play] Gagal resolve AJAX untuk server ${srv.namaHost || srv.nama}:`, resolveErr.message);
+                                continue;
+                            }
+                        }
+
+                        const extracted = await extractVideoUrl(iframeUrlToExtract, req);
                         if (extracted && extracted.url && !extracted.webviewOnly) {
                             // Ping host to ensure it's not rate-limited (e.g., Pixeldrain 5GB limit)
                             console.info(`[Smart-Play] Ping ${srv.namaHost} untuk mengecek limit bandwidth...`);
