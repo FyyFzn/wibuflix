@@ -2,8 +2,10 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { OtakudesuInstance } from 'otakudesu-scraper';
 import Anime from '../models/Anime.js';
-import { enrichWithMAL } from '../utils/malEnrichment.js';
 import { getCache } from '../utils/cacheManager.js';
+import { fetchWithCF } from '../utils/scrapeHelper.js';
+import { releaseToPool } from '../puppeteer/pool.js';
+import { formatEpisodeTitle, extractEpNumStrict } from '../utils/stringUtils.js';
 
 const cache = getCache('otakudesu', 3600);
 
@@ -56,23 +58,6 @@ export async function getOtakuEpisodesFormatted(slug) {
             .join(' ');
     }
 
-    // Fungsi untuk merapikan judul episode Otakudesu (menghilangkan tanggal dan judul seri)
-    const cleanEpisodeTitle = (title) => {
-        if (!title) return "Episode ?";
-        if (title.toLowerCase().includes('batch')) return "Batch";
-        
-        const ovaMatch = title.match(/(OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
-        if (ovaMatch) return `${ovaMatch[1].toUpperCase()} ${ovaMatch[2]}`;
-        
-        const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
-        if (stdMatch) return `Episode ${stdMatch[1]}`;
-        
-        const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
-        if (fallbackMatch) return `Episode ${fallbackMatch[1]}`;
-        
-        return title;
-    };
-
     const result = {
         judul_seri: finalTitle,
         cover_scraper: details.thumb || '',
@@ -80,7 +65,7 @@ export async function getOtakuEpisodesFormatted(slug) {
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
             return {
-                judul: cleanEpisodeTitle(ep.title),
+                judul: formatEpisodeTitle(ep.title),
                 url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
                 slug: epSlug
             };
@@ -173,14 +158,14 @@ async function resolveOtakuServers($) {
 export async function getServersInternal(url) {
     console.log(`[Otakudesu] Fetching servers from: ${url}`);
 
-    // Fetch raw HTML of the episode
-    const { data } = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        timeout: 10000
-    });
-
-    const $ = cheerio.load(data);
-    const uniqueServers = await resolveOtakuServers($);
+    let slot = null;
+    let $;
+    try {
+        const fetchRes = await fetchWithCF(url, { fetchTimeout: 10000 });
+        slot = fetchRes.slot;
+        $ = fetchRes.$;
+        
+        const uniqueServers = await resolveOtakuServers($);
 
     // Ambil judul raw dari halaman episode dan bersihkan
     let judul = $('.venutama h1.posttl').text().trim();
@@ -207,29 +192,15 @@ export async function getServersInternal(url) {
         }
     });
 
-    return {
-        judul,
-        servers: uniqueServers,
-        nav_prev,
-        nav_next
-    };
-}
-
-function extractEpisodeNumber(title) {
-    if (!title) return null;
-    // Prioritas 1: Format standar (Episode/Eps/Ep diikuti angka)
-    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
-    if (stdMatch) return parseFloat(stdMatch[1]);
-
-    // Prioritas 2: Format OVA/Special (OVA 1, Special 3, dll.)
-    const ovaMatch = title.match(/(?:OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
-    if (ovaMatch) return parseFloat(ovaMatch[1]);
-
-    // Prioritas 3: Angka terakhir yang berdiri sendiri dalam judul (fallback)
-    const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
-    if (fallbackMatch) return parseFloat(fallbackMatch[1]);
-
-    return null;
+        return {
+            judul,
+            servers: uniqueServers,
+            nav_prev,
+            nav_next
+        };
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
 }
 
 export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl = null) {
@@ -264,7 +235,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
 
         if (!bestMatch || maxMatches < queryWords.length / 2) return [];
 
-        const targetEpNumRaw = extractEpisodeNumber(episodeTitle);
+        const targetEpNumRaw = extractEpNumStrict(episodeTitle);
         if (targetEpNumRaw === null) return [];
 
         const details = await otaku.getExtraAnime(bestMatch.slug);
@@ -275,12 +246,12 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
             try {
                 // To avoid circular dependency with episodeController.js, we assume the caller passes the offset, 
                 // but since we don't have it, we'll try to import dynamically and fetch
-                const episodesModule = await import('./episodeController.js');
-                const sameRes = await episodesModule.getEpisodes(seriesUrl);
+                const episodesModule = await import('./samehadakuController.js');
+                const sameRes = await episodesModule.getSamehadakuEpisodes(seriesUrl);
                 
                 if (sameRes && sameRes.daftar_episode) {
-                    const sameEps = sameRes.daftar_episode.map(ep => extractEpisodeNumber(ep.judul)).filter(n => n !== null);
-                    const otakuEps = details.episodes.map(ep => extractEpisodeNumber(ep.title)).filter(n => n !== null);
+                    const sameEps = sameRes.daftar_episode.map(ep => extractEpNumStrict(ep.judul)).filter(n => n !== null);
+                    const otakuEps = details.episodes.map(ep => extractEpNumStrict(ep.title)).filter(n => n !== null);
                     
                     if (sameEps.length > 0 && otakuEps.length > 0) {
                         const minSame = Math.min(...sameEps);
@@ -302,7 +273,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
 
         let targetEpUrl = null;
         for (const ep of details.episodes) {
-            const epNum = extractEpisodeNumber(ep.title);
+            const epNum = extractEpNumStrict(ep.title);
             if (epNum === targetEpNum) {
                 targetEpUrl = ep.url;
                 break;
@@ -311,14 +282,16 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
 
         if (!targetEpUrl) return [];
 
-        // Fetch raw HTML of the episode directly
-        const { data } = await axios.get(targetEpUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 10000
-        });
-
-        const $ = cheerio.load(data);
-        const servers = await resolveOtakuServers($);
+        let slot = null;
+        let servers = [];
+        try {
+            const fetchRes = await fetchWithCF(targetEpUrl, { fetchTimeout: 10000 });
+            slot = fetchRes.slot;
+            servers = await resolveOtakuServers(fetchRes.$);
+        } finally {
+            if (slot) releaseToPool(slot);
+        }
+        
         return servers;
     } catch (e) {
         console.error("[Otakudesu Alternative Error]", e.message);

@@ -2,7 +2,6 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { searchTokusatsu } from '../services/metadata/tmdb.js';
 import { filterByTokuType, decryptNeosatsuLink, normalizeGDriveUrl } from '../utils/neosatsuUtils.js';
-import { enrichWithMAL } from '../utils/malEnrichment.js';
 import { getCache } from '../utils/cacheManager.js';
 
 export const cache = getCache('neosatsu', 3600); // 1 jam TTL

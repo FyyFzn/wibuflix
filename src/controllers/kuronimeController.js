@@ -3,6 +3,7 @@ import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronimeDecryptor.js';
 import { getCache } from '../utils/cacheManager.js';
+import { formatEpisodeTitle } from '../utils/stringUtils.js';
 
 const cache = getCache('kuronime', 3600);
 
@@ -40,7 +41,7 @@ export async function getKuronimeEpisodes(animeUrl) {
             const epTitle = $(el).find('.lchx').text().trim() || $(el).find('.epl-num').text().trim() || a.text().trim();
             if (href && epTitle) {
                 daftar_episode.push({
-                    judul: cleanEpisodeTitle(epTitle),
+                    judul: formatEpisodeTitle(epTitle),
                     // BUG FIX: Kembalikan URL Kuronime mentah (bukan dibungkus /api/...)
                     // agar episodes.js bisa memperlakukannya secara konsisten dalam merge
                     url: href
@@ -176,15 +177,3 @@ export async function handleGetServers(req, res) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function cleanEpisodeTitle(title) {
-    if (!title) return 'Episode ?';
-    if (title.toLowerCase().includes('batch')) return 'Batch';
-    const ovaMatch = title.match(/(OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
-    if (ovaMatch) return `${ovaMatch[1].toUpperCase()} ${ovaMatch[2]}`;
-    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
-    if (stdMatch) return `Episode ${stdMatch[1]}`;
-    const fallback = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
-    if (fallback) return `Episode ${fallback[1]}`;
-    return title;
-}

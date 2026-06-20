@@ -1,126 +1,265 @@
-import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { enrichWithMAL } from '../utils/malEnrichment.js';
-import * as cheerio from 'cheerio';
-import { getCache } from '../utils/cacheManager.js';
+import { getSamehadakuEpisodes } from './samehadakuController.js';
+import { getNeosatsuEpisodes } from './neosatsuController.js';
+import * as otakudesu from './otakudesuController.js';
+import { getKuronimeEpisodes } from './kuronimeController.js';
+import Anime from '../models/Anime.js';
+import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber } from '../utils/stringUtils.js';
 
-const cache = getCache('episodes', 3600);
-
-export async function getEpisodes(targetUrl) {
-    if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
-
-    const cacheKey = `eps_${targetUrl}`;
-    const cachedData = cache.get(cacheKey);
-    if (cachedData) {
-        console.log(`[Episodes Cache Hit] ${cacheKey}`);
-        return cachedData;
+export async function getEpisodesMerged(req, res) {
+    const targetUrl = req.query.url;
+    const urlSamehadaku = req.query.urlSamehadaku;
+    const urlOtakudesu = req.query.urlOtakudesu;
+    const urlKuronime = req.query.urlKuronime;
+    
+    if (!targetUrl && !urlSamehadaku && !urlOtakudesu && !urlKuronime) {
+        return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
     }
 
-    console.log(`\n[Episodes Fast Fetch] ${targetUrl}`);
-
-    let slot;
     try {
-        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 6000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-        const html = fetchRes.html;
+        let data;
+        
+        // --- LOGIKA MERGE MULTI-SUMBER ---
+        if (urlSamehadaku || urlOtakudesu || urlKuronime) {
+            const slug = urlOtakudesu ? urlOtakudesu.split(':')[1] : null;
+            
+            const [sameRes, otakuRes, kuroRes] = await Promise.all([
+                urlSamehadaku ? getSamehadakuEpisodes(urlSamehadaku).catch(() => null) : Promise.resolve(null),
+                slug ? otakudesu.getOtakuEpisodesFormatted(slug).catch(() => null) : Promise.resolve(null),
+                urlKuronime ? getKuronimeEpisodes(urlKuronime).catch(() => null) : Promise.resolve(null),
+            ]);
+            
+            // Format merge
+            data = {
+                judul_seri: (sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || (kuroRes && kuroRes.judul_seri) || 'Unknown',
+                daftar_episode: []
+            };
 
-        if (html === '404_NOT_FOUND') {
-            throw new Error("Target URL returned 404");
-        }
+            // --- DETEKSI OFFSET OTOMATIS ---
+            let offsetSame = 0;
+            let offsetOtaku = 0;
+            let offsetKuro = 0;
 
-        const rawTitle = ($('title').text() || '').replace(/[-–|].*$/, '').trim();
-        const daftar_episode = [];
+            const getValidEpNums = (epsList) => {
+                if (!epsList) return [];
+                return epsList
+                    .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                    .map(ep => extractEpNum(ep.judul))
+                    .filter(num => typeof num === 'number' && !isNaN(num));
+            };
 
-        const coverImg = 
-            $('meta[property="og:image"]').attr('content') ||
-            $('.thumb img, .thumbook img').attr('src') || '';
+            const sameEps = getValidEpNums(sameRes?.daftar_episode);
+            const otakuEps = getValidEpNums(otakuRes?.daftar_episode);
+            const kuroEps = getValidEpNums(kuroRes?.daftar_episode);
 
-        const cleanBaseTitle = rawTitle.toLowerCase().replace(/season\s*\d+/i, '').replace(/subtitle\s*indonesia/i, '').trim();
-        const seasonMatch = rawTitle.match(/season\s*(\d+)/i);
-        const currentSeason = seasonMatch ? parseInt(seasonMatch[1]) : 1;
-
-        const seenUrls = new Set();
-        $('.lstepsiode ul li, .episodelist ul li, .listeps ul li').each((_, el) => {
-            let epLink = $(el).find('.epsleft a').first();
-            if (!epLink.length) epLink = $(el).find('a').first();
-
-            if (epLink.length && epLink.attr('href')) {
-                let title = epLink.text().trim();
-                const url = epLink.attr('href');
-                
-                // Abaikan episode batch
-                if (title.toLowerCase().includes('batch')) return;
-
-                // Cegah masuknya episode dari season berbeda yang diselipkan Samehadaku di sidebar
-                const epSeasonMatch = title.match(/season\s*(\d+)/i);
-                if (epSeasonMatch) {
-                    const epSeason = parseInt(epSeasonMatch[1]);
-                    if (epSeason !== currentSeason) return; // Beda season, buang!
-                } else if (currentSeason > 1 && title.toLowerCase().includes(cleanBaseTitle) && !title.toLowerCase().includes('season')) {
-                    // Kadang ada "Oshi no Ko Episode 1", ini biasanya season 1. Jika kita di Season > 1, ini kemungkinan nyasar.
-                    // Tapi agar aman, kita biarkan saja kalau tidak eksplisit menyebut "Season X".
+            // Kalkulasi offset Samehadaku vs Otakudesu
+            if (sameEps.length > 0 && otakuEps.length > 0) {
+                const minSame = Math.min(...sameEps);
+                const minOtaku = Math.min(...otakuEps);
+                const sameSet = new Set(sameEps);
+                const hasOverlap = otakuEps.some(num => sameSet.has(num));
+                if (!hasOverlap) {
+                    if (minOtaku === 1 && minSame > 1) offsetOtaku = minSame - 1;
+                    else if (minSame === 1 && minOtaku > 1) offsetSame = minOtaku - 1;
                 }
+            }
 
-                // Bersihkan nama episode dengan membuang judul seri agar tidak kepanjangan
-                // Contoh: "Oshi no Ko Season 3 Episode 11 END" -> "Episode 11 END"
-                let shortTitle = title;
-                // Buang "Oshi no Ko Season 3"
-                const titleToStrip = rawTitle.replace(/subtitle\s*indonesia/gi, '').trim();
-                const regexStrip = new RegExp(titleToStrip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-                const stripped = shortTitle.replace(regexStrip, '').trim();
-                
-                // Hanya pakai hasil stripping jika masih mengandung penanda episode (angka / OVA / SP dll.)
-                // Jika tidak ada (misal sisa cuma "Moment"), kembalikan ke judul asli
-                const hasEpisodeMarker = /\d|OVA|OAD|Special|SP|Movie|Film/i.test(stripped);
-                if (stripped && stripped.length >= 2 && hasEpisodeMarker) {
-                    shortTitle = stripped;
+            // Kalkulasi offset Kuronime vs referensi utama (Samehadaku atau Otakudesu)
+            const refEps = sameEps.length > 0 ? sameEps : otakuEps;
+            if (refEps.length > 0 && kuroEps.length > 0) {
+                const minRef = Math.min(...refEps);
+                const minKuro = Math.min(...kuroEps);
+                const refSet = new Set(refEps);
+                const hasOverlap = kuroEps.some(num => refSet.has(num));
+                if (!hasOverlap) {
+                    if (minKuro === 1 && minRef > 1) offsetKuro = minRef - 1;
+                    else if (minRef === 1 && minKuro > 1) offsetKuro = 0; // Kuronime yang lanjutan
                 }
-                // Kalau setelah dihapus malah kosong atau tidak bermakna, kembalikan ke awal
-                if (!shortTitle || shortTitle.length < 2) shortTitle = title;
-                
-                // Pastikan diawali kapital
-                shortTitle = shortTitle.charAt(0).toUpperCase() + shortTitle.slice(1);
+            }
 
-                if (!seenUrls.has(url)) {
-                    seenUrls.add(url);
-                    daftar_episode.push({
-                        judul: shortTitle,
-                        url: url
+            // Map berdasarkan angka episode
+            const epMap = new Map();
+
+            // Masukkan data Samehadaku
+            if (sameRes && sameRes.daftar_episode) {
+                sameRes.daftar_episode.forEach(ep => {
+                    if (ep.judul.toLowerCase().includes('batch')) return;
+                    const rawNum = extractEpNum(ep.judul);
+                    const num = typeof rawNum === 'number' ? rawNum + offsetSame : rawNum;
+                    const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetSame) : ep.judul;
+                    
+                    epMap.set(num, {
+                        judul: formatEpisodeTitle(adjustedJudul), // Pakai judul pendek
+                        urls: { samehadaku: ep.url }
                     });
+                });
+            }
+            
+            // Gabungkan/Tambahkan data Otakudesu
+            if (otakuRes && otakuRes.daftar_episode) {
+                otakuRes.daftar_episode.forEach(ep => {
+                    if (ep.judul.toLowerCase().includes('batch')) return;
+                    const rawNum = extractEpNum(ep.judul);
+                    const num = typeof rawNum === 'number' ? rawNum + offsetOtaku : rawNum;
+                    
+                    if (epMap.has(num)) {
+                        const existing = epMap.get(num);
+                        existing.urls.otakudesu = ep.url;
+                    } else {
+                        const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetOtaku) : ep.judul;
+                        epMap.set(num, {
+                            judul: formatEpisodeTitle(adjustedJudul),
+                            urls: { otakudesu: ep.url }
+                        });
+                    }
+                });
+            }
+
+            // Gabungkan/Tambahkan data Kuronime
+            if (kuroRes && kuroRes.daftar_episode) {
+                kuroRes.daftar_episode.forEach(ep => {
+                    if (ep.judul.toLowerCase().includes('batch')) return;
+                    const rawNum = extractEpNum(ep.judul);
+                    const num = typeof rawNum === 'number' ? rawNum + offsetKuro : rawNum;
+                    const adjustedJudul = typeof rawNum === 'number'
+                        ? adjustTitleEpisodeNumber(ep.judul, offsetKuro)
+                        : ep.judul;
+
+                    if (epMap.has(num)) {
+                        const existing = epMap.get(num);
+                        existing.urls.kuronime = ep.url;
+                    } else {
+                        epMap.set(num, {
+                            judul: formatEpisodeTitle(adjustedJudul),
+                            urls: { kuronime: ep.url }
+                        });
+                    }
+                });
+            }
+            
+            // Convert Map ke Array dan pastikan terurut menurun (episode terbaru di atas)
+            // Episode non-numerik (Moment, OVA, Special, dll.) selalu ditempatkan di AKHIR daftar
+            const mergedEps = Array.from(epMap.values());
+            mergedEps.sort((a, b) => {
+                const numA = extractEpNum(a.judul);
+                const numB = extractEpNum(b.judul);
+                const aIsNum = typeof numA === 'number';
+                const bIsNum = typeof numB === 'number';
+                if (aIsNum && bIsNum) return numB - numA; // Keduanya angka: urutan menurun
+                if (aIsNum) return -1;  // a angka, b bukan → a lebih dulu (atas)
+                if (bIsNum) return 1;   // b angka, a bukan → b lebih dulu (atas)
+                return String(numA).localeCompare(String(numB)); // Keduanya string: urut alfabet
+            });
+            
+            data.daftar_episode = mergedEps;
+
+        // --- LOGIKA SINGLE WEB (LAMA) ---
+        } else if (targetUrl) {
+
+            if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
+                data = await getNeosatsuEpisodes(targetUrl);
+                // Neosatsu mungkin tidak perlu diformat ekstrem karena sering ada sub-judul, tapi kita filter batch
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: ep.judul,
+                            urls: { neosatsu: ep.url }
+                        }));
+                }
+            } else if (targetUrl.startsWith('/anime/otakudesu:')) {
+                const slug = targetUrl.split(':')[1];
+                data = await otakudesu.getOtakuEpisodesFormatted(slug);
+                if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
+                // Normalisasi agar formatnya sama (menggunakan objek `urls`)
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: formatEpisodeTitle(ep.judul),
+                            urls: { otakudesu: ep.url }
+                        }));
+                }
+            } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
+                data = await getKuronimeEpisodes(targetUrl);
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: formatEpisodeTitle(ep.judul),
+                            urls: { kuronime: ep.url }
+                        }));
+                }
+            } else {
+                data = await getSamehadakuEpisodes(targetUrl);
+                // Normalisasi agar formatnya sama (menggunakan objek `urls`)
+                if (data && data.daftar_episode) {
+                    data.daftar_episode = data.daftar_episode
+                        .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+                        .map(ep => ({
+                            judul: formatEpisodeTitle(ep.judul),
+                            urls: { samehadaku: ep.url }
+                        }));
                 }
             }
-        });
+        }
+        
+        // --- DEDUPLIKASI AKHIR: Hapus episode ganda berdasarkan nomor episode ---
+        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
+            const dedupeMap = new Map();
+            for (const ep of data.daftar_episode) {
+                const titleLower = ep.judul.toLowerCase().trim();
+                const epNumMatch = titleLower.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/);
+                const key = epNumMatch ? `ep_${parseFloat(epNumMatch[1])}` : titleLower;
+                
+                if (!dedupeMap.has(key)) {
+                    dedupeMap.set(key, ep);
+                } else {
+                    // Sudah ada — merge URLs agar tidak kehilangan source mana pun
+                    const existing = dedupeMap.get(key);
+                    existing.urls = { ...existing.urls, ...ep.urls };
+                }
+            }
+            data.daftar_episode = Array.from(dedupeMap.values());
+        }
 
-        // Fallback untuk Movie/Spesial (jika daftar episode kosong, tetapi ada tombol download)
-        if (daftar_episode.length === 0) {
-            const downloadLink = $('.download-eps a, .dl-box a, .soraddlx a').first();
-            if (downloadLink.length && downloadLink.attr('href')) {
-                daftar_episode.push({
-                    judul: rawTitle || 'Full Movie / Episode Spesial',
-                    url: targetUrl // Kirim URL saat ini, server akan parsing iframenya
-                });
-            } else if ($('.player-area iframe, #player iframe, .pd-expand iframe').length > 0) {
-                // Ada iframe video langsung
-                daftar_episode.push({
-                    judul: rawTitle || 'Full Movie / Episode Spesial',
-                    url: targetUrl
-                });
+        // --- AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
+        let dbAnime = null;
+        const orQuery = [];
+        
+        if (urlSamehadaku) orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
+        if (urlOtakudesu) orQuery.push({ "sources.otakudesu.id": urlOtakudesu.split(':')[1] });
+        if (urlKuronime) orQuery.push({ "sources.kuronime.url": urlKuronime });
+        
+        if (orQuery.length > 0) {
+            dbAnime = await Anime.findOne({ $or: orQuery });
+        } else if (targetUrl) {
+            if (targetUrl.startsWith('/anime/otakudesu:')) {
+                dbAnime = await Anime.findOne({ "sources.otakudesu.id": targetUrl.split(':')[1] });
+            } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
+                dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
+            } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
+                dbAnime = await Anime.findOne({ "sources.kuronime.url": targetUrl });
+            } else {
+                dbAnime = await Anime.findOne({ "sources.samehadaku.url": targetUrl });
             }
         }
 
-        const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
-
-        // Jangan cache jika episode kosong — bisa jadi Cloudflare masih memblokir, bukan episode memang 0
-        if (daftar_episode.length > 0) {
-            cache.set(cacheKey, result);
+        if (dbAnime && data) {
+            data.mal = {
+                malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
+                synopsis: dbAnime.synopsis || null,
+                status: dbAnime.status,
+                genres: dbAnime.genres || [],
+                episodes: dbAnime.episodesCount,
+                year: dbAnime.year,
+                cover: dbAnime.image,
+                malId: dbAnime.malId
+            };
         }
-        return result;
+        
+        res.json({ status: 'success', data });
     } catch (err) {
-        throw err;
-    } finally {
-        if (slot) releaseToPool(slot);
+        console.error('[Episodes Error]', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
     }
 }
-
-export { cache };

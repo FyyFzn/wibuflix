@@ -1,11 +1,13 @@
-import { getBrowser, acquireFromPool, releaseToPool, globalUserAgent, globalCfCookie, refreshCfCookie } from '../../puppeteer/pool.js';
+import { acquireFromPool, releaseToPool } from '../../puppeteer/pool.js';
+import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer } from './providers/utils.js';
 import { resolveExtractor } from './providers/index.js';
+import { extractEpNumStrict } from '../../utils/stringUtils.js';
 
 import Anime from '../../models/Anime.js';
-import { getEpisodes } from '../../controllers/episodeController.js';
+import { getSamehadakuEpisodes } from '../../controllers/samehadakuController.js';
 
 export { extractIframeSrc, namaServer };
 
@@ -72,34 +74,16 @@ export async function scrapeVideoServers(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
     console.log(`\n[Scrape Fast] ${targetUrl}`);
 
-    let html = '';
-    try {
-        const response = await axios.get(targetUrl, {
-            headers: {
-                'User-Agent': globalUserAgent,
-                'Cookie': globalCfCookie
-            },
-            timeout: 8000
-        });
-        html = response.data;
-    } catch (err) {
-        console.log(`[Scrape Fast] Axios gagal (${err.message}). Fallback...`);
-        if (err.response && (err.response.status === 403 || err.response.status === 503)) {
-            await refreshCfCookie();
-        }
-    }
-
     let slot;
     try {
-        if (!html || html.trim() === '' || html.includes('cf-browser-verification') || html.includes('Just a moment')) {
-            console.log(`[Scrape] Fetch Axios gagal/terblokir Cloudflare. Fallback ke Puppeteer...`);
-            slot = await acquireFromPool();
-            const page = slot.page;
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            html = await page.content();
-        }
+        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 8000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
 
-        const $ = cheerio.load(html);
+        if (html === '404_NOT_FOUND') {
+            throw new Error("Target URL returned 404");
+        }
 
         const judul = ($('h1[itemprop="name"]').text() || $('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
 
@@ -217,38 +201,18 @@ export async function resolveSingleServer(targetUrl, nume, req) {
     if (!targetUrl || !nume) throw new Error("Parameter 'url' dan 'nume' wajib diisi!");
     console.log(`\n[Resolve Fast] ${targetUrl} [nume=${nume}]`);
 
-    let html = '';
-    try {
-        const response = await axios.get(targetUrl, {
-            headers: {
-                'User-Agent': globalUserAgent,
-                'Cookie': globalCfCookie
-            },
-            timeout: 8000
-        });
-        html = response.data;
-    } catch (err) {
-        console.log(`[Resolve Fast] Axios gagal (${err.message}). Fallback...`);
-        if (err.response && (err.response.status === 403 || err.response.status === 503)) {
-            await refreshCfCookie();
-        }
-    }
-
     let slot;
     try {
-        let $ = cheerio.load(html);
-        let post = $('.east_player_option').first().attr('data-post') || '';
+        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 8000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
 
-        // Fallback to Puppeteer page.goto if fetch failed (Cloudflare IUAM / Tarpit)
-        if (!post) {
-            console.log(`[Resolve] Fetch Axios gagal/terblokir Cloudflare. Fallback ke Puppeteer...`);
-            slot = await acquireFromPool();
-            const page = slot.page;
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            html = await page.content();
-            $ = cheerio.load(html);
-            post = $('.east_player_option').first().attr('data-post') || '';
+        if (html === '404_NOT_FOUND') {
+            throw new Error("Target URL returned 404");
         }
+
+        let post = $('.east_player_option').first().attr('data-post') || '';
 
         if (!post) throw new Error("Tidak menemukan ID Post (data-post) setelah fallback");
         
@@ -303,23 +267,6 @@ export async function extractVideoUrl(embedUrl, req) {
     return await extractor.extract(embedUrl, req);
 }
 
-function extractEpisodeNumber(title) {
-    if (!title) return null;
-    // Standard episode matching (Episode/Eps/Ep followed by digits)
-    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
-    if (stdMatch) return parseFloat(stdMatch[1]);
-
-    // OVA / Special matching (OVA 1, Special 3, SP 2, etc.)
-    const ovaMatch = title.match(/(?:OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
-    if (ovaMatch) return parseFloat(ovaMatch[1]);
-
-    // Standalone trailing digit matching
-    const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
-    if (fallbackMatch) return parseFloat(fallbackMatch[1]);
-
-    return null;
-}
-
 export async function getAlternativeServersSamehadaku(seriesTitle, episodeTitle) {
     if (!seriesTitle || !episodeTitle) return [];
 
@@ -360,15 +307,15 @@ export async function getAlternativeServersSamehadaku(seriesTitle, episodeTitle)
 
         console.log(`[Samehadaku Alt] Menemukan kecocokan seri Samehadaku: "${samehadakuUrl}"`);
 
-        const targetEpNum = extractEpisodeNumber(episodeTitle);
+        const targetEpNum = extractEpNumStrict(episodeTitle);
         if (targetEpNum === null) return [];
 
-        const details = await getEpisodes(samehadakuUrl);
+        const details = await getSamehadakuEpisodes(samehadakuUrl);
         if (!details || !details.daftar_episode) return [];
 
         let targetEpUrl = null;
         for (const ep of details.daftar_episode) {
-            const epNum = extractEpisodeNumber(ep.judul);
+            const epNum = extractEpNumStrict(ep.judul);
             if (epNum === targetEpNum) {
                 targetEpUrl = ep.url;
                 break;

@@ -133,3 +133,54 @@ export function isSafeToMerge(title1, title2, scoreThreshold = 0.85) {
     
     return { isSafe: true, score };
 }
+
+export function formatEpisodeTitle(title) {
+    if (!title) return 'Episode ?';
+    if (title.toLowerCase().includes('batch')) return 'Batch';
+    const typeMatch = title.match(/(OVA|OAD|Special|SP)\s*(\d+(\.\d+)?)/i);
+    if (typeMatch) return `${typeMatch[1].toUpperCase()} ${typeMatch[2]}`;
+    const epMatch = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i);
+    if (epMatch) return `Episode ${epMatch[1]}`;
+    const fallback = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    if (fallback) return `Episode ${fallback[1]}`;
+    return title;
+}
+
+export function extractEpNumStrict(title) {
+    if (!title) return null;
+    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
+    if (stdMatch) return parseFloat(stdMatch[1]);
+    const ovaMatch = title.match(/(?:OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
+    if (ovaMatch) return parseFloat(ovaMatch[1]);
+    const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    if (fallbackMatch) return parseFloat(fallbackMatch[1]);
+    return null;
+}
+
+export function extractEpNum(title) {
+    if (!title) return title;
+    const epMatch = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i);
+    if (epMatch) return parseFloat(epMatch[1]);
+    const pureNumMatch = title.match(/^\s*0*(\d+(?:\.\d+)?)\s*$/);
+    if (pureNumMatch) return parseFloat(pureNumMatch[1]);
+    return title;
+}
+
+export function adjustTitleEpisodeNumber(title, offset) {
+    if (!offset) return title;
+    const match = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i) || title.match(/(\d+(?:\.\d+)?)/);
+    if (match) {
+        const originalNumStr = match[1];
+        const originalNum = parseFloat(originalNumStr);
+        const newNum = originalNum + offset;
+        const zeroPaddingLength = originalNumStr.startsWith('0') && originalNumStr.length > 1 ? originalNumStr.length : 0;
+        let newNumStr = String(newNum);
+        if (zeroPaddingLength > 0) {
+            newNumStr = newNumStr.padStart(zeroPaddingLength, '0');
+        }
+        const fullMatch = match[0];
+        const updatedFullMatch = fullMatch.replace(originalNumStr, newNumStr);
+        return title.replace(fullMatch, updatedFullMatch);
+    }
+    return title;
+}

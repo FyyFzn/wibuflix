@@ -18,7 +18,7 @@ function pushLog(type, ...args) {
 
 console.log = function (...args) { pushLog('LOG', ...args); };
 console.debug = function () { }; // Biarkan debug mati
-console.info = function (...args) { pushLog('INFO', ...args); originalInfo(...args); };
+console.info = function (...args) { pushLog('INFO', ...args); };
 console.warn = function (...args) { pushLog('WARN', ...args); originalWarn(...args); };
 console.error = function (...args) { pushLog('ERROR', ...args); originalError(...args); };
 
