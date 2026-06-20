@@ -127,6 +127,10 @@ export function isSafeToMerge(title1, title2, scoreThreshold = 0.85) {
         return { isSafe: false, score }; // Berbeda Part
     }
     
+    // Jika satu punya Part tapi yang lain tidak, asumsikan yang tidak punya adalah Part 1
+    if (meta1.part === null && meta2.part !== null && meta2.part !== 1) return { isSafe: false, score };
+    if (meta2.part === null && meta1.part !== null && meta1.part !== 1) return { isSafe: false, score };
+    
     // Jika satu punya Season tapi yang lain tidak, asumsikan yang tidak punya adalah Season 1
     if (meta1.season === null && meta2.season !== null && meta2.season !== 1) return { isSafe: false, score };
     if (meta2.season === null && meta1.season !== null && meta1.season !== 1) return { isSafe: false, score };

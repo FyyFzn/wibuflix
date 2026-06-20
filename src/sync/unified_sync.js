@@ -1,5 +1,6 @@
 import Anime from '../models/Anime.js';
 import { searchTMDB } from '../services/metadata/tmdb.js';
+import { isSafeToMerge } from '../utils/stringUtils.js';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
@@ -46,10 +47,15 @@ export async function syncUnified() {
                         });
 
                         if (existingDuplicate) {
-                            log(`[UnifiedSync] 🔗 DUPLIKAT TERDETEKSI! Meleburkan "${anime.title}" ke dalam "${existingDuplicate.title}" (TMDB ID: ${tmdbData.malId})`);
+                            // Validasi ekstra: Meskipun AniList mengembalikan ID yang sama, 
+                            // Pastikan mereka benar-benar aman digabung (menghindari Season 2 Part 2 gabung ke Season 2)
+                            const safeCheck = isSafeToMerge(anime.title, existingDuplicate.title, 0.5); // Gunakan threshold lebih rendah karena ID sudah sama
                             
-                            // Gabungkan sumber (sources) dari anime ini ke anime utama
-                            if (anime.sources) {
+                            if (safeCheck.isSafe) {
+                                log(`[UnifiedSync] 🔗 DUPLIKAT TERDETEKSI! Meleburkan "${anime.title}" ke dalam "${existingDuplicate.title}" (TMDB ID: ${tmdbData.malId})`);
+                                
+                                // Gabungkan sumber (sources) dari anime ini ke anime utama
+                                if (anime.sources) {
                                 if (anime.sources.samehadaku?.url && !existingDuplicate.sources.samehadaku?.url) {
                                     existingDuplicate.sources.samehadaku = anime.sources.samehadaku;
                                 }
