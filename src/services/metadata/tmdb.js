@@ -189,7 +189,7 @@ export async function searchTMDB(title, isToku = false) {
                 let item = results[0];
                 try {
                     const stringSimilarity = (await import('string-similarity')).default;
-                    const titles = results.map(r => r.name || r.title || '');
+                    const titles = results.map(r => (r.name || r.title || '').toLowerCase());
                     const bestMatch = stringSimilarity.findBestMatch(cleanTitle, titles);
                     if (bestMatch.bestMatch.rating > 0.6) {
                         item = results[bestMatch.bestMatchIndex];
