@@ -87,6 +87,11 @@ class QueueManager extends EventEmitter {
             const orderB = statusOrder[b.status] || 99;
             if (orderA !== orderB) return orderA - orderB;
             
+            // Khusus untuk COMPLETED, urutkan berdasarkan yang paling baru selesai di atas
+            if (a.status === 'COMPLETED') {
+                return new Date(b.updatedAt) - new Date(a.updatedAt);
+            }
+            
             // Jika statusnya sama, gunakan urutan prioritas bawaan
             if (b.priority !== a.priority) return b.priority - a.priority;
             return new Date(a.createdAt) - new Date(b.createdAt);
