@@ -10,20 +10,20 @@
 export function normalizeTitleForMatch(title) {
     if (!title) return '';
     let t = title.toLowerCase();
-    
+
     // Konversi ordinal: "2nd season" -> "season 2"
     t = t.replace(/(\d+)(?:st|nd|rd|th)\s+season/gi, 'season $1');
-    
+
     // Hapus embel-embel umum
     t = t.replace(/subtitle indonesia|sub indo|batch|ongoing|on-going|tv series/gi, '');
-    
+
     // Standarisasi "Season X" menjadi "sX"
     t = t.replace(/season\s*(\d+)/gi, 's$1');
     t = t.replace(/part\s*(\d+)/gi, 'p$1');
-    
+
     // Hapus karakter spesial dan tanda baca
     t = t.replace(/[^\w\s]/g, ' ');
-    
+
     // Hapus spasi ganda
     return t.replace(/\s+/g, ' ').trim();
 }
@@ -35,28 +35,28 @@ export function normalizeTitleForMatch(title) {
 export function diceCoefficient(str1, str2) {
     const s1 = str1.toLowerCase().replace(/\s+/g, '');
     const s2 = str2.toLowerCase().replace(/\s+/g, '');
-    
+
     if (s1 === s2) return 1.0;
     if (s1.length < 2 || s2.length < 2) return 0.0;
-    
+
     // Buat bigrams (pasangan 2 huruf berurutan)
     const bigrams1 = new Map();
     for (let i = 0; i < s1.length - 1; i++) {
         const bigram = s1.substring(i, i + 2);
         bigrams1.set(bigram, (bigrams1.get(bigram) || 0) + 1);
     }
-    
+
     let intersectionSize = 0;
     for (let i = 0; i < s2.length - 1; i++) {
         const bigram = s2.substring(i, i + 2);
         const count = bigrams1.get(bigram);
-        
+
         if (count > 0) {
             bigrams1.set(bigram, count - 1);
             intersectionSize++;
         }
     }
-    
+
     return (2.0 * intersectionSize) / (s1.length - 1 + s2.length - 1);
 }
 
@@ -66,14 +66,14 @@ export function diceCoefficient(str1, str2) {
  */
 export function extractSeasonAndPart(title) {
     if (!title) return { season: null, part: null };
-    
+
     let t = title.toLowerCase();
     // Konversi ordinal: "2nd season" -> "season 2"
     t = t.replace(/(\d+)(?:st|nd|rd|th)\s+season/gi, 'season $1');
-    
+
     let season = null;
     let part = null;
-    
+
     const seasonMatch = t.match(/(?:season|s)\s*(\d+)/i);
     if (seasonMatch) {
         season = parseInt(seasonMatch[1]);
@@ -85,10 +85,10 @@ export function extractSeasonAndPart(title) {
             season = romanMap[romanMatch[1].toLowerCase()];
         }
     }
-    
+
     const partMatch = t.match(/(?:part|p|cour)\s*(\d+)/i);
     if (partMatch) part = parseInt(partMatch[1]);
-    
+
     return { season, part };
 }
 
@@ -98,43 +98,43 @@ export function extractSeasonAndPart(title) {
 export function isSafeToMerge(title1, title2, scoreThreshold = 0.85) {
     const norm1 = normalizeTitleForMatch(title1);
     const norm2 = normalizeTitleForMatch(title2);
-    
+
     let score = diceCoefficient(norm1, norm2);
-    
+
     // Penalti jika selisih kata signifikan (Cth: "Naruto" vs "Naruto Shippuden", "Anime" vs "Anime Specials")
     const words1 = norm1.split(' ');
     const words2 = norm2.split(' ');
     if (Math.abs(words1.length - words2.length) >= 1 && score > 0.7 && score < 1.0) {
         score -= 0.12; // Kurangi kemiripan agar tidak lolos ambang batas 0.85
     }
-    
+
     if (score < scoreThreshold) return { isSafe: false, score };
-    
+
     // Jangan gabungkan Movie dengan non-Movie
     const isMovie1 = title1.toLowerCase().includes('movie');
     const isMovie2 = title2.toLowerCase().includes('movie');
     if (isMovie1 !== isMovie2) return { isSafe: false, score };
-    
+
     // Validasi ketat angka Season dan Part
     const meta1 = extractSeasonAndPart(title1);
     const meta2 = extractSeasonAndPart(title2);
-    
+
     if (meta1.season !== null && meta2.season !== null && meta1.season !== meta2.season) {
         return { isSafe: false, score }; // Berbeda Season
     }
-    
+
     if (meta1.part !== null && meta2.part !== null && meta1.part !== meta2.part) {
         return { isSafe: false, score }; // Berbeda Part
     }
-    
+
     // Jika satu punya Part tapi yang lain tidak, asumsikan yang tidak punya adalah Part 1
     if (meta1.part === null && meta2.part !== null && meta2.part !== 1) return { isSafe: false, score };
     if (meta2.part === null && meta1.part !== null && meta1.part !== 1) return { isSafe: false, score };
-    
+
     // Jika satu punya Season tapi yang lain tidak, asumsikan yang tidak punya adalah Season 1
     if (meta1.season === null && meta2.season !== null && meta2.season !== 1) return { isSafe: false, score };
     if (meta2.season === null && meta1.season !== null && meta1.season !== 1) return { isSafe: false, score };
-    
+
     return { isSafe: true, score };
 }
 
