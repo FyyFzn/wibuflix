@@ -11,6 +11,9 @@ export function normalizeTitleForMatch(title) {
     if (!title) return '';
     let t = title.toLowerCase();
 
+    // Hapus franchise besar Tokusatsu agar string similarity tidak bias oleh prefix yang panjang
+    t = t.replace(/(kamen rider|power rangers|ultraman|super sentai)\s*/gi, '');
+
     // Konversi ordinal: "2nd season" -> "season 2"
     t = t.replace(/(\d+)(?:st|nd|rd|th)\s+season/gi, 'season $1');
 
