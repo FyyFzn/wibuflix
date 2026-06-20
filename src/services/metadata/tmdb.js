@@ -25,45 +25,69 @@ export function normalizeTitle(title) {
 }
 
 /**
- * Fallback pencarian ke Jikan API (MyAnimeList)
+ * Fallback pencarian ke AniList GraphQL API (Lebih lengkap & rate limit 90/menit, jauh lebih baik dari MAL)
  */
-async function searchJikan(cleanTitle) {
-    // Beri jeda 1 detik khusus untuk Jikan agar tidak terkena limit (maks 3 req/detik)
-    await new Promise(r => setTimeout(r, 1000));
+async function searchAniList(cleanTitle) {
+    // Beri jeda 200ms saja karena limit AniList sangat longgar (90 req/menit)
+    await new Promise(r => setTimeout(r, 200));
     try {
-        const url = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(cleanTitle)}&limit=1`;
-        const response = await axios.get(url, { timeout: 10000 });
-        const results = response.data.data;
-        if (results && results.length > 0) {
-            const item = results[0];
-            
+        const query = `
+        query ($search: String) {
+          Media(search: $search, type: ANIME) {
+            idMal
+            title { romaji english native }
+            coverImage { extraLarge large }
+            averageScore
+            description(asHtml: false)
+            genres
+            episodes
+            seasonYear
+            status
+          }
+        }`;
+
+        const response = await axios.post('https://graphql.anilist.co', {
+            query,
+            variables: { search: cleanTitle }
+        }, { timeout: 10000 });
+
+        const item = response.data.data.Media;
+        if (item) {
             const aliases = [];
             const addAlias = (val) => { if (val && !isJapanese(val)) aliases.push(val); };
             
-            addAlias(item.title);
-            addAlias(item.title_english);
-            addAlias(item.title_japanese); // Will be skipped by isJapanese
-            if (item.title_synonyms && Array.isArray(item.title_synonyms)) {
-                item.title_synonyms.forEach(addAlias);
+            addAlias(item.title.english);
+            addAlias(item.title.romaji);
+            addAlias(item.title.native); // Will be skipped by isJapanese
+
+            // Mapping Status
+            let mappedStatus = 'Unknown';
+            if (item.status === 'FINISHED') mappedStatus = 'Completed';
+            else if (item.status === 'RELEASING') mappedStatus = 'Ongoing';
+
+            // Mapping Score dari skala 100 ke skala 10 (seperti TMDB/MAL)
+            let mappedScore = '-';
+            if (item.averageScore) {
+                mappedScore = (item.averageScore / 10).toFixed(2);
             }
 
             return {
-                title: item.title_english || item.title, // Prioritaskan judul bahasa Inggris untuk konsistensi
-                image: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
-                score: item.score ? item.score.toString() : '-',
-                synopsis: item.synopsis || 'Sinopsis tidak tersedia di Jikan.',
-                status: item.status === 'Finished Airing' ? 'Completed' : (item.status === 'Currently Airing' ? 'Ongoing' : 'Unknown'),
-                type: item.type || 'Anime',
+                title: item.title.english || item.title.romaji, // Prioritaskan judul bahasa Inggris untuk konsistensi
+                image: item.coverImage?.extraLarge || item.coverImage?.large || null,
+                score: mappedScore,
+                synopsis: item.description ? item.description.replace(/<[^>]*>?/gm, '') : 'Sinopsis tidak tersedia di AniList.', // Hapus sisa tag HTML
+                status: mappedStatus,
+                type: 'Anime', // AniList Media tipe Anime
                 aliases: [...new Set(aliases.filter(Boolean))],
-                genres: item.genres ? item.genres.map(g => g.name) : [],
+                genres: item.genres || [],
                 episodesCount: item.episodes || null,
-                year: item.year || null,
-                malId: item.mal_id || null
+                year: item.seasonYear || null,
+                malId: item.idMal || null
             };
         }
         return null;
     } catch (e) {
-        console.error('[Jikan] Gagal mencari:', cleanTitle, e.message);
+        console.error('[AniList] Gagal mencari:', cleanTitle, e.response?.data || e.message);
         return null;
     }
 }
@@ -229,20 +253,20 @@ export async function searchTMDB(title, isToku = false) {
                 if (item.poster_path) {
                     image = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
                 } else if (!isToku) {
-                    // Fallback to Jikan just for the image if TMDB lacks a poster (DILARANG UNTUK TOKU)
+                    // Fallback to AniList just for the image if TMDB lacks a poster (DILARANG UNTUK TOKU)
                     try {
-                        const jikanFallback = await searchJikan(cleanTitle);
-                        if (jikanFallback && jikanFallback.image) {
-                            image = jikanFallback.image;
+                        const anilistFallback = await searchAniList(cleanTitle);
+                        if (anilistFallback && anilistFallback.image) {
+                            image = anilistFallback.image;
                         }
-                        if (jikanFallback && jikanFallback.aliases) {
-                            aliases.push(...jikanFallback.aliases);
+                        if (anilistFallback && anilistFallback.aliases) {
+                            aliases.push(...anilistFallback.aliases);
                         }
-                        if (jikanFallback) {
-                            genres = genres.length > 0 ? genres : (jikanFallback.genres || []);
-                            episodesCount = episodesCount || jikanFallback.episodesCount;
-                            year = year || jikanFallback.year;
-                            tmdbId = jikanFallback.malId || tmdbId;
+                        if (anilistFallback) {
+                            genres = genres.length > 0 ? genres : (anilistFallback.genres || []);
+                            episodesCount = episodesCount || anilistFallback.episodesCount;
+                            year = year || anilistFallback.year;
+                            tmdbId = anilistFallback.malId || tmdbId;
                         }
                     } catch(e) {}
                 }
@@ -264,11 +288,11 @@ export async function searchTMDB(title, isToku = false) {
             };
 
         } else if (!isToku) {
-            // Fallback ke Jikan API (DILARANG UNTUK TOKU)
-            const jikanData = await searchJikan(cleanTitle);
-            if (jikanData) {
-                jikanData.source = 'Jikan';
-                resultData = jikanData;
+            // Fallback ke AniList API (DILARANG UNTUK TOKU)
+            const anilistData = await searchAniList(cleanTitle);
+            if (anilistData) {
+                anilistData.source = 'AniList';
+                resultData = anilistData;
             }
         }
 
@@ -276,10 +300,10 @@ export async function searchTMDB(title, isToku = false) {
         console.error(`[TMDB API] Error searching "${cleanTitle}":`, err.message);
         // Fallback jika network TMDB error
         if (!isToku) {
-            const jikanData = await searchJikan(cleanTitle);
-            if (jikanData) {
-                jikanData.source = 'Jikan';
-                resultData = jikanData;
+            const anilistData = await searchAniList(cleanTitle);
+            if (anilistData) {
+                anilistData.source = 'AniList';
+                resultData = anilistData;
             }
         }
     }
