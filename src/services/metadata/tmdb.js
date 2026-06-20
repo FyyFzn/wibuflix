@@ -27,9 +27,9 @@ export function normalizeTitle(title) {
 /**
  * Fallback pencarian ke AniList GraphQL API (Lebih lengkap & rate limit 90/menit, jauh lebih baik dari MAL)
  */
-async function searchAniList(cleanTitle) {
-    // Beri jeda 200ms saja karena limit AniList sangat longgar (90 req/menit)
-    await new Promise(r => setTimeout(r, 200));
+async function searchAniList(cleanTitle, retries = 3) {
+    // Beri jeda 1000ms (1 detik) agar aman dari limit AniList (90 req/menit = 1.5 req/detik maksimal)
+    await new Promise(r => setTimeout(r, 1000));
     try {
         const query = `
         query ($search: String) {
@@ -49,7 +49,7 @@ async function searchAniList(cleanTitle) {
         const response = await axios.post('https://graphql.anilist.co', {
             query,
             variables: { search: cleanTitle }
-        }, { timeout: 10000 });
+        }, { timeout: 15000 });
 
         const item = response.data.data.Media;
         if (item) {
@@ -72,12 +72,12 @@ async function searchAniList(cleanTitle) {
             }
 
             return {
-                title: item.title.english || item.title.romaji, // Prioritaskan judul bahasa Inggris untuk konsistensi
+                title: item.title.english || item.title.romaji, 
                 image: item.coverImage?.extraLarge || item.coverImage?.large || null,
                 score: mappedScore,
-                synopsis: item.description ? item.description.replace(/<[^>]*>?/gm, '') : 'Sinopsis tidak tersedia di AniList.', // Hapus sisa tag HTML
+                synopsis: item.description ? item.description.replace(/<[^>]*>?/gm, '') : 'Sinopsis tidak tersedia di AniList.',
                 status: mappedStatus,
-                type: 'Anime', // AniList Media tipe Anime
+                type: 'Anime',
                 aliases: [...new Set(aliases.filter(Boolean))],
                 genres: item.genres || [],
                 episodesCount: item.episodes || null,
@@ -87,7 +87,19 @@ async function searchAniList(cleanTitle) {
         }
         return null;
     } catch (e) {
-        console.error('[AniList] Gagal mencari:', cleanTitle, e.response?.data || e.message);
+        if (e.response && e.response.status === 429 && retries > 0) {
+            const retryAfter = e.response.headers['retry-after'] 
+                ? parseInt(e.response.headers['retry-after']) * 1000 
+                : 10000; // Default tunggu 10 detik jika tidak ada header
+            console.warn(`[AniList] Terkena Rate Limit (429). Menunggu ${retryAfter/1000} detik sebelum mencoba lagi...`);
+            await new Promise(r => setTimeout(r, retryAfter));
+            return searchAniList(cleanTitle, retries - 1);
+        }
+        
+        // Abaikan 404 Not Found karena wajar jika anime aneh/sangat baru tidak ada di Anilist
+        if (e.response && e.response.status !== 404) {
+            console.error('[AniList] Gagal mencari:', cleanTitle, e.response?.data?.errors || e.message);
+        }
         return null;
     }
 }
