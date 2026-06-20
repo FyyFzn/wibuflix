@@ -91,6 +91,7 @@ export async function syncUnified() {
                             continue; // Lanjut ke anime berikutnya
                         }
                     }
+                }
                     // =========================================================================
 
                     // Jangan timpa gambar jika gambar asli sudah bagus (kecuali placeholder)
