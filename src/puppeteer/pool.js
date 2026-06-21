@@ -167,7 +167,18 @@ export async function initPagePool() {
 
 export async function acquireFromPool() {
     const slot = pagePool.find(s => !s.busy);
-    if (slot) { slot.busy = true; return slot; }
+    if (slot) { 
+        slot.busy = true; 
+        try {
+            if (slot.page.isClosed()) throw new Error('closed');
+            await slot.page.evaluate('1'); // Test connection
+        } catch {
+            console.log('[PagePool] Mendeteksi page mati di pool, memulihkan...');
+            const browser = await getBrowser();
+            slot.page = await createPage(browser);
+        }
+        return slot; 
+    }
     const browser = await getBrowser();
     const page = await createPage(browser);
     return { page, busy: true, temp: true, type: 'regular' };
@@ -175,7 +186,18 @@ export async function acquireFromPool() {
 
 export async function acquireFromExtractorPool() {
     const slot = extractorPool.find(s => !s.busy);
-    if (slot) { slot.busy = true; return slot; }
+    if (slot) { 
+        slot.busy = true; 
+        try {
+            if (slot.page.isClosed()) throw new Error('closed');
+            await slot.page.evaluate('1');
+        } catch {
+            console.log('[ExtractorPool] Mendeteksi page mati di pool, memulihkan...');
+            const browser = await getBrowser();
+            slot.page = await createExtractorPage(browser);
+        }
+        return slot; 
+    }
     const browser = await getBrowser();
     const page = await createExtractorPage(browser);
     return { page, busy: true, temp: true, type: 'extractor' };
