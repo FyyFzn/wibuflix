@@ -129,6 +129,28 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
 }
 
 /**
+ * Memeriksa status upload dengan mekanisme fallback (Pengecekan Ganda).
+ * Mencari di folder baru (seriesSlug), lalu jika tidak ada, mencari di folder lama (oldSeriesSlug).
+ */
+export async function checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug) {
+    let status = await checkUploadStatus(seriesSlug, episodeSlug);
+    if (status !== null) {
+        return { status, activeSeriesSlug: seriesSlug };
+    }
+    
+    if (oldSeriesSlug && oldSeriesSlug !== seriesSlug) {
+        let oldStatus = await checkUploadStatus(oldSeriesSlug, episodeSlug);
+        // Jika di folder lama ada file READY, UPLOADING, atau FAILED, gunakan folder lama
+        if (oldStatus !== null) {
+            return { status: oldStatus, activeSeriesSlug: oldSeriesSlug };
+        }
+    }
+    
+    // Jika tidak ada di keduanya, kembalikan null dan gunakan folder baru untuk upload selanjutnya
+    return { status: null, activeSeriesSlug: seriesSlug };
+}
+
+/**
  * Marks the upload as failed in the cache, allowing up to 3 retries before permanent failure.
  */
 export function markUploadFailed(seriesSlug, episodeSlug) {

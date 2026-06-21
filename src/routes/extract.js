@@ -1,7 +1,8 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku, resolveSingleServer } from '../services/extractors/videoExtractor.js';
-import { checkUploadStatus, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport } from '../utils/azureUploader.js';
+import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport } from '../utils/azureUploader.js';
 import Anime from '../models/Anime.js';
+import { normalizeTitleForMatch } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
 import { getKuronimeServers } from '../controllers/kuronimeController.js';
@@ -22,9 +23,10 @@ const router = express.Router();
 const activeExtractions = new Set();
 let prefetchAbortController = new AbortController();
 
-export function extractSlugs(episodeUrl, seriesUrl) {
+export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
     let episodeSlug = '';
     let seriesSlug = '';
+    let oldSeriesSlug = '';
 
     if (episodeUrl.includes('___neosatsu_ep___')) {
         const parts = episodeUrl.split('___neosatsu_ep___');
@@ -73,9 +75,25 @@ export function extractSlugs(episodeUrl, seriesUrl) {
         }
 
     }
-    if (!seriesSlug) seriesSlug = 'uncategorized';
+    
+    // Simpan hasil ekstraksi URL lama sebagai fallback
+    oldSeriesSlug = seriesSlug || 'uncategorized';
 
-    return { seriesSlug, episodeSlug };
+    if (uniqueId && uniqueId.toString().trim() !== '') {
+        // Jika ID unik tersedia (seperti mal-1234), jadikan prioritas absolut
+        seriesSlug = uniqueId.toString().trim();
+    } else if (seriesTitle && seriesTitle.trim().length > 0) {
+        // Jika tidak ada ID unik, prioritaskan Judul untuk membuat nama folder Azure yang terpadu lintas-sumber
+        // Gunakan utilitas stringUtils untuk normalisasi "Season 2" vs "2nd Season"
+        const cleanTitle = normalizeTitleForMatch(seriesTitle);
+        if (cleanTitle) {
+            seriesSlug = cleanTitle.replace(/\s+/g, '-');
+        }
+    }
+
+    if (!seriesSlug) seriesSlug = oldSeriesSlug;
+
+    return { seriesSlug, episodeSlug, oldSeriesSlug };
 }
 
 async function getServersBasedOnUrl(episodeUrl) {
@@ -139,12 +157,15 @@ function getResolutionGroup(serverName) {
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player') {
-    const { episodeSlug } = extractSlugs(episodeUrl, null);
-    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null) {
+    const { episodeSlug } = extractSlugs(episodeUrl, null, null); // Episode extraction logic doesn't need title
+    
+    const checkInfo = await checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug);
+    const status = checkInfo.status;
+    const activeSlug = checkInfo.activeSlug || seriesSlug;
+    
+    const blobPath = getBlobPath(activeSlug, episodeSlug);
     const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
-
-    const status = await checkUploadStatus(seriesSlug, episodeSlug);
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
     if (status === 'READY' || status === 'UPLOADING' || (status === 'FAILED' && source !== 'queue')) {
@@ -194,7 +215,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
         if (!servers || servers.length === 0) {
             console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
-            markUploadFailed(seriesSlug, episodeSlug);
+            markUploadFailed(activeSlug, episodeSlug);
             return { success: false, reason: 'Tidak ada server tersedia' };
         }
         const groups = { 1080: [], 720: [], 480: [], 360: [] };
@@ -254,12 +275,12 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     }
 
     if (matchedSource) {
-        global[`prefetch_src_${seriesSlug}_${episodeSlug}`] = matchedSource;
-        await uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug, source);
-        delete global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
+        global[`prefetch_src_${activeSlug}_${episodeSlug}`] = matchedSource;
+        await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
+        delete global[`prefetch_src_${activeSlug}_${episodeSlug}`];
         return { success: true };
     } else {
-        markUploadFailed(seriesSlug, episodeSlug);
+        markUploadFailed(activeSlug, episodeSlug);
         return { success: false, reason: 'Semua server gagal atau limit.' };
     }
 }
@@ -385,7 +406,7 @@ router.get('/api/extract-video', async (req, res) => {
 // Parameter: episodeUrl (wajib), seriesUrl, nextEpisodeUrl
 // ============================================================
 router.get('/api/smart-play', async (req, res) => {
-    const { episodeUrl, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle } = req.query;
+    const { episodeUrl, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle, uniqueId } = req.query;
     if (!episodeUrl) {
         return res.status(400).json({ success: false, error: "Parameter 'episodeUrl' wajib diisi!" });
     }
@@ -394,18 +415,21 @@ router.get('/api/smart-play', async (req, res) => {
     const prefetchWindow = [nextEpisodeUrl].filter(Boolean);
 
     try {
-        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
+        const { seriesSlug, episodeSlug, oldSeriesSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
 
-        const status = await checkUploadStatus(seriesSlug, episodeSlug);
+        const checkInfo = await checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug);
+        const status = checkInfo.status;
+        const activeSlug = checkInfo.activeSlug || seriesSlug;
 
         if (status === 'READY') {
             if (prefetchWindow.length > 0) {
+                // Selalu prefetch ke folder baru (seriesSlug)
                 triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
             }
             return res.json({
                 success: true,
                 status: 'READY',
-                url: getBlobUrl(getBlobPath(seriesSlug, episodeSlug))
+                url: getBlobUrl(getBlobPath(activeSlug, episodeSlug))
             });
         }
 
@@ -449,7 +473,7 @@ router.get('/api/smart-play', async (req, res) => {
             });
         }
 
-        const blobPath = getBlobPath(seriesSlug, episodeSlug);
+        const blobPath = getBlobPath(activeSlug, episodeSlug);
         if (activeExtractions.has(blobPath)) {
             return res.json({
                 success: true,
@@ -655,10 +679,10 @@ router.post('/api/cancel-uploads', (req, res) => {
 // ============================================================
 router.get('/api/upload-status', (req, res) => {
     try {
-        const { episodeUrl, seriesUrl } = req.query;
+        const { episodeUrl, seriesUrl, seriesTitle, uniqueId } = req.query;
         if (!episodeUrl) return res.status(400).json({ success: false, message: "URL required" });
         
-        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
+        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
         const progressMessage = getUploadProgress(seriesSlug, episodeSlug);
         res.json({ success: true, progressMessage });
     } catch (e) {
@@ -687,11 +711,11 @@ router.post('/cancel-stream', express.json(), (req, res) => {
 // ============================================================
 
 router.post('/api/queue/add', express.json(), async (req, res) => {
-    const { episodeUrl, seriesUrl, seriesTitle, episodeTitle } = req.body;
+    const { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId } = req.body;
     if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
     
     // Extract slugs to check if already uploaded/uploading
-    const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl);
+    const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
     
     // We can directly add it to the background queue manager
     const item = await backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle);
