@@ -54,6 +54,7 @@ const animeSchema = new mongoose.Schema({
     synopsis: { type: String, default: null },
     genres: { type: [String], default: [] },
     episodesCount: { type: Number, default: null },
+    episodesList: { type: Array, default: [] },
     year: { type: Number, default: null },
     malScore: { type: String, default: null },
     malId: { type: Number, default: null },

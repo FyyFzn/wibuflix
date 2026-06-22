@@ -16,9 +16,56 @@ export async function getEpisodesMerged(req, res) {
     }
 
     try {
-        let data;
+        // --- 1. AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
+        let dbAnime = null;
+        const orQuery = [];
         
-        // --- LOGIKA MERGE MULTI-SUMBER ---
+        if (urlSamehadaku) orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
+        if (urlOtakudesu) orQuery.push({ "sources.otakudesu.id": urlOtakudesu.split(':')[1] });
+        if (urlKuronime) orQuery.push({ "sources.kuronime.url": urlKuronime });
+        
+        if (orQuery.length > 0) {
+            dbAnime = await Anime.findOne({ $or: orQuery });
+        } else if (targetUrl) {
+            if (targetUrl.startsWith('/anime/otakudesu:')) {
+                dbAnime = await Anime.findOne({ "sources.otakudesu.id": targetUrl.split(':')[1] });
+            } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
+                dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
+            } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
+                dbAnime = await Anime.findOne({ "sources.kuronime.url": targetUrl });
+            } else {
+                dbAnime = await Anime.findOne({ "sources.samehadaku.url": targetUrl });
+            }
+        }
+
+        // --- 2. JIKA ADA CACHE DI DATABASE, RETURN LANGSUNG ---
+        let isCached = false;
+        if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0) {
+            isCached = true;
+            const data = {
+                judul_seri: dbAnime.title,
+                daftar_episode: dbAnime.episodesList,
+                cover_scraper: dbAnime.image,
+                mal: {
+                    malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
+                    synopsis: dbAnime.synopsis || null,
+                    status: dbAnime.status,
+                    genres: dbAnime.genres || [],
+                    episodes: dbAnime.episodesCount,
+                    year: dbAnime.year,
+                    cover: dbAnime.image,
+                    malId: dbAnime.malId
+                }
+            };
+            res.json({ status: 'success', data, source: 'database' });
+        }
+
+        // --- 3. PROSES SCRAPING (BACKGROUND JIKA SUDAH ADA CACHE) ---
+        const performScrape = async () => {
+            try {
+                let data;
+                
+                // --- LOGIKA MERGE MULTI-SUMBER ---
         if (urlSamehadaku || urlOtakudesu || urlKuronime) {
             const slug = urlOtakudesu ? urlOtakudesu.split(':')[1] : null;
             
@@ -222,44 +269,58 @@ export async function getEpisodesMerged(req, res) {
             data.daftar_episode = Array.from(dedupeMap.values());
         }
 
-        // --- AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
-        let dbAnime = null;
-        const orQuery = [];
-        
-        if (urlSamehadaku) orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
-        if (urlOtakudesu) orQuery.push({ "sources.otakudesu.id": urlOtakudesu.split(':')[1] });
-        if (urlKuronime) orQuery.push({ "sources.kuronime.url": urlKuronime });
-        
-        if (orQuery.length > 0) {
-            dbAnime = await Anime.findOne({ $or: orQuery });
-        } else if (targetUrl) {
-            if (targetUrl.startsWith('/anime/otakudesu:')) {
-                dbAnime = await Anime.findOne({ "sources.otakudesu.id": targetUrl.split(':')[1] });
-            } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
-                dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
-            } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
-                dbAnime = await Anime.findOne({ "sources.kuronime.url": targetUrl });
-            } else {
-                dbAnime = await Anime.findOne({ "sources.samehadaku.url": targetUrl });
-            }
+        // --- 4. SIMPAN HASIL SCRAPE KE DATABASE UNTUK CACHE BERIKUTNYA ---
+        if (dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
+            // Jika kita sudah merespons (isCached === true), kita hanya update DB diam-diam
+            dbAnime.episodesList = data.daftar_episode;
+            await dbAnime.save().catch(() => {});
+        } else if (!dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
+            // Jika belum ada di DB (jarang terjadi karena sudah disinkronisasi), tapi siapa tahu
+            // Biarkan saja, atau kita bisa buat Anime baru, tapi lebih baik biarkan auto-sync yang handle.
         }
 
-        if (dbAnime && data) {
-            data.mal = {
-                malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
-                synopsis: dbAnime.synopsis || null,
-                status: dbAnime.status,
-                genres: dbAnime.genres || [],
-                episodes: dbAnime.episodesCount,
-                year: dbAnime.year,
-                cover: dbAnime.image,
-                malId: dbAnime.malId
-            };
+        // Jika belum ada cache, kita return hasil scraping sekarang
+        if (!isCached) {
+            if (dbAnime && data) {
+                data.mal = {
+                    malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
+                    synopsis: dbAnime.synopsis || null,
+                    status: dbAnime.status,
+                    genres: dbAnime.genres || [],
+                    episodes: dbAnime.episodesCount,
+                    year: dbAnime.year,
+                    cover: dbAnime.image,
+                    malId: dbAnime.malId
+                };
+            }
+            res.json({ status: 'success', data: data || { daftar_episode: [] }, source: 'scraper' });
         }
-        
-        res.json({ status: 'success', data });
+            } catch (err) {
+                console.error('[Background Scrape Error]', err.message);
+                if (!isCached) {
+                    res.status(500).json({ status: 'error', message: err.message });
+                }
+            }
+        };
+
+        // Jalankan scraping
+        if (isCached) {
+            // Hanya jalankan background scrape jika cache sudah lebih dari 1 jam untuk menghindari load berlebih pada Puppeteer
+            const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
+            if (cacheAge > 3600000) { // 1 jam
+                console.log(`[Cache] Memperbarui episode di latar belakang untuk: ${dbAnime.title}`);
+                performScrape(); // Jalan di background tanpa await
+            } else {
+                console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
+            }
+        } else {
+            await performScrape(); // Tunggu jika belum ada cache
+        }
+
     } catch (err) {
-        console.error('[Episodes Error]', err.message);
-        res.status(500).json({ status: 'error', message: err.message });
+        console.error('[Episodes Global Error]', err.message);
+        if (!res.headersSent) {
+            res.status(500).json({ status: 'error', message: err.message });
+        }
     }
 }
