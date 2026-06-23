@@ -11,8 +11,11 @@ import QueueTask from '../models/QueueTask.js';
 
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
-    // Jalankan prefetchOneEpisode dengan source 'queue'
-    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue');
+    // Extract slugs with uniqueId to get full fallback slugsToCheck array
+    const { slugsToCheck } = extractSlugs(item.episodeUrl, null, item.seriesTitle, item.uniqueId);
+    
+    // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck
+    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck);
     if (!result.success) {
         // Jika skip atau gagal, ubah status di antrean
         throw new Error(result.reason || 'Prefetch failed or skipped');
@@ -173,6 +176,124 @@ function getResolutionGroup(serverName) {
     return null;
 }
 
+async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null) {
+    let matchedSource = null;
+    try {
+        let primaryPromise = getServersBasedOnUrl(episodeUrl);
+        let alternativePromise = Promise.resolve([]);
+
+        let primaryData = null;
+        if (!episodeTitle) {
+            primaryData = await primaryPromise;
+            episodeTitle = primaryData.judul || '';
+            primaryPromise = Promise.resolve(primaryData);
+        }
+
+        if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
+            try {
+                if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
+                    console.info(`${logPrefix} Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
+                } else {
+                    console.info(`${logPrefix} Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
+                }
+            } catch (err) {
+                console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
+            }
+        }
+
+        const [resolvedPrimary, alternativeServers] = await Promise.all([
+            primaryPromise,
+            alternativePromise.catch(err => {
+                console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
+                return [];
+            })
+        ]);
+
+        const primaryServers = resolvedPrimary.servers || [];
+
+        let primarySource = 'Samehadaku';
+        if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
+        if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
+        
+        let altSource = 'Otakudesu';
+        if (primarySource === 'Otakudesu') altSource = 'Samehadaku';
+        if (primarySource === 'Kuronime') altSource = 'Samehadaku';
+
+        const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
+        const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
+
+        const servers = [...taggedPrimary, ...taggedAlternative];
+
+        if (servers.length === 0) {
+            return { matchedSource: null, error: 'Tidak ada server download/streaming yang ditemukan di halaman episode.' };
+        }
+
+        const groups = { 1080: [], 720: [], 480: [], 360: [] };
+        for (const srv of servers) {
+            const resGroup = getResolutionGroup(srv.nama);
+            if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
+        }
+
+        for (const resVal of [1080, 720, 480, 360]) {
+            if (groups[resVal].length > 0) {
+                groups[resVal].sort((a, b) => {
+                    const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
+                    const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
+                    if (aIsM3u8 !== bIsM3u8) return bIsM3u8 - aIsM3u8;
+                    return serverScore(b.namaHost) - serverScore(a.namaHost);
+                });
+
+                const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
+                console.info(`${logPrefix} Menguji kandidat ${resVal}p: ${serverNames}`);
+            }
+
+            for (const srv of groups[resVal]) {
+                try {
+                    let iframeUrlToExtract = srv.iframeUrl;
+                    if (!iframeUrlToExtract && srv.nume) {
+                        try {
+                            const res = await resolveSingleServer(episodeUrl, srv.nume, req);
+                            if (res && res.iframeUrl) {
+                                iframeUrlToExtract = res.iframeUrl;
+                                srv.namaHost = res.namaHost;
+                            }
+                        } catch (resolveErr) {
+                            console.error(`${logPrefix} Gagal resolve AJAX untuk server ${srv.namaHost || srv.nama}:`, resolveErr.message);
+                            continue;
+                        }
+                    }
+
+                    const extracted = await extractVideoUrl(iframeUrlToExtract, req);
+                    if (extracted && extracted.url && !extracted.webviewOnly) {
+                        const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
+                        try {
+                            await checkRangeSupport(extracted.url, finalHeaders);
+                            matchedSource = { url: extracted.url, headers: finalHeaders };
+                            console.info(`${logPrefix} ✓ Menemukan source video (${resVal}p) dari ${srv.source} [${srv.namaHost}]`);
+                            break;
+                        } catch (pingErr) {
+                            if (pingErr.message === 'HTTP_429_LIMIT') {
+                                console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
+                                continue;
+                            }
+                            throw pingErr;
+                        }
+                    }
+                } catch (e) {
+                    console.error(`${logPrefix} Gagal mengekstrak dari server ${srv.namaHost}:`, e.message);
+                }
+            }
+            if (matchedSource) break;
+        }
+
+        return { matchedSource, error: null };
+    } catch (err) {
+        return { matchedSource: null, error: err.message };
+    }
+}
+
 /**
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
@@ -204,92 +325,13 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     let m3u8Found = false;
 
     try {
-        const pageData = await getServersBasedOnUrl(episodeUrl);
-        const primaryServers = pageData.servers || [];
-        const episodeTitle = pageData.judul || '';
-
-        let alternativeServers = [];
-        if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
-            try {
-                if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-                    alternativeServers = await getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-                } else {
-                    alternativeServers = await getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
-                }
-            } catch (altErr) {
-                console.error(`[Prefetch Alt Error] Gagal mengambil server alternatif:`, altErr.message);
-            }
-        }
-
-        let primarySource = 'Samehadaku';
-        if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
-        if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
+        const result = await findBestVideoSource(episodeUrl, seriesTitle, '', logPrefix);
+        matchedSource = result.matchedSource;
         
-        let altSource = 'Otakudesu';
-        if (primarySource === 'Otakudesu') altSource = 'Samehadaku';
-        if (primarySource === 'Kuronime') altSource = 'Samehadaku'; // Fallback logic for now
-
-        const servers = [
-            ...(primaryServers || []).map(s => ({ ...s, source: primarySource })),
-            ...(alternativeServers || []).map(s => ({ ...s, source: altSource })),
-        ];
-
-        if (!servers || servers.length === 0) {
+        if (!matchedSource) {
             console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
             markUploadFailed(activeSlug, episodeSlug);
-            return { success: false, reason: 'Tidak ada server tersedia' };
-        }
-        const groups = { 1080: [], 720: [], 480: [], 360: [] };
-        for (const srv of servers) {
-            const resGroup = getResolutionGroup(srv.nama);
-            if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
-        }
-
-        // Urutkan server berdasarkan kualitas dan skor
-        for (const res of [1080, 720, 480, 360]) {
-            if (groups[res].length > 0) {
-                groups[res].sort((a, b) => {
-                    const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
-                    const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
-                    
-                    if (aIsM3u8 !== bIsM3u8) {
-                        return bIsM3u8 - aIsM3u8; // M3U8 ditaruh paling depan (prioritas tertinggi dalam resolusi yang sama)
-                    }
-                    
-                    // Jika keduanya m3u8 atau keduanya mp4, adu skor kecepatan
-                    return serverScore(b.namaHost) - serverScore(a.namaHost);
-                });
-                
-                const serverNames = groups[res].map(s => s.namaHost).join(', ');
-                console.info(`${logPrefix} Menguji kandidat ${res}p: ${serverNames}`);
-            }
-
-            for (const srv of groups[res]) {
-                try {
-                    const extracted = await extractVideoUrl(srv.iframeUrl);
-                    if (extracted && extracted.url && !extracted.webviewOnly) {
-                        // Merge headers, prioritizing the ones provided by the server extraction
-                        const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
-                        
-                        // Ping server untuk mengecek limit bandwidth (HTTP 429)
-                        try {
-                            await checkRangeSupport(extracted.url, finalHeaders);
-                        } catch (pingErr) {
-                            if (pingErr.message === 'HTTP_429_LIMIT') {
-                                console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
-                                continue;
-                            }
-                            throw pingErr;
-                        }
-                        matchedSource = { url: extracted.url, headers: finalHeaders };
-                        console.info(`${logPrefix} ✓ ${episodeSlug} (${res}p) dari ${srv.source} [${srv.namaHost}]`);
-                        break;
-                    }
-                } catch (e) {
-                    console.error(`${logPrefix} Gagal ekstrak dari ${srv.namaHost}:`, e.message);
-                }
-            }
-            if (matchedSource) break;
+            return { success: false, reason: result.error || 'Semua server gagal atau limit.' };
         }
     } finally {
         activeExtractions.delete(blobPath);
@@ -510,124 +552,16 @@ router.get('/api/smart-play', async (req, res) => {
         let matchedSource = null;
 
         try {
-            // Fetch primary servers and alternative servers in parallel
-            let primaryPromise = getServersBasedOnUrl(episodeUrl);
-            let alternativePromise = Promise.resolve([]);
+            const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, '[Smart-Play]', req);
+            matchedSource = result.matchedSource;
 
-            if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
-                if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-                    console.info(`[Smart-Play] Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                    alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-                } else {
-                    console.info(`[Smart-Play] Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                    alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, seriesUrl);
-                }
-            }
-
-            const [primaryData, alternativeServers] = await Promise.all([
-                primaryPromise,
-                alternativePromise.catch(err => {
-                    console.error(`[Smart-Play Alternative Fetch Error]:`, err.message);
-                    return [];
-                })
-            ]);
-
-            const primaryServers = primaryData.servers || [];
-
-            // Mark source websites for clarity in logging / resolution priority
-            let primarySource = 'Samehadaku';
-            if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
-            if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
-            
-            let altSource = 'Otakudesu';
-            if (primarySource === 'Otakudesu') altSource = 'Samehadaku';
-            if (primarySource === 'Kuronime') altSource = 'Samehadaku';
-
-            const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
-            const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
-
-            const servers = [...taggedPrimary, ...taggedAlternative];
-
-            if (servers.length === 0) {
+            if (!matchedSource) {
                 markUploadFailed(seriesSlug, episodeSlug);
                 return res.status(404).json({
                     success: false,
                     status: 'FAILED',
-                    message: 'Tidak ada server download/streaming yang ditemukan di halaman episode.'
+                    message: result.error || 'Tidak ada server download/streaming yang ditemukan di halaman episode.'
                 });
-            }
-
-            // Group servers by resolution
-            const groups = { 1080: [], 720: [], 480: [], 360: [] };
-            for (const srv of servers) {
-                const resGroup = getResolutionGroup(srv.nama);
-                if (resGroup && groups[resGroup]) {
-                    groups[resGroup].push(srv);
-                }
-            }
-
-            // Try extracting in priority order
-            const resolutions = [1080, 720, 480, 360];
-            let m3u8Source = null;
-
-            for (const resVal of resolutions) {
-                if (groups[resVal].length > 0) {
-                    groups[resVal].sort((a, b) => {
-                        const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
-                        const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
-                        if (aIsM3u8 !== bIsM3u8) return bIsM3u8 - aIsM3u8;
-                        return serverScore(b.namaHost) - serverScore(a.namaHost);
-                    });
-
-                    const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
-                    console.info(`[Smart-Play] Menguji kandidat ${resVal}p: ${serverNames}`);
-                }
-                for (const srv of groups[resVal]) {
-                    try {
-                        let iframeUrlToExtract = srv.iframeUrl;
-                        
-                        // Jika iframeUrl kosong tapi punya nume (khas Samehadaku), resolve dulu
-                        if (!iframeUrlToExtract && srv.nume) {
-                            try {
-                                console.info(`[Smart-Play] Resolving AJAX iframe untuk server ${srv.nama} (nume: ${srv.nume})`);
-                                const res = await resolveSingleServer(episodeUrl, srv.nume, req);
-                                if (res && res.iframeUrl) {
-                                    iframeUrlToExtract = res.iframeUrl;
-                                    srv.namaHost = res.namaHost; // Update host name untuk log
-                                }
-                            } catch (resolveErr) {
-                                console.error(`[Smart-Play] Gagal resolve AJAX untuk server ${srv.namaHost || srv.nama}:`, resolveErr.message);
-                                continue;
-                            }
-                        }
-
-                        const extracted = await extractVideoUrl(iframeUrlToExtract, req);
-                        if (extracted && extracted.url && !extracted.webviewOnly) {
-                            // Ping host to ensure it's not rate-limited (e.g., Pixeldrain 5GB limit)
-                            console.info(`[Smart-Play] Ping ${srv.namaHost} untuk mengecek limit bandwidth...`);
-                            try {
-                                const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
-                                await checkRangeSupport(extracted.url, finalHeaders);
-                                // If no error, we proceed
-                                matchedSource = {
-                                    url: extracted.url,
-                                    headers: finalHeaders
-                                };
-                                console.info(`[Smart-Play] Menemukan source video (${resVal}p) dari ${srv.source}: ${extracted.url}`);
-                                break;
-                            } catch (pingErr) {
-                                if (pingErr.message === 'HTTP_429_LIMIT') {
-                                    console.warn(`[Smart-Play] ${srv.namaHost} terkena Limit Kuota (429)! Melompat ke server berikutnya...`);
-                                    continue;
-                                }
-                                throw pingErr;
-                            }
-                        }
-                    } catch (e) {
-                        console.error(`[Smart-Play] Gagal mengekstrak dari server ${srv.namaHost} (${srv.source}):`, e.message);
-                    }
-                }
-                if (matchedSource) break;
             }
         } finally {
             activeExtractions.delete(blobPath);
@@ -739,7 +673,7 @@ router.post('/api/queue/add', express.json(), async (req, res) => {
     const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
     
     // We can directly add it to the background queue manager
-    const item = await backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle);
+    const item = await backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
     res.json({ success: true, item });
 });
 

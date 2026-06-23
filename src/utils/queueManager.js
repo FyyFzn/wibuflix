@@ -13,7 +13,7 @@ class QueueManager extends EventEmitter {
         this.processor = processorFn;
     }
 
-    async add(episodeUrl, seriesSlug, seriesTitle, episodeTitle) {
+    async add(episodeUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId) {
         // Cek jika sudah ada
         let task = await QueueTask.findOne({ episodeUrl });
         if (task) {
@@ -35,6 +35,7 @@ class QueueManager extends EventEmitter {
             seriesSlug,
             seriesTitle,
             episodeTitle,
+            uniqueId,
             status: 'PENDING',
             priority: 0
         });

@@ -6,6 +6,7 @@ const QueueTaskSchema = new mongoose.Schema({
     seriesSlug: { type: String },
     seriesTitle: { type: String },
     episodeTitle: { type: String },
+    uniqueId: { type: String },
     status: { 
         type: String, 
         enum: ['PENDING', 'UPLOADING', 'COMPLETED', 'FAILED', 'CANCELLED'],
