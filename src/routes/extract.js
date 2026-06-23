@@ -26,21 +26,16 @@ let prefetchAbortController = new AbortController();
 export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
     let episodeSlug = '';
     let seriesSlug = '';
-    let oldSeriesSlug = '';
+    let urlSlug = '';
 
     if (episodeUrl.includes('___neosatsu_ep___')) {
         const parts = episodeUrl.split('___neosatsu_ep___');
         const seriesPart = parts[0];
         episodeSlug = parts[1];
 
-        // Neosatsu targetUrl bisa berupa "neosatsu-merge:Title||Label" (tanpa slash)
-        // atau URL biasa seperti "https://www.neosatsu.com/p/kamen-rider-..."
-        // Kita harus membuat slug Azure-safe dari keduanya.
         if (seriesPart.startsWith('neosatsu-merge:') || seriesPart.startsWith('neosatsu-label:')) {
-            // Ambil hanya bagian judul (sebelum "||"), buang prefix "neosatsu-merge:"
-            const dataStr = seriesPart.split(':').slice(1).join(':'); // hapus "neosatsu-merge:"
-            const titlePart = dataStr.split('||')[0].trim(); // ambil title saja, buang label
-            // Jadikan slug: lowercase, hapus karakter non-alfanumerik (kecuali spasi & dash), ganti spasi → dash
+            const dataStr = seriesPart.split(':').slice(1).join(':'); 
+            const titlePart = dataStr.split('||')[0].trim(); 
             seriesSlug = titlePart
                 .toLowerCase()
                 .replace(/[^a-z0-9\s-]/g, '')
@@ -48,7 +43,6 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
                 .replace(/\s+/g, '-')
                 || 'neosatsu_series';
         } else {
-            // URL biasa — ambil segmen path terakhir
             let cleanPart = seriesPart.replace(/\/$/, '');
             seriesSlug = cleanPart.split('/').pop() || 'neosatsu_series';
             seriesSlug = seriesSlug.replace(/\.html/g, '');
@@ -76,24 +70,50 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
 
     }
     
-    // Simpan hasil ekstraksi URL lama sebagai fallback
-    oldSeriesSlug = seriesSlug || 'uncategorized';
+    urlSlug = seriesSlug || 'uncategorized';
+
+    const slugsToCheck = [];
+    let primarySlug = '';
 
     if (uniqueId && uniqueId.toString().trim() !== '') {
-        // Jika ID unik tersedia (seperti mal-1234), jadikan prioritas absolut
-        seriesSlug = uniqueId.toString().trim();
+        const rawUniqueId = uniqueId.toString().trim();
+        let titleSlug = '';
+        
+        if (seriesTitle && seriesTitle.trim().length > 0) {
+            const cleanTitle = normalizeTitleForMatch(seriesTitle);
+            if (cleanTitle) titleSlug = cleanTitle.replace(/\s+/g, '-');
+        }
+
+        if (titleSlug) {
+            // Gabungkan ID unik dengan judul agar nama folder di Azure Storage mudah dibaca
+            primarySlug = `${rawUniqueId}_${titleSlug}`;
+            slugsToCheck.push(primarySlug);
+            slugsToCheck.push(rawUniqueId); // Fallback ke mal id murni untuk kompatibilitas data lama
+            if (!slugsToCheck.includes(titleSlug)) slugsToCheck.push(titleSlug);
+        } else {
+            primarySlug = rawUniqueId;
+            slugsToCheck.push(primarySlug);
+        }
     } else if (seriesTitle && seriesTitle.trim().length > 0) {
-        // Jika tidak ada ID unik, prioritaskan Judul untuk membuat nama folder Azure yang terpadu lintas-sumber
-        // Gunakan utilitas stringUtils untuk normalisasi "Season 2" vs "2nd Season"
         const cleanTitle = normalizeTitleForMatch(seriesTitle);
         if (cleanTitle) {
-            seriesSlug = cleanTitle.replace(/\s+/g, '-');
+            const titleSlug = cleanTitle.replace(/\s+/g, '-');
+            if (titleSlug && !slugsToCheck.includes(titleSlug)) {
+                slugsToCheck.push(titleSlug);
+            }
         }
     }
+    
+    if (urlSlug && !slugsToCheck.includes(urlSlug)) {
+        slugsToCheck.push(urlSlug);
+    }
+    
+    if (!primarySlug && slugsToCheck.length > 0) {
+        primarySlug = slugsToCheck[0];
+    }
+    if (!primarySlug) primarySlug = 'uncategorized';
 
-    if (!seriesSlug) seriesSlug = oldSeriesSlug;
-
-    return { seriesSlug, episodeSlug, oldSeriesSlug };
+    return { seriesSlug: primarySlug, episodeSlug, oldSeriesSlug: urlSlug, slugsToCheck };
 }
 
 async function getServersBasedOnUrl(episodeUrl) {
@@ -157,12 +177,13 @@ function getResolutionGroup(serverName) {
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null) {
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null) {
     const { episodeSlug } = extractSlugs(episodeUrl, null, null); // Episode extraction logic doesn't need title
     
-    const checkInfo = await checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug);
+    const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug, oldSeriesSlug].filter(Boolean);
+    const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlug);
     const status = checkInfo.status;
-    const activeSlug = checkInfo.activeSlug || seriesSlug;
+    const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
     
     const blobPath = getBlobPath(activeSlug, episodeSlug);
     const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
@@ -293,7 +314,7 @@ const activePrefetchLoops = new Set();
  * Logika: selalu jaga 2 episode ke depan sudah READY.
  * Jika ada upload Mega yang sedang berjalan, tunggu dulu.
  */
-async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
+async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slugsToCheck = null) {
     if (!upcomingUrls || upcomingUrls.length === 0) return;
 
     const validUrls = upcomingUrls.filter(Boolean);
@@ -347,7 +368,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle) {
 
             if (prefetchAbortController.signal.aborted) return;
 
-            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle);
+            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'player', null, slugsToCheck);
 
             // Jeda antar episode untuk mencegah ETOOMANY dari Mega
             if (validUrls.indexOf(epUrl) < validUrls.length - 1) {
@@ -415,16 +436,16 @@ router.get('/api/smart-play', async (req, res) => {
     const prefetchWindow = [nextEpisodeUrl].filter(Boolean);
 
     try {
-        const { seriesSlug, episodeSlug, oldSeriesSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
+        const { seriesSlug, episodeSlug, oldSeriesSlug, slugsToCheck } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
 
-        const checkInfo = await checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug);
+        const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlug);
         const status = checkInfo.status;
-        const activeSlug = checkInfo.activeSlug || seriesSlug;
+        const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
 
         if (status === 'READY') {
             if (prefetchWindow.length > 0) {
                 // Selalu prefetch ke folder baru (seriesSlug)
-                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
+                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck);
             }
             return res.json({
                 success: true,
@@ -435,7 +456,7 @@ router.get('/api/smart-play', async (req, res) => {
 
         if (status === 'UPLOADING') {
             if (prefetchWindow.length > 0) {
-                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
+                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck);
             }
 
             let cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];

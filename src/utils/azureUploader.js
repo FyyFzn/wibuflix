@@ -131,8 +131,21 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
 /**
  * Memeriksa status upload dengan mekanisme fallback (Pengecekan Ganda).
  * Mencari di folder baru (seriesSlug), lalu jika tidak ada, mencari di folder lama (oldSeriesSlug).
+ * Atau menerima array of slugs untuk memeriksa beberapa fallback sekaligus.
  */
 export async function checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug) {
+    if (Array.isArray(seriesSlug)) {
+        const slugsToCheck = seriesSlug;
+        for (const slug of slugsToCheck) {
+            if (!slug) continue;
+            let status = await checkUploadStatus(slug, episodeSlug);
+            if (status !== null) {
+                return { status, activeSeriesSlug: slug };
+            }
+        }
+        return { status: null, activeSeriesSlug: slugsToCheck[0] || 'uncategorized' };
+    }
+
     let status = await checkUploadStatus(seriesSlug, episodeSlug);
     if (status !== null) {
         return { status, activeSeriesSlug: seriesSlug };
