@@ -567,6 +567,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 '-f', 'hls',
                 '-hls_time', '10',
                 '-hls_playlist_type', 'vod',
+                '-hls_flags', 'independent_segments',
                 '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
                 m3u8Path
             );
