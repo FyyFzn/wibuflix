@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const QueueTaskSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
     episodeUrl: { type: String, required: true },
+    seriesUrl: { type: String },
     seriesSlug: { type: String },
     seriesTitle: { type: String },
     episodeTitle: { type: String },

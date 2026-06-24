@@ -12,7 +12,7 @@ import QueueTask from '../models/QueueTask.js';
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
     // Extract slugs with uniqueId to get full fallback slugsToCheck array
-    const { slugsToCheck } = extractSlugs(item.episodeUrl, null, item.seriesTitle, item.uniqueId);
+    const { slugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
     
     // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck
     const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck);
@@ -648,10 +648,10 @@ router.get('/api/upload-status', (req, res) => {
 
 // Endpoint untuk membatalkan upload secara eksplisit dari client
 router.post('/cancel-stream', express.json(), (req, res) => {
-    const { url } = req.body;
+    const { url, seriesUrl, seriesTitle, uniqueId } = req.body;
     if (!url) return res.json({ success: false });
     
-    const { seriesSlug, episodeSlug } = extractSlugs(url, null);
+    const { seriesSlug, episodeSlug } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId);
     const blobPath = getBlobPath(seriesSlug, episodeSlug);
     
     console.info(`[Smart-Play] Eksplisit cancel dari client untuk: ${episodeSlug}`);
@@ -673,7 +673,7 @@ router.post('/api/queue/add', express.json(), async (req, res) => {
     const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
     
     // We can directly add it to the background queue manager
-    const item = await backgroundQueue.add(episodeUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
+    const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
     res.json({ success: true, item });
 });
 
@@ -689,8 +689,7 @@ router.post('/api/queue/cancel', express.json(), async (req, res) => {
     try {
         const task = await QueueTask.findOne({ id });
         if (task && task.status === 'UPLOADING') {
-            const { episodeSlug } = extractSlugs(task.episodeUrl, null);
-            const seriesSlug = task.seriesSlug || extractSlugs(task.episodeUrl, null).seriesSlug;
+            const { seriesSlug, episodeSlug } = extractSlugs(task.episodeUrl, task.seriesUrl, task.seriesTitle, task.uniqueId);
             
             if (seriesSlug && episodeSlug) {
                 cancelUpload(seriesSlug, episodeSlug);
@@ -711,7 +710,7 @@ router.get('/api/queue/status', async (req, res) => {
     // Update real-time progress untuk item yang UPLOADING
     const updatedItems = queueItems.map(item => {
         if (item.status === 'UPLOADING') {
-            const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, null);
+            const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
             item.progress = getUploadProgress(seriesSlug, episodeSlug);
         }
         return item;
@@ -732,7 +731,7 @@ router.get('/api/queue/stream', (req, res) => {
         // Update real-time progress untuk item yang UPLOADING
         const updatedItems = queueItems.map(item => {
             if (item.status === 'UPLOADING') {
-                const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, null);
+                const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
                 item.progress = getUploadProgress(seriesSlug, episodeSlug);
             }
             return item;
