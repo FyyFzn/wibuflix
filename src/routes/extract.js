@@ -12,13 +12,26 @@ import QueueTask from '../models/QueueTask.js';
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
     // Extract slugs with uniqueId to get full fallback slugsToCheck array
-    const { slugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
+    const { episodeSlug, slugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
+    
+    // Cek apakah sudah selesai atau sedang di proses oleh request lain
+    const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlug);
+    if (checkInfo.status === 'READY') {
+        console.info(`[Queue] ${item.episodeTitle} sudah tersedia di server. Langsung diselesaikan.`);
+        return; // Otomatis menjadi COMPLETED
+    }
+    if (checkInfo.status === 'UPLOADING') {
+        console.info(`[Queue] ${item.episodeTitle} sedang diunggah oleh proses lain. Melepas dari antrean.`);
+        return; // Otomatis menjadi COMPLETED di antrean (player akan handle progressnya)
+    }
     
     // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck
     const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck);
     if (!result.success) {
-        // Jika skip atau gagal, ubah status di antrean
-        throw new Error(result.reason || 'Prefetch failed or skipped');
+        // Jika gagal karena error beneran, lemparkan error untuk trigger retry
+        if (result.reason !== 'Already processing or failed') {
+             throw new Error(result.reason || 'Prefetch failed');
+        }
     }
 });
 
