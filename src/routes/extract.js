@@ -679,21 +679,29 @@ router.post('/cancel-stream', express.json(), (req, res) => {
 // ============================================================
 
 router.post('/api/queue/add', express.json(), async (req, res) => {
-    const { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId } = req.body;
-    if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
-    
-    // Extract slugs to check if already uploaded/uploading
-    const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
-    
-    // We can directly add it to the background queue manager
-    const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
-    res.json({ success: true, item });
+    try {
+        const { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId } = req.body;
+        if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
+        
+        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
+        
+        const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
+        res.json({ success: true, item });
+    } catch (e) {
+        console.error(`[Queue Add Error]:`, e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
 });
 
 router.post('/api/queue/prioritize', express.json(), async (req, res) => {
-    const { id } = req.body;
-    await backgroundQueue.prioritize(id);
-    res.json({ success: true });
+    try {
+        const { id } = req.body;
+        await backgroundQueue.prioritize(id);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(`[Queue Prioritize Error]:`, e.message);
+        res.status(500).json({ success: false });
+    }
 });
 
 router.post('/api/queue/cancel', express.json(), async (req, res) => {
@@ -718,18 +726,22 @@ router.post('/api/queue/cancel', express.json(), async (req, res) => {
 });
 
 router.get('/api/queue/status', async (req, res) => {
-    const queueItems = await backgroundQueue.getStatus();
-    
-    // Update real-time progress untuk item yang UPLOADING
-    const updatedItems = queueItems.map(item => {
-        if (item.status === 'UPLOADING') {
-            const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
-            item.progress = getUploadProgress(seriesSlug, episodeSlug);
-        }
-        return item;
-    });
+    try {
+        const queueItems = await backgroundQueue.getStatus();
+        
+        const updatedItems = queueItems.map(item => {
+            if (item.status === 'UPLOADING') {
+                const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
+                item.progress = getUploadProgress(seriesSlug, episodeSlug);
+            }
+            return item;
+        });
 
-    res.json({ success: true, queue: updatedItems });
+        res.json({ success: true, queue: updatedItems });
+    } catch (e) {
+        console.error(`[Queue Status Error]:`, e.message);
+        res.status(500).json({ success: false, queue: [] });
+    }
 });
 
 router.get('/api/queue/stream', (req, res) => {
