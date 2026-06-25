@@ -1,21 +1,21 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku, resolveSingleServer } from '../services/extractors/videoExtractor.js';
-import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport } from '../utils/azureUploader.js';
+import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted } from '../utils/azureUploader.js';
 import Anime from '../models/Anime.js';
-import { normalizeTitleForMatch } from '../utils/stringUtils.js';
+import { normalizeTitleForMatch, extractEpNumStrict } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
-import { getKuronimeServers } from '../controllers/kuronimeController.js';
+import { getKuronimeServers, getAlternativeServers as getKuronimeAlternativeServers } from '../controllers/kuronimeController.js';
 import { backgroundQueue } from '../utils/queueManager.js';
 import QueueTask from '../models/QueueTask.js';
 
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
     // Extract slugs with uniqueId to get full fallback slugsToCheck array
-    const { episodeSlug, slugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
+    const { episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId, item.episodeTitle);
     
     // Cek apakah sudah selesai atau sedang di proses oleh request lain
-    const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlug);
+    const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
     if (checkInfo.status === 'READY') {
         console.info(`[Queue] ${item.episodeTitle} sudah tersedia di server. Langsung diselesaikan.`);
         return; // Otomatis menjadi COMPLETED
@@ -39,7 +39,7 @@ const router = express.Router();
 const activeExtractions = new Set();
 let prefetchAbortController = new AbortController();
 
-export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
+export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle = '') {
     let episodeSlug = '';
     let seriesSlug = '';
     let urlSlug = '';
@@ -88,6 +88,31 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
     
     urlSlug = seriesSlug || 'uncategorized';
 
+    const rawEpSlug = episodeSlug;
+    const episodeSlugsToCheck = [];
+    let unifiedEpSlug = null;
+    
+    if (uniqueId && uniqueId.toString().trim() !== '') {
+        let epNum = null;
+        if (episodeTitle) epNum = extractEpNumStrict(episodeTitle);
+        if (epNum === null) epNum = extractEpNumStrict(rawEpSlug.replace(/-/g, ' '));
+        
+        if (epNum !== null) {
+            unifiedEpSlug = `episode-${epNum}`;
+            episodeSlugsToCheck.push(unifiedEpSlug);
+            episodeSlug = unifiedEpSlug; // use this as the primary for new uploads
+        }
+    }
+    
+    if (rawEpSlug && !episodeSlugsToCheck.includes(rawEpSlug)) {
+        episodeSlugsToCheck.push(rawEpSlug);
+    }
+    
+    if (episodeSlugsToCheck.length === 0) {
+        episodeSlugsToCheck.push('uncategorized_ep');
+        episodeSlug = 'uncategorized_ep';
+    }
+
     const slugsToCheck = [];
     let primarySlug = '';
 
@@ -129,7 +154,7 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId) {
     }
     if (!primarySlug) primarySlug = 'uncategorized';
 
-    return { seriesSlug: primarySlug, episodeSlug, oldSeriesSlug: urlSlug, slugsToCheck };
+    return { seriesSlug: primarySlug, episodeSlug, oldSeriesSlug: urlSlug, slugsToCheck, episodeSlugsToCheck };
 }
 
 async function getServersBasedOnUrl(episodeUrl) {
@@ -155,7 +180,10 @@ async function getServersBasedOnUrl(episodeUrl) {
 function serverScore(host) {
     if (!host) return 0;
     const h = host.toLowerCase();
-    if (h.includes('mega')) return 100;
+    if (h.includes('mega')) {
+        if (isMegaBlacklisted()) return -50;
+        return 100;
+    }
     if (h.includes('wibufile')) return 90;
     if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
     if (h.includes('mediafire')) return 75;
@@ -194,6 +222,7 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
     try {
         let primaryPromise = getServersBasedOnUrl(episodeUrl);
         let alternativePromise = Promise.resolve([]);
+        let secondaryAlternativePromise = Promise.resolve([]);
 
         let primaryData = null;
         if (!episodeTitle) {
@@ -205,21 +234,31 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
         if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
             try {
                 if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-                    console.info(`${logPrefix} Pencarian alternatif di Samehadaku untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    console.info(`${logPrefix} Pencarian alternatif di Samehadaku & Kuronime untuk: "${seriesTitle}" - "${episodeTitle}"`);
                     alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
+                    secondaryAlternativePromise = getKuronimeAlternativeServers(seriesTitle, episodeTitle);
+                } else if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) {
+                    console.info(`${logPrefix} Pencarian alternatif di Samehadaku & Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
+                    secondaryAlternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
                 } else {
-                    console.info(`${logPrefix} Pencarian alternatif di Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
+                    console.info(`${logPrefix} Pencarian alternatif di Otakudesu & Kuronime untuk: "${seriesTitle}" - "${episodeTitle}"`);
                     alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
+                    secondaryAlternativePromise = getKuronimeAlternativeServers(seriesTitle, episodeTitle);
                 }
             } catch (err) {
                 console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
             }
         }
 
-        const [resolvedPrimary, alternativeServers] = await Promise.all([
+        const [resolvedPrimary, alternativeServers, secondaryAlternativeServers] = await Promise.all([
             primaryPromise,
             alternativePromise.catch(err => {
                 console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
+                return [];
+            }),
+            secondaryAlternativePromise.catch(err => {
+                console.error(`${logPrefix} Secondary Alternative Fetch Error:`, err.message);
                 return [];
             })
         ]);
@@ -230,14 +269,16 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
         if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
         if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
         
-        let altSource = 'Otakudesu';
-        if (primarySource === 'Otakudesu') altSource = 'Samehadaku';
-        if (primarySource === 'Kuronime') altSource = 'Samehadaku';
+        let altSource1 = 'Otakudesu';
+        let altSource2 = 'Kuronime';
+        if (primarySource === 'Otakudesu') { altSource1 = 'Samehadaku'; altSource2 = 'Kuronime'; }
+        if (primarySource === 'Kuronime') { altSource1 = 'Samehadaku'; altSource2 = 'Otakudesu'; }
 
         const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
-        const taggedAlternative = (alternativeServers || []).map(s => ({ ...s, source: altSource }));
+        const taggedAlternative1 = (alternativeServers || []).map(s => ({ ...s, source: altSource1 }));
+        const taggedAlternative2 = (secondaryAlternativeServers || []).map(s => ({ ...s, source: altSource2 }));
 
-        const servers = [...taggedPrimary, ...taggedAlternative];
+        const servers = [...taggedPrimary, ...taggedAlternative1, ...taggedAlternative2];
 
         if (servers.length === 0) {
             return { matchedSource: null, error: 'Tidak ada server download/streaming yang ditemukan di halaman episode.' };
@@ -312,14 +353,16 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
 export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null) {
-    const { episodeSlug } = extractSlugs(episodeUrl, null, null); // Episode extraction logic doesn't need title
+    // For prefetch from SmartPlay window, episodeTitle is not passed, but rawEpSlug fallback still works
+    const { episodeSlug, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, null, null, null); 
     
     const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug, oldSeriesSlug].filter(Boolean);
-    const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlug);
+    const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
     const status = checkInfo.status;
     const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
+    const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
     
-    const blobPath = getBlobPath(activeSlug, episodeSlug);
+    const blobPath = getBlobPath(activeSlug, activeEpSlug);
     const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
@@ -383,8 +426,10 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
     for (const epUrl of validUrls) {
         try {
-            const { episodeSlug } = extractSlugs(epUrl, null);
-            const status = await checkUploadStatus(seriesSlug, episodeSlug);
+            const { episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, null, null, null);
+            // using activeSlug for checkUploadStatus is not perfectly robust here if seriesSlug is changed, but we assume seriesSlug is unified
+            const checkInfo = await checkUploadStatusWithFallback([seriesSlug], episodeSlugsToCheck);
+            const status = checkInfo.status;
 
             if (status === 'READY' || status === 'FAILED') {
                 // Sudah done atau sudah gagal — skip
@@ -491,11 +536,12 @@ router.get('/api/smart-play', async (req, res) => {
     const prefetchWindow = [nextEpisodeUrl].filter(Boolean);
 
     try {
-        const { seriesSlug, episodeSlug, oldSeriesSlug, slugsToCheck } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
+        const { seriesSlug, episodeSlug, oldSeriesSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
 
-        const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlug);
+        const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
         const status = checkInfo.status;
         const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
+        const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
 
         if (status === 'READY') {
             if (prefetchWindow.length > 0) {
@@ -505,7 +551,7 @@ router.get('/api/smart-play', async (req, res) => {
             return res.json({
                 success: true,
                 status: 'READY',
-                url: getBlobUrl(getBlobPath(activeSlug, episodeSlug))
+                url: getBlobUrl(getBlobPath(activeSlug, activeEpSlug))
             });
         }
 
@@ -549,7 +595,7 @@ router.get('/api/smart-play', async (req, res) => {
             });
         }
 
-        const blobPath = getBlobPath(activeSlug, episodeSlug);
+        const blobPath = getBlobPath(activeSlug, activeEpSlug);
         if (activeExtractions.has(blobPath)) {
             return res.json({
                 success: true,
@@ -645,13 +691,17 @@ router.post('/api/cancel-uploads', (req, res) => {
 // ============================================================
 // GET /api/upload-status
 // ============================================================
-router.get('/api/upload-status', (req, res) => {
+router.get('/api/upload-status', async (req, res) => {
     try {
-        const { episodeUrl, seriesUrl, seriesTitle, uniqueId } = req.query;
+        const { episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.query;
         if (!episodeUrl) return res.status(400).json({ success: false, message: "URL required" });
         
-        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
-        const progressMessage = getUploadProgress(seriesSlug, episodeSlug);
+        const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
+        const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
+        const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
+        const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
+
+        const progressMessage = getUploadProgress(activeSlug, activeEpSlug);
         res.json({ success: true, progressMessage });
     } catch (e) {
         console.error(`[Smart-Play Error]:`, e.message);
@@ -660,15 +710,19 @@ router.get('/api/upload-status', (req, res) => {
 });
 
 // Endpoint untuk membatalkan upload secara eksplisit dari client
-router.post('/cancel-stream', express.json(), (req, res) => {
-    const { url, seriesUrl, seriesTitle, uniqueId } = req.body;
+router.post('/cancel-stream', express.json(), async (req, res) => {
+    const { url, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.body;
     if (!url) return res.json({ success: false });
     
-    const { seriesSlug, episodeSlug } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId);
-    const blobPath = getBlobPath(seriesSlug, episodeSlug);
+    const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId, episodeTitle);
+    const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
+    const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
+    const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
+
+    const blobPath = getBlobPath(activeSlug, activeEpSlug);
     
-    console.info(`[Smart-Play] Eksplisit cancel dari client untuk: ${episodeSlug}`);
-    cancelUpload(seriesSlug, episodeSlug);
+    console.info(`[Smart-Play] Eksplisit cancel dari client untuk: ${activeEpSlug}`);
+    cancelUpload(activeSlug, activeEpSlug);
     activeExtractions.delete(blobPath);
     
     return res.json({ success: true });
@@ -683,7 +737,7 @@ router.post('/api/queue/add', express.json(), async (req, res) => {
         const { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId } = req.body;
         if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
         
-        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId);
+        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
         
         const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
         res.json({ success: true, item });
@@ -729,13 +783,17 @@ router.get('/api/queue/status', async (req, res) => {
     try {
         const queueItems = await backgroundQueue.getStatus();
         
-        const updatedItems = queueItems.map(item => {
+        const updatedItems = await Promise.all(queueItems.map(async (item) => {
             if (item.status === 'UPLOADING') {
-                const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
-                item.progress = getUploadProgress(seriesSlug, episodeSlug);
+                const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId, item.episodeTitle);
+                const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
+                const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
+                const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
+
+                item.progress = getUploadProgress(activeSlug, activeEpSlug);
             }
             return item;
-        });
+        }));
 
         res.json({ success: true, queue: updatedItems });
     } catch (e) {
@@ -754,13 +812,17 @@ router.get('/api/queue/stream', (req, res) => {
         const queueItems = await backgroundQueue.getStatus();
         
         // Update real-time progress untuk item yang UPLOADING
-        const updatedItems = queueItems.map(item => {
+        const updatedItems = await Promise.all(queueItems.map(async (item) => {
             if (item.status === 'UPLOADING') {
-                const { seriesSlug, episodeSlug } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId);
-                item.progress = getUploadProgress(seriesSlug, episodeSlug);
+                const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId, item.episodeTitle);
+                const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
+                const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
+                const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
+
+                item.progress = getUploadProgress(activeSlug, activeEpSlug);
             }
             return item;
-        });
+        }));
 
         res.write(`data: ${JSON.stringify({ success: true, queue: updatedItems })}\n\n`);
     };

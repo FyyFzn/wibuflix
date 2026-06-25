@@ -61,86 +61,97 @@ export async function runSync(isInitial = false) {
             const url = page === 1 ? `https://v2.samehadaku.how/daftar-anime-2/` : `https://v2.samehadaku.how/daftar-anime-2/page/${page}/`;
             log(`[Anime Sync] Scraping Halaman ${page}...`);
 
-            let fetchRes;
-            try {
-                fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
-            } catch (e) {
-                console.error(`[Anime Sync] Gagal memuat halaman ${page}:`, e.message);
-            }
-
-            if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
-                if (fetchRes && fetchRes.html === '404_NOT_FOUND') {
-                    log(`[Anime Sync] Halaman ${page} mengembalikan 404. Akhir dari katalog dicapai.`);
-                    hasNext = false;
-                } else {
-                    consecutiveFails++;
-                    if (consecutiveFails >= 3) {
-                        console.error(`[Anime Sync] Gagal berturut-turut 3 kali. Menghentikan sinkronisasi.`);
-                        break;
-                    }
-                    await delay(8000);
-                }
-                if (fetchRes && fetchRes.slot) {
-                    releaseToPool(fetchRes.slot);
-                }
-                continue; // Retry/break
-            }
-
-            const $ = fetchRes.$;
-            const slot = fetchRes.slot;
+            let fetchRes, slot;
+            let pageFailed = false;
+            let hasNextPage = false;
             let itemCount = 0;
 
-            $('.animepost').each((_, el) => {
-                const titleNode = $(el).find('.title, .tt h2, .entry-title').first();
-                const linkNode = $(el).find('a').first();
-                const imgNode = $(el).find('img').first();
-                const typeNode = $(el).find('.content-thumb .type, .typez, .bt span.type').first();
-                const scoreNode = $(el).find('.score, .numscore, .rating').first();
-                const statusNode = $(el).find('.data .type, .status, .epx, .sb, .bt span:not(.type)').first();
-                
-                if (titleNode.length && linkNode.length && imgNode.length) {
-                    const skorRaw = scoreNode.length ? scoreNode.text().trim() : '';
-                    const skorAngka = skorRaw.replace(/[^\d.]/g, '');
+            try {
+                fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+                slot = fetchRes?.slot;
+
+                if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+                    if (fetchRes && fetchRes.html === '404_NOT_FOUND') {
+                        log(`[Anime Sync] Halaman ${page} mengembalikan 404. Akhir dari katalog dicapai.`);
+                        hasNext = false;
+                    } else {
+                        consecutiveFails++;
+                        if (consecutiveFails >= 3) {
+                            console.error(`[Anime Sync] Gagal berturut-turut 3 kali. Menghentikan sinkronisasi.`);
+                            break;
+                        }
+                        pageFailed = true;
+                    }
+                    continue; // Lanjut ke iterasi berikutnya (finally akan tetap jalan)
+                }
+
+                const $ = fetchRes.$;
+
+                $('.animepost').each((_, el) => {
+                    const titleNode = $(el).find('.title, .tt h2, .entry-title').first();
+                    const linkNode = $(el).find('a').first();
+                    const imgNode = $(el).find('img').first();
+                    const typeNode = $(el).find('.content-thumb .type, .typez, .bt span.type').first();
+                    const scoreNode = $(el).find('.score, .numscore, .rating').first();
+                    const statusNode = $(el).find('.data .type, .status, .epx, .sb, .bt span:not(.type)').first();
                     
-                    let epText = '';
-                    const epNode = $(el).find('author[itemprop="name"]').first();
-                    if (epNode.length) epText = 'Eps ' + epNode.text().trim();
+                    if (titleNode.length && linkNode.length && imgNode.length) {
+                        const skorRaw = scoreNode.length ? scoreNode.text().trim() : '';
+                        const skorAngka = skorRaw.replace(/[^\d.]/g, '');
+                        
+                        let epText = '';
+                        const epNode = $(el).find('author[itemprop="name"]').first();
+                        if (epNode.length) epText = 'Eps ' + epNode.text().trim();
 
-                    const gambarScraper = 
-                        imgNode.attr('data-src') || 
-                        imgNode.attr('data-lazy-src') || 
-                        imgNode.attr('data-original') || 
-                        (imgNode.attr('srcset') ? imgNode.attr('srcset').split(' ')[0] : null) || 
-                        imgNode.attr('src') || '';
+                        const gambarScraper = 
+                            imgNode.attr('data-src') || 
+                            imgNode.attr('data-lazy-src') || 
+                            imgNode.attr('data-original') || 
+                            (imgNode.attr('srcset') ? imgNode.attr('srcset').split(' ')[0] : null) || 
+                            imgNode.attr('src') || '';
 
-                    allAnime.push({
-                        judul: titleNode.text().trim(),
-                        url: linkNode.attr('href'),
-                        gambar: gambarScraper,
-                        gambarScraper,
-                        tipe: typeNode.length ? typeNode.text().trim().toUpperCase() : 'TV',
-                        skor: skorAngka || '-',
-                        status: epText || (statusNode.length ? statusNode.text().trim() : 'Completed'),
-                    });
-                    itemCount++;
+                        allAnime.push({
+                            judul: titleNode.text().trim(),
+                            url: linkNode.attr('href'),
+                            gambar: gambarScraper,
+                            gambarScraper,
+                            tipe: typeNode.length ? typeNode.text().trim().toUpperCase() : 'TV',
+                            skor: skorAngka || '-',
+                            status: epText || (statusNode.length ? statusNode.text().trim() : 'Completed'),
+                        });
+                        itemCount++;
+                    }
+                });
+
+                console.log(`[Anime Sync] -> Berhasil mengambil ${itemCount} anime dari Halaman ${page}`);
+                consecutiveFails = 0; // reset fails on success
+
+                $('.pagination a, .pagination-id a').each((_, el) => {
+                    const txt = $(el).text();
+                    const hasNextIcon = $(el).find('#nextpagination, .fa-caret-right').length > 0;
+                    if (txt.includes('Next') || $(el).hasClass('next') || $(el).hasClass('arrow_pag') || hasNextIcon) {
+                        hasNextPage = true;
+                    }
+                });
+
+            } catch (e) {
+                console.error(`[Anime Sync] Gagal memuat halaman ${page}:`, e.message);
+                pageFailed = true;
+                consecutiveFails++;
+                if (consecutiveFails >= 3) {
+                    console.error(`[Anime Sync] Gagal berturut-turut 3 kali. Menghentikan sinkronisasi.`);
+                    break;
                 }
-            });
+            } finally {
+                if (slot) releaseToPool(slot);
+            }
 
-            console.log(`[Anime Sync] -> Berhasil mengambil ${itemCount} anime dari Halaman ${page}`);
-            consecutiveFails = 0; // reset fails on success
+            if (pageFailed) {
+                await delay(8000);
+                continue;
+            }
 
-            // Release slot as early as possible so other concurrent tasks can use it
-            releaseToPool(slot);
-
-            // Check if there's a next page
-            let hasNextPage = false;
-            $('.pagination a, .pagination-id a').each((_, el) => {
-                const txt = $(el).text();
-                const hasNextIcon = $(el).find('#nextpagination, .fa-caret-right').length > 0;
-                if (txt.includes('Next') || $(el).hasClass('next') || $(el).hasClass('arrow_pag') || hasNextIcon) {
-                    hasNextPage = true;
-                }
-            });
+            if (!hasNext) break;
 
             if (!hasNextPage) {
                 console.log(`[Anime Sync] Tidak ada tombol Next. Sinkronisasi selesai.`);

@@ -48,41 +48,40 @@ async function scrapeSamehadakuLatest() {
     const url = `https://v2.samehadaku.how/`;
     log(`[Latest Sync] Mengakses Beranda Samehadaku...`);
 
-    let fetchRes;
+    let fetchRes, slot;
+    const updates = [];
     try {
         fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+            log(`[Latest Sync] Gagal mendapatkan HTML Samehadaku.`);
+            return;
+        }
+
+        const $ = fetchRes.$;
+
+        // Mencari di bagian "Post Show" atau elemen animepost terbaru di beranda
+        $('.post-show ul li, .animepost').each((_, el) => {
+            const titleNode = $(el).find('.title, .entry-title, .tt h2').first();
+            const epNode = $(el).find('author[itemprop="name"], .epx').first();
+            
+            if (titleNode.length && epNode.length) {
+                const judul = titleNode.text().trim();
+                const epsText = epNode.text().trim();
+                
+                // Format eps jika perlu (contoh: "12" menjadi "Eps 12")
+                const finalStatus = epsText.toLowerCase().includes('eps') ? epsText : `Eps ${epsText}`;
+
+                updates.push({ judul, status: finalStatus });
+            }
+        });
     } catch (e) {
         console.error(`[Latest Sync] Gagal memuat Samehadaku:`, e.message);
         return;
+    } finally {
+        if (slot) releaseToPool(slot);
     }
-
-    if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
-        log(`[Latest Sync] Gagal mendapatkan HTML Samehadaku.`);
-        if (fetchRes && fetchRes.slot) releaseToPool(fetchRes.slot);
-        return;
-    }
-
-    const $ = fetchRes.$;
-    const slot = fetchRes.slot;
-    const updates = [];
-
-    // Mencari di bagian "Post Show" atau elemen animepost terbaru di beranda
-    $('.post-show ul li, .animepost').each((_, el) => {
-        const titleNode = $(el).find('.title, .entry-title, .tt h2').first();
-        const epNode = $(el).find('author[itemprop="name"], .epx').first();
-        
-        if (titleNode.length && epNode.length) {
-            const judul = titleNode.text().trim();
-            const epsText = epNode.text().trim();
-            
-            // Format eps jika perlu (contoh: "12" menjadi "Eps 12")
-            const finalStatus = epsText.toLowerCase().includes('eps') ? epsText : `Eps ${epsText}`;
-
-            updates.push({ judul, status: finalStatus });
-        }
-    });
-
-    releaseToPool(slot);
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate. Melakukan sinkronisasi ke MongoDB...`);
@@ -109,34 +108,33 @@ async function scrapeOtakudesuLatest() {
     const url = `https://otakudesu.blog/`;
     log(`[Latest Sync] Mengakses Beranda Otakudesu...`);
 
-    let fetchRes;
+    let fetchRes, slot;
+    const updates = [];
     try {
         fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+            log(`[Latest Sync] Gagal mendapatkan HTML Otakudesu.`);
+            return;
+        }
+
+        const $ = fetchRes.$;
+
+        $('.venz ul li').each((_, el) => {
+            const title = $(el).find('.jdlflm').text().trim();
+            const ep = $(el).find('.epz').text().trim();
+            
+            if (title && ep) {
+                updates.push({ title, status: ep });
+            }
+        });
     } catch (e) {
         console.error(`[Latest Sync] Gagal memuat Otakudesu:`, e.message);
         return;
+    } finally {
+        if (slot) releaseToPool(slot);
     }
-
-    if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
-        log(`[Latest Sync] Gagal mendapatkan HTML Otakudesu.`);
-        if (fetchRes && fetchRes.slot) releaseToPool(fetchRes.slot);
-        return;
-    }
-
-    const $ = fetchRes.$;
-    const slot = fetchRes.slot;
-    const updates = [];
-
-    $('.venz ul li').each((_, el) => {
-        const title = $(el).find('.jdlflm').text().trim();
-        const ep = $(el).find('.epz').text().trim();
-        
-        if (title && ep) {
-            updates.push({ title, status: ep });
-        }
-    });
-
-    releaseToPool(slot);
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Otakudesu. Melakukan sinkronisasi ke MongoDB...`);
@@ -169,38 +167,37 @@ async function scrapeKuronimeLatest() {
     const url = `https://kuronime.sbs/`;
     log(`[Latest Sync] Mengakses Beranda Kuronime...`);
 
-    let fetchRes;
+    let fetchRes, slot;
+    const updates = [];
     try {
         fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+            log(`[Latest Sync] Gagal mendapatkan HTML Kuronime.`);
+            return;
+        }
+
+        const $ = fetchRes.$;
+        const seenUrls = new Set();
+
+        // Hanya ambil section "New Episodes" pertama, bukan "Top Episodes Of The Week"
+        $('.bixbox').first().find('article.bsu').each((_, el) => {
+            const title = $(el).find('.bsuxtt h2').text().trim();
+            const ep = $(el).find('.bt .ep').text().trim();
+            const href = $(el).find('a').attr('href');
+
+            if (title && ep && href && !seenUrls.has(href)) {
+                seenUrls.add(href);
+                updates.push({ title, status: ep });
+            }
+        });
     } catch (e) {
         console.error(`[Latest Sync] Gagal memuat Kuronime:`, e.message);
         return;
+    } finally {
+        if (slot) releaseToPool(slot);
     }
-
-    if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
-        log(`[Latest Sync] Gagal mendapatkan HTML Kuronime.`);
-        if (fetchRes && fetchRes.slot) releaseToPool(fetchRes.slot);
-        return;
-    }
-
-    const $ = fetchRes.$;
-    const slot = fetchRes.slot;
-    const updates = [];
-    const seenUrls = new Set();
-
-    // Hanya ambil section "New Episodes" pertama, bukan "Top Episodes Of The Week"
-    $('.bixbox').first().find('article.bsu').each((_, el) => {
-        const title = $(el).find('.bsuxtt h2').text().trim();
-        const ep = $(el).find('.bt .ep').text().trim();
-        const href = $(el).find('a').attr('href');
-
-        if (title && ep && href && !seenUrls.has(href)) {
-            seenUrls.add(href);
-            updates.push({ title, status: ep });
-        }
-    });
-
-    releaseToPool(slot);
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Kuronime.`);

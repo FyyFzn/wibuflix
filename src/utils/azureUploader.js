@@ -31,11 +31,16 @@ if (connectionString) {
 }
 
 const uploadCache = getCache('azure-uploads', 86400); // 24 hours TTL
+const globalBlacklistCache = getCache('global-blacklist', 3600);
 const MIN_VIDEO_SIZE = 100 * 1024; // 100 KB
 
 export const uploadProgressCache = new Map();
 export const activeUploadControllers = new Map();
 const failureCountCache = new Map();
+
+export function isMegaBlacklisted() {
+    return !!globalBlacklistCache.get('mega_blacklist');
+}
 
 /**
  * Returns the current upload progress string for a given blob.
@@ -132,35 +137,29 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
  * Memeriksa status upload dengan mekanisme fallback (Pengecekan Ganda).
  * Mencari di folder baru (seriesSlug), lalu jika tidak ada, mencari di folder lama (oldSeriesSlug).
  * Atau menerima array of slugs untuk memeriksa beberapa fallback sekaligus.
+ * Mendukung episodeSlug berupa array untuk backward compatibility penamaan folder episode.
  */
 export async function checkUploadStatusWithFallback(seriesSlug, episodeSlug, oldSeriesSlug) {
-    if (Array.isArray(seriesSlug)) {
-        const slugsToCheck = seriesSlug;
-        for (const slug of slugsToCheck) {
-            if (!slug) continue;
-            let status = await checkUploadStatus(slug, episodeSlug);
+    const seriesSlugs = Array.isArray(seriesSlug) ? seriesSlug : [seriesSlug, oldSeriesSlug].filter(Boolean);
+    const episodeSlugs = Array.isArray(episodeSlug) ? episodeSlug : [episodeSlug].filter(Boolean);
+
+    for (const sSlug of seriesSlugs) {
+        if (!sSlug) continue;
+        for (const eSlug of episodeSlugs) {
+            if (!eSlug) continue;
+            let status = await checkUploadStatus(sSlug, eSlug);
             if (status !== null) {
-                return { status, activeSeriesSlug: slug };
+                return { status, activeSeriesSlug: sSlug, activeEpisodeSlug: eSlug };
             }
         }
-        return { status: null, activeSeriesSlug: slugsToCheck[0] || 'uncategorized' };
-    }
-
-    let status = await checkUploadStatus(seriesSlug, episodeSlug);
-    if (status !== null) {
-        return { status, activeSeriesSlug: seriesSlug };
     }
     
-    if (oldSeriesSlug && oldSeriesSlug !== seriesSlug) {
-        let oldStatus = await checkUploadStatus(oldSeriesSlug, episodeSlug);
-        // Jika di folder lama ada file READY, UPLOADING, atau FAILED, gunakan folder lama
-        if (oldStatus !== null) {
-            return { status: oldStatus, activeSeriesSlug: oldSeriesSlug };
-        }
-    }
-    
-    // Jika tidak ada di keduanya, kembalikan null dan gunakan folder baru untuk upload selanjutnya
-    return { status: null, activeSeriesSlug: seriesSlug };
+    // Jika tidak ada di keduanya, kembalikan null dan gunakan folder utama untuk upload selanjutnya
+    return { 
+        status: null, 
+        activeSeriesSlug: seriesSlugs[0] || 'uncategorized',
+        activeEpisodeSlug: episodeSlugs[0] || 'uncategorized_ep'
+    };
 }
 
 /**
@@ -514,7 +513,13 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     const file = File.fromURL(megaUrl);
                     await file.loadAttributes();
                     streamSource = file.download({ maxConnections: 8 });
-                    streamSource.on('error', (err) => console.error('[Azure Uploader] Mega Stream Error:', err.message));
+                    streamSource.on('error', (err) => {
+                        console.error('[Azure Uploader] Mega Stream Error:', err.message);
+                        if (err.message && (err.message.includes('Bandwidth limit reached') || err.message.includes('MAC verification failed'))) {
+                            console.warn('[Azure Uploader] Mega bandwidth limit hit. Blacklisting Mega for 10 minutes.');
+                            globalBlacklistCache.set('mega_blacklist', true, 600); // 10 minutes TTL
+                        }
+                    });
                 } else {
                     console.info(`[Azure Uploader] Mode Single Stream: Mengalirkan data (Pipe)...`);
                     isPipeMode = true;

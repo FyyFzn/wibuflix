@@ -109,7 +109,7 @@ async function resolveOtakuServers($) {
                             maxRedirects: 0,
                             validateStatus: () => true,
                             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                            timeout: 8000
+                            timeout: 3500
                         });
 
                         let directUrl = redRes.headers.location;
@@ -156,6 +156,12 @@ async function resolveOtakuServers($) {
 }
 
 export async function getServersInternal(url) {
+    const cacheKey = `otaku_servers_${url}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+        return cachedData;
+    }
+
     console.log(`[Otakudesu] Fetching servers from: ${url}`);
 
     let slot = null;
@@ -192,12 +198,18 @@ export async function getServersInternal(url) {
         }
     });
 
-        return {
+        const result = {
             judul,
             servers: uniqueServers,
             nav_prev,
             nav_next
         };
+
+        if (uniqueServers.length > 0) {
+            cache.set(cacheKey, result);
+        }
+
+        return result;
     } finally {
         if (slot) releaseToPool(slot);
     }

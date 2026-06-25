@@ -19,6 +19,7 @@ export async function getBrowser() {
             await browserInstance.version();
         } catch {
             console.log('[Browser] Instance lama mati, membuka yang baru...');
+            try { browserInstance.close().catch(() => {}); } catch(e){}
             browserInstance = null;
         }
     }
