@@ -2,6 +2,9 @@ import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
+import Anime from '../models/Anime.js';
+import { extractEpNumStrict } from '../utils/stringUtils.js';
+import { scrapeVideoServers } from '../services/extractors/videoExtractor.js';
 
 const cache = getCache('episodes', 3600);
 
@@ -121,5 +124,76 @@ export async function getSamehadakuEpisodes(targetUrl) {
         if (slot) releaseToPool(slot);
     }
 }
+
+export async function getAlternativeServers(seriesTitle, episodeTitle) {
+    if (!seriesTitle || !episodeTitle) return [];
+
+    try {
+        let samehadakuUrl = null;
+
+        // 1. Try unified database first for mapping
+        let matchedEntry = await Anime.findOne({
+            $or: [
+                { title: { $regex: new RegExp(`^${seriesTitle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } },
+                { aliases: { $regex: new RegExp(`^${seriesTitle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } }
+            ]
+        });
+
+        // Fuzzy match in unified_db if exact match not found
+        if (!matchedEntry) {
+            const queryWords = seriesTitle.replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
+            if (queryWords.length > 0) {
+                // Cari data yang mengandung setidaknya salah satu kata kunci
+                const regexes = queryWords.map(w => new RegExp(`\\b${w}\\b`, 'i'));
+                matchedEntry = await Anime.findOne({
+                    $or: [
+                        { title: { $in: regexes } },
+                        { aliases: { $in: regexes } }
+                    ]
+                });
+            }
+        }
+
+        if (matchedEntry && matchedEntry.sources && matchedEntry.sources.samehadaku) {
+            samehadakuUrl = matchedEntry.sources.samehadaku.url;
+        }
+
+        if (!samehadakuUrl) {
+            console.log(`[Samehadaku Alt] Tidak menemukan kecocokan seri untuk: "${seriesTitle}"`);
+            return [];
+        }
+
+        console.log(`[Samehadaku Alt] Menemukan kecocokan seri Samehadaku: "${samehadakuUrl}"`);
+
+        const targetEpNum = extractEpNumStrict(episodeTitle);
+        if (targetEpNum === null) return [];
+
+        const details = await getSamehadakuEpisodes(samehadakuUrl);
+        if (!details || !details.daftar_episode) return [];
+
+        let targetEpUrl = null;
+        for (const ep of details.daftar_episode) {
+            if (ep.judul.toLowerCase().includes('batch')) continue;
+            const epNum = extractEpNumStrict(ep.judul);
+            if (epNum === targetEpNum) {
+                targetEpUrl = ep.url;
+                break;
+            }
+        }
+
+        if (!targetEpUrl) {
+            console.log(`[Samehadaku Alt] Tidak menemukan episode ${targetEpNum} di Samehadaku`);
+            return [];
+        }
+
+        console.log(`[Samehadaku Alt] Menemukan episode URL alternatif: "${targetEpUrl}"`);
+        const scrapeResult = await scrapeVideoServers(targetEpUrl);
+        return scrapeResult.servers || [];
+    } catch (e) {
+        console.error("[Samehadaku Alternative Error]", e.message);
+        return [];
+    }
+}
+
 
 export { cache };

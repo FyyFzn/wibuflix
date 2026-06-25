@@ -1,5 +1,6 @@
 import express from 'express';
-import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku, resolveSingleServer } from '../services/extractors/videoExtractor.js';
+import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
+import { getAlternativeServers as getAlternativeServersSamehadaku } from '../controllers/samehadakuController.js';
 import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted } from '../utils/azureUploader.js';
 import { normalizeTitleForMatch, extractEpNumStrict } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
