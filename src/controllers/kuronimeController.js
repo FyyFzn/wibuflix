@@ -188,6 +188,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle) {
 
         let targetEpUrl = null;
         for (const ep of details.daftar_episode) {
+            if (ep.judul.toLowerCase().includes('batch')) continue;
             const epNum = extractEpNumStrict(ep.judul);
             if (epNum === targetEpNumRaw) {
                 targetEpUrl = ep.url;

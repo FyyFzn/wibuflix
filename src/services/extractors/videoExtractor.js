@@ -315,6 +315,7 @@ export async function getAlternativeServersSamehadaku(seriesTitle, episodeTitle)
 
         let targetEpUrl = null;
         for (const ep of details.daftar_episode) {
+            if (ep.judul.toLowerCase().includes('batch')) continue;
             const epNum = extractEpNumStrict(ep.judul);
             if (epNum === targetEpNum) {
                 targetEpUrl = ep.url;

@@ -285,6 +285,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
 
         let targetEpUrl = null;
         for (const ep of details.episodes) {
+            if (ep.title.toLowerCase().includes('batch')) continue;
             const epNum = extractEpNumStrict(ep.title);
             if (epNum === targetEpNum) {
                 targetEpUrl = ep.url;
