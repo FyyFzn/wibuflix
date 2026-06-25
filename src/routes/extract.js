@@ -1,7 +1,6 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, getAlternativeServersSamehadaku, resolveSingleServer } from '../services/extractors/videoExtractor.js';
 import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted } from '../utils/azureUploader.js';
-import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, extractEpNumStrict } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
@@ -305,6 +304,11 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
 
             for (const srv of groups[resVal]) {
                 try {
+                    if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
+                        console.warn(`${logPrefix} Melewati ${srv.namaHost} karena sedang di-blacklist.`);
+                        continue;
+                    }
+                    
                     let iframeUrlToExtract = srv.iframeUrl;
                     if (!iframeUrlToExtract && srv.nume) {
                         try {
@@ -312,6 +316,10 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                             if (res && res.iframeUrl) {
                                 iframeUrlToExtract = res.iframeUrl;
                                 srv.namaHost = res.namaHost;
+                            }
+                            if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
+                                console.warn(`${logPrefix} Melewati ${srv.namaHost} (setelah resolve) karena sedang di-blacklist.`);
+                                continue;
                             }
                         } catch (resolveErr) {
                             console.error(`${logPrefix} Gagal resolve AJAX untuk server ${srv.namaHost || srv.nama}:`, resolveErr.message);
