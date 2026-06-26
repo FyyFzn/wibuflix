@@ -56,6 +56,8 @@ export async function extract(embedUrl, req) {
         }
         
         let videoUrl = null;
+        let timeoutId;
+        let checkInterval;
 
         const responseHandler = async (response) => {
             if (videoUrl) return;
@@ -86,9 +88,10 @@ export async function extract(embedUrl, req) {
         tempPage.on('response', responseHandler);
 
         const extractPromise = new Promise(resolve => {
-            const checkInterval = setInterval(async () => {
+            checkInterval = setInterval(async () => {
                 if (videoUrl) {
                     clearInterval(checkInterval);
+                    if (timeoutId) clearTimeout(timeoutId);
                     return resolve(videoUrl);
                 }
                 try {
@@ -98,12 +101,13 @@ export async function extract(embedUrl, req) {
                         if (match && match[1] && !match[1].includes('google')) {
                             videoUrl = match[1];
                             clearInterval(checkInterval);
+                            if (timeoutId) clearTimeout(timeoutId);
                             return resolve(videoUrl);
                         }
                     }
                 } catch (e) {}
-            }, 100);
-            setTimeout(() => { 
+            }, 500); // 500ms lebih hemat CPU & tidak membebani IPC Puppeteer
+            timeoutId = setTimeout(() => { 
                 clearInterval(checkInterval); 
                 resolve(null); 
             }, 25000); // 25s for slow SPA
@@ -158,7 +162,6 @@ export async function extract(embedUrl, req) {
         }, 1500);
 
         const finalUrl = await extractPromise;
-        tempPage.off('response', responseHandler);
         
         if (finalUrl && finalUrl !== 'ERROR') {
             const cleanUrl = finalUrl.replace(/&amp;/g, '&');
@@ -170,6 +173,11 @@ export async function extract(embedUrl, req) {
         return null;
     } finally {
         try { if (clickInterval) clearInterval(clickInterval); } catch (e) {}
+        try { if (checkInterval) clearInterval(checkInterval); } catch (e) {}
+        try { if (timeoutId) clearTimeout(timeoutId); } catch (e) {}
+        if (tempPage && responseHandler) {
+            try { tempPage.off('response', responseHandler); } catch (e) {}
+        }
         if (isTempSpaPage && tempPage) {
             tempPage.close().catch(() => {});
         } else if (slot) {

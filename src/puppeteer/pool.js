@@ -170,6 +170,10 @@ export async function acquireFromPool() {
     const slot = pagePool.find(s => !s.busy);
     if (slot) { 
         slot.busy = true; 
+        if (slot.resetPromise) {
+            await slot.resetPromise.catch(() => {});
+            slot.resetPromise = null;
+        }
         try {
             if (slot.page.isClosed()) throw new Error('closed');
             await slot.page.evaluate('1'); // Test connection
@@ -189,6 +193,10 @@ export async function acquireFromExtractorPool() {
     const slot = extractorPool.find(s => !s.busy);
     if (slot) { 
         slot.busy = true; 
+        if (slot.resetPromise) {
+            await slot.resetPromise.catch(() => {});
+            slot.resetPromise = null;
+        }
         try {
             if (slot.page.isClosed()) throw new Error('closed');
             await slot.page.evaluate('1');
@@ -207,8 +215,24 @@ export async function acquireFromExtractorPool() {
 export function releaseToPool(slot) {
     if (!slot) return;
     if (slot.temp) { slot.page.close().catch(() => { }); return; }
+    try {
+        slot.page.removeAllListeners('request');
+        slot.page.removeAllListeners('response');
+        slot.page.setRequestInterception(true).catch(() => {});
+        slot.page.on('request', req => {
+            if (req.isIntercepted()) {
+                const type = req.resourceType();
+                const url = req.url();
+                if (['font', slot.type === 'extractor' ? '' : 'media'].includes(type)) return req.abort();
+                if (url.includes('googlesyndication') || url.includes('doubleclick') ||
+                    url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
+                req.continue();
+            }
+        });
+    } catch (e) {}
+
     if (slot.type === 'extractor' || slot.type === 'regular') {
-        slot.page.goto('about:blank').catch(() => {});
+        slot.resetPromise = slot.page.goto('about:blank').catch(() => {});
     }
     slot.busy = false;
 }

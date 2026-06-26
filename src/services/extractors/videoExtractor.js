@@ -4,6 +4,7 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer } from './providers/utils.js';
 import { resolveExtractor } from './providers/index.js';
+import * as genericExtractor from './providers/generic.js';
 
 export { extractIframeSrc, namaServer };
 
@@ -260,6 +261,14 @@ export async function extractVideoUrl(embedUrl, req) {
 
     // ── 3. Delegasikan ke modular extractors ──
     const extractor = resolveExtractor(embedUrl);
-    return await extractor.extract(embedUrl, req);
+    let result = await extractor.extract(embedUrl, req);
+
+    // ── 4. Automatic Fallback ke Puppeteer generic jika fast extractor gagal ──
+    if (!result && extractor.name !== 'generic') {
+        console.log(`[Extract Fallback] Extractor cepat '${extractor.name || 'provider'}' gagal. Mengalihkan ke Puppeteer generic...`);
+        result = await genericExtractor.extract(embedUrl, req);
+    }
+
+    return result;
 }
 

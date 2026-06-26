@@ -231,7 +231,31 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
             primaryPromise = Promise.resolve(primaryData);
         }
 
-        if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
+        let urlsObj = null;
+        if (req?.query?.urls) {
+            try { urlsObj = JSON.parse(req.query.urls); } catch (e) {}
+        }
+
+        if (urlsObj && (urlsObj.otakudesu || urlsObj.kuronime || urlsObj.samehadaku)) {
+            console.info(`${logPrefix} Menggunakan URL alternatif langsung dari metadata urls`);
+            if (urlsObj.samehadaku && !episodeUrl.includes(urlsObj.samehadaku)) {
+                alternativePromise = getServersBasedOnUrl(urlsObj.samehadaku).then(res => res?.servers || []).catch(() => []);
+            }
+            if (urlsObj.otakudesu && !episodeUrl.includes('otakudesu')) {
+                let otakuUrl = urlsObj.otakudesu;
+                if (otakuUrl.startsWith('/api/otakudesu/servers')) {
+                    otakuUrl = new URL('http://localhost' + otakuUrl).searchParams.get('url') || otakuUrl;
+                }
+                const p = getOtakuServers(otakuUrl).then(res => res?.servers || []).catch(() => []);
+                if (alternativePromise === Promise.resolve([])) alternativePromise = p;
+                else secondaryAlternativePromise = p;
+            }
+            if (urlsObj.kuronime && !episodeUrl.includes('kuronime')) {
+                const p = getKuronimeServers(urlsObj.kuronime).then(res => res?.servers || []).catch(() => []);
+                if (alternativePromise === Promise.resolve([])) alternativePromise = p;
+                else secondaryAlternativePromise = p;
+            }
+        } else if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
             try {
                 if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
                     console.info(`${logPrefix} Pencarian alternatif di Samehadaku & Kuronime untuk: "${seriesTitle}" - "${episodeTitle}"`);
@@ -380,14 +404,13 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     }
 
     if (activeExtractions.has(blobPath)) {
-        console.info(`${logPrefix} Skip ${episodeSlug} — sedang diekstrak`);
+        console.info(`${logPrefix} Skip ${episodeSlug} — sedang diekstrak/diunggah`);
         return { success: false, reason: 'Already extracting' };
     }
 
     console.info(`${logPrefix} Memulai proses untuk: ${episodeSlug}`);
     activeExtractions.add(blobPath);
     let matchedSource = null;
-    let m3u8Found = false;
 
     try {
         const result = await findBestVideoSource(episodeUrl, seriesTitle, '', logPrefix);
@@ -396,20 +419,19 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         if (!matchedSource) {
             console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
             markUploadFailed(activeSlug, episodeSlug);
+            activeExtractions.delete(blobPath);
             return { success: false, reason: result.error || 'Semua server gagal atau limit.' };
         }
-    } finally {
-        activeExtractions.delete(blobPath);
-    }
 
-    if (matchedSource) {
         global[`prefetch_src_${activeSlug}_${episodeSlug}`] = matchedSource;
         await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
-        delete global[`prefetch_src_${activeSlug}_${episodeSlug}`];
         return { success: true };
-    } else {
+    } catch (err) {
         markUploadFailed(activeSlug, episodeSlug);
-        return { success: false, reason: 'Semua server gagal atau limit.' };
+        throw err;
+    } finally {
+        delete global[`prefetch_src_${activeSlug}_${episodeSlug}`];
+        activeExtractions.delete(blobPath);
     }
 }
 
@@ -624,6 +646,7 @@ router.get('/api/smart-play', async (req, res) => {
             matchedSource = result.matchedSource;
 
             if (!matchedSource) {
+                activeExtractions.delete(blobPath);
                 markUploadFailed(seriesSlug, episodeSlug);
                 return res.status(404).json({
                     success: false,
@@ -631,8 +654,9 @@ router.get('/api/smart-play', async (req, res) => {
                     message: result.error || 'Tidak ada server download/streaming yang ditemukan di halaman episode.'
                 });
             }
-        } finally {
+        } catch (err) {
             activeExtractions.delete(blobPath);
+            throw err;
         }
 
         if (matchedSource) {
@@ -642,13 +666,17 @@ router.get('/api/smart-play', async (req, res) => {
             // Pastikan selalu ada .catch() agar Node tidak crash jika terjadi unhandled rejection
             if (uploadTask) {
                 uploadTask.then(() => {
+                    activeExtractions.delete(blobPath);
                     if (prefetchWindow.length > 0) {
                         console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
                         triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
                     }
                 }).catch(err => {
+                    activeExtractions.delete(blobPath);
                     console.error(`[Smart-Play] Upload latar belakang gagal:`, err.message);
                 });
+            } else {
+                activeExtractions.delete(blobPath);
             }
 
             const baseUrl = `${req.protocol}://${req.get('host')}`;

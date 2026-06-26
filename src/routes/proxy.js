@@ -95,6 +95,10 @@ router.get('/api/proxy/filedon', async (req, res) => {
 
                 res.status(proxyRes.statusCode);
                 proxyRes.pipe(res);
+
+                req.on('close', () => {
+                    proxyRes.destroy();
+                });
             }
         });
 
@@ -146,6 +150,10 @@ router.get('/api/proxy/kraken', async (req, res) => {
 
             res.status(proxyRes.statusCode);
             proxyRes.pipe(res);
+
+            req.on('close', () => {
+                proxyRes.destroy();
+            });
         });
 
         proxyReq.on('error', (err) => {
@@ -198,6 +206,7 @@ router.get('/api/proxy/mega', async (req, res) => {
                 if (req.method !== 'HEAD') {
                     const stream = file.download({ start, end });
                     stream.pipe(res);
+                    req.on('close', () => stream.destroy());
                 } else {
                     res.end();
                 }
@@ -209,6 +218,7 @@ router.get('/api/proxy/mega', async (req, res) => {
                 if (req.method !== 'HEAD') {
                     const stream = file.download();
                     stream.pipe(res);
+                    req.on('close', () => stream.destroy());
                 } else {
                     res.end();
                 }

@@ -17,18 +17,28 @@ export async function getEpisodesMerged(req, res) {
 
     try {
         // --- 1. AMBIL METADATA DARI DATABASE LOKAL (SUPER CEPAT) ---
+function extractOtakuSlug(val) {
+    if (!val) return null;
+    if (val.includes(':')) return val.split(':').pop();
+    return val.replace(/^\/anime\//, '').replace(/^\//, '');
+}
+
         let dbAnime = null;
         const orQuery = [];
         
         if (urlSamehadaku) orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
-        if (urlOtakudesu) orQuery.push({ "sources.otakudesu.id": urlOtakudesu.split(':')[1] });
+        if (urlOtakudesu) {
+            const otakuId = extractOtakuSlug(urlOtakudesu);
+            if (otakuId) orQuery.push({ "sources.otakudesu.id": otakuId });
+        }
         if (urlKuronime) orQuery.push({ "sources.kuronime.url": urlKuronime });
         
         if (orQuery.length > 0) {
             dbAnime = await Anime.findOne({ $or: orQuery });
         } else if (targetUrl) {
-            if (targetUrl.startsWith('/anime/otakudesu:')) {
-                dbAnime = await Anime.findOne({ "sources.otakudesu.id": targetUrl.split(':')[1] });
+            if (targetUrl.startsWith('/anime/') || targetUrl.includes('otakudesu')) {
+                const otakuId = extractOtakuSlug(targetUrl);
+                if (otakuId) dbAnime = await Anime.findOne({ "sources.otakudesu.id": otakuId });
             } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
                 dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
             } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
@@ -67,7 +77,7 @@ export async function getEpisodesMerged(req, res) {
                 
                 // --- LOGIKA MERGE MULTI-SUMBER ---
         if (urlSamehadaku || urlOtakudesu || urlKuronime) {
-            const slug = urlOtakudesu ? urlOtakudesu.split(':')[1] : null;
+            const slug = extractOtakuSlug(urlOtakudesu);
             
             const [sameRes, otakuRes, kuroRes] = await Promise.all([
                 urlSamehadaku ? getSamehadakuEpisodes(urlSamehadaku).catch(() => null) : Promise.resolve(null),
@@ -213,8 +223,8 @@ export async function getEpisodesMerged(req, res) {
                             urls: { neosatsu: ep.url }
                         }));
                 }
-            } else if (targetUrl.startsWith('/anime/otakudesu:')) {
-                const slug = targetUrl.split(':')[1];
+            } else if (targetUrl.startsWith('/anime/') || (targetUrl.includes('otakudesu') && !targetUrl.includes('samehadaku'))) {
+                const slug = extractOtakuSlug(targetUrl);
                 data = await otakudesu.getOtakuEpisodesFormatted(slug);
                 if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
                 // Normalisasi agar formatnya sama (menggunakan objek `urls`)
@@ -273,6 +283,7 @@ export async function getEpisodesMerged(req, res) {
         if (dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
             // Jika kita sudah merespons (isCached === true), kita hanya update DB diam-diam
             dbAnime.episodesList = data.daftar_episode;
+            dbAnime.lastUpdated = new Date();
             await dbAnime.save().catch(() => {});
         } else if (!dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
             // Jika belum ada di DB (jarang terjadi karena sudah disinkronisasi), tapi siapa tahu
@@ -305,9 +316,11 @@ export async function getEpisodesMerged(req, res) {
 
         // Jalankan scraping
         if (isCached) {
-            // Hanya jalankan background scrape jika cache sudah lebih dari 1 jam untuk menghindari load berlebih pada Puppeteer
             const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
-            if (cacheAge > 3600000) { // 1 jam
+            if (cacheAge > 86400000) { // 24 jam (sangat basi)
+                console.log(`[Cache] Cache sudah >24 jam. Melakukan scraping sinkron untuk: ${dbAnime.title}`);
+                await performScrape();
+            } else if (cacheAge > 3600000) { // 1 jam
                 console.log(`[Cache] Memperbarui episode di latar belakang untuk: ${dbAnime.title}`);
                 performScrape(); // Jalan di background tanpa await
             } else {
