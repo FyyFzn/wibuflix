@@ -53,35 +53,36 @@ async function injectCFCookies(page, targetUrl) {
 export async function fetchWithCF(url, options = {}) {
     const timeout = options.timeout || 60000;
     
+    // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku)
+    const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku');
+    
     let html = '';
-    try {
-        const response = await axios.get(url, {
-            headers: {
-                'User-Agent': globalUserAgent,
-                'Cookie': globalCfCookie,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-            },
-            timeout: options.fetchTimeout || 8000
-        });
-        html = response.data;
-    } catch (err) {
-        if (err.response && err.response.status === 404) {
-            return { html: '404_NOT_FOUND', $: null, slot: null };
+    if (!isCloudflareStrict) {
+        try {
+            const response = await axios.get(url, {
+                headers: {
+                    'User-Agent': globalUserAgent,
+                    'Cookie': globalCfCookie,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                },
+                timeout: options.fetchTimeout || 8000
+            });
+            html = response.data;
+            if (html && isCloudflareHtml(html)) {
+                console.log(`[scrapeHelper] Axios mendapat halaman CF challenge. Langsung fallback ke Puppeteer...`);
+                html = ''; // paksa masuk ke Puppeteer fallback tanpa refresh cookie di sini
+            }
+        } catch (err) {
+            if (err.response && err.response.status === 404) {
+                return { html: '404_NOT_FOUND', $: null, slot: null };
+            }
+            console.log(`[scrapeHelper] Axios gagal (${err.message}). Langsung fallback ke Puppeteer untuk: ${url}`);
         }
-        console.log(`[scrapeHelper] Axios gagal (${err.message}). Fallback ke Puppeteer untuk: ${url}`);
-        if (err.response && (err.response.status === 403 || err.response.status === 503 || err.response.status === 429)) {
-            await refreshCfCookie();
-        }
-    }
-
-    // Jika Axios berhasil tapi mengembalikan halaman CF challenge
-    if (html && isCloudflareHtml(html)) {
-        console.log(`[scrapeHelper] Axios mendapat halaman CF challenge. Refresh cookie & fallback Puppeteer...`);
-        html = ''; // paksa masuk ke Puppeteer fallback
-        await refreshCfCookie();
+    } else {
+        console.log(`[scrapeHelper] Domain Cloudflare ketat terdeteksi. Melewati Axios, langsung ke Puppeteer...`);
     }
 
     let slot = null;
