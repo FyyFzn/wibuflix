@@ -26,25 +26,36 @@ function extractOtakuSlug(val) {
         let dbAnime = null;
         const orQuery = [];
         
-        if (urlSamehadaku) orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
+        if (urlSamehadaku) {
+            orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
+            orQuery.push({ "episodesList.urls.samehadaku": urlSamehadaku });
+            orQuery.push({ "url": urlSamehadaku });
+        }
         if (urlOtakudesu) {
             const otakuId = extractOtakuSlug(urlOtakudesu);
-            if (otakuId) orQuery.push({ "sources.otakudesu.id": otakuId });
+            if (otakuId) {
+                orQuery.push({ "sources.otakudesu.id": otakuId });
+                orQuery.push({ "episodesList.urls.otakudesu": { $regex: otakuId, $options: 'i' } });
+            }
         }
-        if (urlKuronime) orQuery.push({ "sources.kuronime.url": urlKuronime });
+        if (urlKuronime) {
+            orQuery.push({ "sources.kuronime.url": urlKuronime });
+            orQuery.push({ "episodesList.urls.kuronime": urlKuronime });
+        }
         
         if (orQuery.length > 0) {
             dbAnime = await Anime.findOne({ $or: orQuery });
-        } else if (targetUrl) {
+        }
+        if (!dbAnime && targetUrl) {
             if (targetUrl.startsWith('/anime/') || targetUrl.includes('otakudesu')) {
                 const otakuId = extractOtakuSlug(targetUrl);
-                if (otakuId) dbAnime = await Anime.findOne({ "sources.otakudesu.id": otakuId });
+                if (otakuId) dbAnime = await Anime.findOne({ $or: [{ "sources.otakudesu.id": otakuId }, { "episodesList.urls.otakudesu": { $regex: otakuId, $options: 'i' } }] });
             } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
                 dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
             } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
-                dbAnime = await Anime.findOne({ "sources.kuronime.url": targetUrl });
+                dbAnime = await Anime.findOne({ $or: [{ "sources.kuronime.url": targetUrl }, { "episodesList.urls.kuronime": targetUrl }] });
             } else {
-                dbAnime = await Anime.findOne({ "sources.samehadaku.url": targetUrl });
+                dbAnime = await Anime.findOne({ $or: [{ "sources.samehadaku.url": targetUrl }, { "episodesList.urls.samehadaku": targetUrl }, { "url": targetUrl }] });
             }
         }
 
@@ -76,13 +87,24 @@ function extractOtakuSlug(val) {
                 let data;
                 
                 // --- LOGIKA MERGE MULTI-SUMBER ---
-        if (urlSamehadaku || urlOtakudesu || urlKuronime) {
-            const slug = extractOtakuSlug(urlOtakudesu);
+        let cleanSamehadaku = urlSamehadaku;
+        let cleanOtakudesu = urlOtakudesu;
+        let cleanKuronime = urlKuronime;
+
+        if (dbAnime && dbAnime.sources) {
+            if (dbAnime.sources.samehadaku?.url) cleanSamehadaku = dbAnime.sources.samehadaku.url;
+            if (dbAnime.sources.otakudesu?.id) cleanOtakudesu = `/anime/${dbAnime.sources.otakudesu.id}`;
+            else if (dbAnime.sources.otakudesu?.url) cleanOtakudesu = dbAnime.sources.otakudesu.url;
+            if (dbAnime.sources.kuronime?.url) cleanKuronime = dbAnime.sources.kuronime.url;
+        }
+
+        if (cleanSamehadaku || cleanOtakudesu || cleanKuronime) {
+            const slug = extractOtakuSlug(cleanOtakudesu);
             
             const [sameRes, otakuRes, kuroRes] = await Promise.all([
-                urlSamehadaku ? getSamehadakuEpisodes(urlSamehadaku).catch(() => null) : Promise.resolve(null),
+                cleanSamehadaku ? getSamehadakuEpisodes(cleanSamehadaku).catch(() => null) : Promise.resolve(null),
                 slug ? otakudesu.getOtakuEpisodesFormatted(slug).catch(() => null) : Promise.resolve(null),
-                urlKuronime ? getKuronimeEpisodes(urlKuronime).catch(() => null) : Promise.resolve(null),
+                cleanKuronime ? getKuronimeEpisodes(cleanKuronime).catch(() => null) : Promise.resolve(null),
             ]);
             
             // Format merge
