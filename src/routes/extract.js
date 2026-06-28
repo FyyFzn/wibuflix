@@ -499,7 +499,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
             if (prefetchAbortController.signal.aborted) return;
 
-            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'player', null, slugsToCheck);
+            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck);
 
             // Jeda antar episode untuk mencegah ETOOMANY dari Mega
             if (validUrls.indexOf(epUrl) < validUrls.length - 1) {

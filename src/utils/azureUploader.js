@@ -183,10 +183,11 @@ export function markUploadFailed(seriesSlug, episodeSlug) {
  * Checks if there is any active upload for a specific series.
  */
 export function hasActiveUploadForSeries(seriesSlug) {
-    const prefix = `${seriesSlug}/`;
+    const cleanSeries = seriesSlug.replace(/^mal-\d+_/, '');
     const keys = uploadCache.keys();
     for (const key of keys) {
-        if (key.startsWith(prefix) && uploadCache.get(key) === 'UPLOADING') {
+        const cleanKey = key.replace(/^mal-\d+_/, '');
+        if (cleanKey.startsWith(`${cleanSeries}/`) && uploadCache.get(key) === 'UPLOADING') {
             return true;
         }
     }
@@ -490,8 +491,6 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 const hostLow = videoUrl.toLowerCase();
                 if (hostLow.includes('kraken')) numThreads = 16;
                 if (
-                    hostLow.includes('pixeldrain') || 
-                    hostLow.includes('pixeldra.in') ||
                     hostLow.includes('googleapis') ||
                     hostLow.includes('drive.google') ||
                     hostLow.includes('mediafire')

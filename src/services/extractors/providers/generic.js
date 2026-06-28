@@ -38,6 +38,10 @@ export async function extract(embedUrl, req) {
     let tempPage;
     let isTempSpaPage = false;
     let clickInterval;
+    let checkInterval;
+    let timeoutId;
+    let videoUrl = null;
+    let responseHandler = null;
     try {
         const isSPA = embedUrl.includes('filedon') || embedUrl.includes('filemoon') || embedUrl.includes('filelions') || embedUrl.includes('moonplayer') || embedUrl.includes('pucukmovie') || embedUrl.includes('pucuk');
 
@@ -54,12 +58,8 @@ export async function extract(embedUrl, req) {
                 'Origin': 'https://v2.samehadaku.how'
             });
         }
-        
-        let videoUrl = null;
-        let timeoutId;
-        let checkInterval;
 
-        const responseHandler = async (response) => {
+        responseHandler = async (response) => {
             if (videoUrl) return;
             const url = response.url();
             const type = response.headers()['content-type'] || '';

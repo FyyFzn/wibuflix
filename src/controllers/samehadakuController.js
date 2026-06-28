@@ -141,7 +141,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle) {
 
         // Fuzzy match in unified_db if exact match not found
         if (!matchedEntry) {
-            const queryWords = seriesTitle.replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
+            const queryWords = seriesTitle.replace(/[^a-zA-Z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
             if (queryWords.length > 0) {
                 // Cari data yang mengandung setidaknya salah satu kata kunci
                 const regexes = queryWords.map(w => new RegExp(`\\b${w}\\b`, 'i'));
