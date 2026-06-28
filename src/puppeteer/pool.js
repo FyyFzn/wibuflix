@@ -44,12 +44,13 @@ export async function createPage(browser) {
     await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
+        if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
         const type = req.resourceType();
         const url = req.url();
-        if (['font', 'media'].includes(type)) return req.abort();
+        if (['font', 'media'].includes(type)) return req.abort().catch(() => {});
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
-            url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
-        req.continue();
+            url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
+        req.continue().catch(() => {});
     });
     return page;
 }
@@ -59,12 +60,13 @@ export async function createExtractorPage(browser) {
     await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
+        if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
         const type = req.resourceType();
         const url = req.url();
-        if (['font'].includes(type)) return req.abort();
+        if (['font'].includes(type)) return req.abort().catch(() => {});
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
-            url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
-        req.continue();
+            url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
+        req.continue().catch(() => {});
     });
     return page;
 }
@@ -220,14 +222,13 @@ export function releaseToPool(slot) {
         slot.page.removeAllListeners('response');
         slot.page.setRequestInterception(true).catch(() => {});
         slot.page.on('request', req => {
-            if (req.isIntercepted()) {
-                const type = req.resourceType();
-                const url = req.url();
-                if (['font', slot.type === 'extractor' ? '' : 'media'].includes(type)) return req.abort();
-                if (url.includes('googlesyndication') || url.includes('doubleclick') ||
-                    url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort();
-                req.continue();
-            }
+            if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
+            const type = req.resourceType();
+            const url = req.url();
+            if (['font', slot.type === 'extractor' ? '' : 'media'].includes(type)) return req.abort().catch(() => {});
+            if (url.includes('googlesyndication') || url.includes('doubleclick') ||
+                url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
+            req.continue().catch(() => {});
         });
     } catch (e) {}
 

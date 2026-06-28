@@ -22,16 +22,17 @@ export async function extract(embedUrl, req) {
         let videoUrl = null;
 
         page.on('request', request => {
+            if (request.isInterceptResolutionHandled && request.isInterceptResolutionHandled()) return;
             const rt = request.resourceType();
             const url = request.url();
             if (url.includes('googlevideo.com') || url.includes('videoplayback')) {
                 videoUrl = url;
-                return request.abort();
+                return request.abort().catch(() => {});
             }
             if (['image', 'font', 'stylesheet'].includes(rt)) {
-                return request.abort();
+                return request.abort().catch(() => {});
             }
-            request.continue();
+            request.continue().catch(() => {});
         });
 
         page.on('response', async res => {
