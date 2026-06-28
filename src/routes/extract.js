@@ -177,6 +177,13 @@ async function getServersBasedOnUrl(episodeUrl) {
     }
 }
 
+function sourceScore(source) {
+    if (source === 'Samehadaku') return 100;
+    if (source === 'Otakudesu') return 50;
+    if (source === 'Kuronime') return -100; // last resort
+    return 0;
+}
+
 function serverScore(host) {
     if (!host) return 0;
     const h = host.toLowerCase();
@@ -190,7 +197,7 @@ function serverScore(host) {
     if (h.includes('pixeldrain')) return 70;
     if (h.includes('acefile')) return 60;
     if (h.includes('vidhide')) return 50;
-    if (h.includes('kraken')) return -100; // super lambat, last resort
+    if (h.includes('kraken') || h.includes('kuroplayer') || h.includes('kuronime')) return -100; // super lambat / mati, last resort
     return 0;
 }
 
@@ -320,6 +327,8 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                     const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
                     const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
                     if (aIsM3u8 !== bIsM3u8) return bIsM3u8 - aIsM3u8;
+                    const sScoreDiff = sourceScore(b.source) - sourceScore(a.source);
+                    if (sScoreDiff !== 0) return sScoreDiff;
                     return serverScore(b.namaHost) - serverScore(a.namaHost);
                 });
 
@@ -718,7 +727,7 @@ router.post('/api/cancel-uploads', (req, res) => {
     try {
         prefetchAbortController.abort();
         prefetchAbortController = new AbortController();
-        const count = cancelAllUploads();
+        const count = cancelAllUploads('player') + cancelAllUploads('prefetch');
         res.json({ success: true, message: `Berhasil membatalkan ${count} upload aktif.` });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -761,6 +770,11 @@ router.post('/cancel-stream', express.json(), async (req, res) => {
     console.info(`[Smart-Play] Eksplisit cancel dari client untuk: ${activeEpSlug}`);
     cancelUpload(activeSlug, activeEpSlug);
     activeExtractions.delete(blobPath);
+    
+    // Batalkan juga prefetch yang sedang berjalan karena user sudah keluar dari player
+    prefetchAbortController.abort();
+    prefetchAbortController = new AbortController();
+    cancelAllUploads('prefetch');
     
     return res.json({ success: true });
 });
