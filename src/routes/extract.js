@@ -363,6 +363,10 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
 
                     const extracted = await extractVideoUrl(iframeUrlToExtract, req);
                     if (extracted && extracted.url && !extracted.webviewOnly) {
+                        if (extracted.url.toLowerCase().includes('mega.nz') && isMegaBlacklisted()) {
+                            console.warn(`${logPrefix} Melewati extracted url Mega karena sedang di-blacklist.`);
+                            continue;
+                        }
                         const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
                         try {
                             await checkRangeSupport(extracted.url, finalHeaders);

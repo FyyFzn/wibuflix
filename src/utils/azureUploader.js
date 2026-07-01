@@ -514,8 +514,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     streamSource = file.download({ maxConnections: 8 });
                     streamSource.on('error', (err) => {
                         console.error('[Azure Uploader] Mega Stream Error:', err.message);
-                        if (err.message && (err.message.includes('Bandwidth limit reached') || err.message.includes('MAC verification failed'))) {
-                            console.warn('[Azure Uploader] Mega bandwidth limit hit. Blacklisting Mega for 10 minutes.');
+                        if (err && (err.message?.includes('Bandwidth limit reached') || err.message?.includes('MAC verification failed') || err.message?.includes('EBLOCKED') || err.message?.includes('User blocked') || err.code === 'EBLOCKED')) {
+                            console.warn('[Azure Uploader] Mega limit/blocked hit. Blacklisting Mega for 10 minutes.');
                             globalBlacklistCache.set('mega_blacklist', true, 600); // 10 minutes TTL
                         }
                     });
@@ -732,6 +732,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 uploadProgressCache.delete(blobPath);
             } else {
                 console.error(`[Azure Uploader] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
+                if (videoUrl && (videoUrl.includes('/api/proxy/mega') || videoUrl.toLowerCase().includes('mega.nz'))) {
+                    console.warn('[Azure Uploader] Mega upload gagal total/diblokir. Memasukkan Mega ke Blacklist Global selama 10 menit...');
+                    globalBlacklistCache.set('mega_blacklist', true, 600);
+                }
                 markUploadFailed(seriesSlug, episodeSlug);
                 uploadProgressCache.delete(blobPath);
             }
