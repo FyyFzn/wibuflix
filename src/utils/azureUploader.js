@@ -564,10 +564,12 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             }
 
             ffmpegArgs.push(
+                '-fflags', '+genpts',
                 '-i', isPipeMode ? 'pipe:0' : ffmpegInputSource,
                 '-map', '0:v?',
                 '-map', '0:a?',
                 '-c', 'copy',
+                '-max_muxing_queue_size', '1024',
                 '-f', 'hls',
                 '-hls_time', '10',
                 '-hls_playlist_type', 'vod',

@@ -9,6 +9,8 @@ const EXTRACTOR_POOL_SIZE = 1; // Dikurangi dari 2 untuk menghemat RAM
 const pagePool = [];
 const extractorPool = [];
 let poolReady = false;
+let activeTempPages = 0;
+const MAX_TEMP_PAGES = 2; // Batasi maksimal 2 tab sementara agar RAM VPS tidak habis
 
 export let globalCfCookie = '';
 export const globalUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
@@ -63,7 +65,7 @@ export async function createExtractorPage(browser) {
         if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
         const type = req.resourceType();
         const url = req.url();
-        if (['font'].includes(type)) return req.abort().catch(() => {});
+        if (['font', 'image', 'stylesheet', 'media'].includes(type)) return req.abort().catch(() => {});
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
             url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
         req.continue().catch(() => {});
@@ -169,7 +171,11 @@ export async function initPagePool() {
 }
 
 export async function acquireFromPool() {
-    const slot = pagePool.find(s => !s.busy);
+    let slot = pagePool.find(s => !s.busy);
+    for (let i = 0; i < 10 && !slot; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        slot = pagePool.find(s => !s.busy);
+    }
     if (slot) { 
         slot.busy = true; 
         if (slot.resetPromise) {
@@ -186,13 +192,22 @@ export async function acquireFromPool() {
         }
         return slot; 
     }
+    while (activeTempPages >= MAX_TEMP_PAGES) {
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    activeTempPages++;
+    console.log(`[PagePool] Membuka temporary page (${activeTempPages}/${MAX_TEMP_PAGES})...`);
     const browser = await getBrowser();
     const page = await createPage(browser);
     return { page, busy: true, temp: true, type: 'regular' };
 }
 
 export async function acquireFromExtractorPool() {
-    const slot = extractorPool.find(s => !s.busy);
+    let slot = extractorPool.find(s => !s.busy);
+    for (let i = 0; i < 10 && !slot; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        slot = extractorPool.find(s => !s.busy);
+    }
     if (slot) { 
         slot.busy = true; 
         if (slot.resetPromise) {
@@ -209,6 +224,11 @@ export async function acquireFromExtractorPool() {
         }
         return slot; 
     }
+    while (activeTempPages >= MAX_TEMP_PAGES) {
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    activeTempPages++;
+    console.log(`[ExtractorPool] Membuka temporary extractor page (${activeTempPages}/${MAX_TEMP_PAGES})...`);
     const browser = await getBrowser();
     const page = await createExtractorPage(browser);
     return { page, busy: true, temp: true, type: 'extractor' };
@@ -216,7 +236,11 @@ export async function acquireFromExtractorPool() {
 
 export function releaseToPool(slot) {
     if (!slot) return;
-    if (slot.temp) { slot.page.close().catch(() => { }); return; }
+    if (slot.temp) { 
+        if (activeTempPages > 0) activeTempPages--;
+        slot.page.close().catch(() => { }); 
+        return; 
+    }
     try {
         slot.page.removeAllListeners('request');
         slot.page.removeAllListeners('response');
@@ -225,7 +249,8 @@ export function releaseToPool(slot) {
             if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
             const type = req.resourceType();
             const url = req.url();
-            if (['font', slot.type === 'extractor' ? '' : 'media'].includes(type)) return req.abort().catch(() => {});
+            const blockedTypes = slot.type === 'extractor' ? ['font', 'image', 'stylesheet', 'media'] : ['font', 'media'];
+            if (blockedTypes.includes(type)) return req.abort().catch(() => {});
             if (url.includes('googlesyndication') || url.includes('doubleclick') ||
                 url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
             req.continue().catch(() => {});

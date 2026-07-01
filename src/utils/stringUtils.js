@@ -31,36 +31,15 @@ export function normalizeTitleForMatch(title) {
     return t.replace(/\s+/g, ' ').trim();
 }
 
+import stringSimilarity from 'string-similarity';
+
 /**
  * Menghitung tingkat kemiripan dua string menggunakan algoritma Sørensen–Dice coefficient.
  * Mengembalikan nilai antara 0.0 (tidak mirip sama sekali) hingga 1.0 (identik).
  */
 export function diceCoefficient(str1, str2) {
-    const s1 = str1.toLowerCase().replace(/\s+/g, '');
-    const s2 = str2.toLowerCase().replace(/\s+/g, '');
-
-    if (s1 === s2) return 1.0;
-    if (s1.length < 2 || s2.length < 2) return 0.0;
-
-    // Buat bigrams (pasangan 2 huruf berurutan)
-    const bigrams1 = new Map();
-    for (let i = 0; i < s1.length - 1; i++) {
-        const bigram = s1.substring(i, i + 2);
-        bigrams1.set(bigram, (bigrams1.get(bigram) || 0) + 1);
-    }
-
-    let intersectionSize = 0;
-    for (let i = 0; i < s2.length - 1; i++) {
-        const bigram = s2.substring(i, i + 2);
-        const count = bigrams1.get(bigram);
-
-        if (count > 0) {
-            bigrams1.set(bigram, count - 1);
-            intersectionSize++;
-        }
-    }
-
-    return (2.0 * intersectionSize) / (s1.length - 1 + s2.length - 1);
+    if (!str1 || !str2) return 0.0;
+    return stringSimilarity.compareTwoStrings(str1, str2);
 }
 
 /**

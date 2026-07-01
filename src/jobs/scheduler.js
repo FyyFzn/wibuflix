@@ -38,5 +38,34 @@ export function initScheduler() {
         runNeosatsuLoop();
     }, 10000);
 
-    log('✅ [Scheduler] Semua background jobs berhasil dijadwalkan!');
+    // 3. Pembersihan file sampah temporer (Garbage Collection) setiap 12 jam
+    import('fs').then(fs => {
+        import('path').then(path => {
+            import('os').then(os => {
+                const cleanStaleTempFiles = () => {
+                    const tmpDir = os.tmpdir();
+                    fs.readdir(tmpDir, (err, files) => {
+                        if (err) return;
+                        const now = Date.now();
+                        files.forEach(file => {
+                            if (file.startsWith('hls_') || file.includes('.part')) {
+                                const filePath = path.join(tmpDir, file);
+                                fs.stat(filePath, (statErr, stats) => {
+                                    if (stats && (now - stats.mtimeMs > 4 * 60 * 60 * 1000)) {
+                                        fs.rm(filePath, { recursive: true, force: true }, () => {
+                                            log(`[CleanUp] 🧹 Hapus file/folder sampah lawas: ${file}`);
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    });
+                };
+                cleanStaleTempFiles(); // Jalankan sekali saat start
+                setInterval(cleanStaleTempFiles, 12 * 60 * 60 * 1000);
+            });
+        });
+    }).catch(() => {});
+
+    log('✅ [Scheduler] Semua background jobs & garbage collector berhasil dijadwalkan!');
 }

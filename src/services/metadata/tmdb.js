@@ -281,7 +281,7 @@ export async function searchTMDB(title, isToku = false) {
                     genres,
                     episodesCount,
                     year,
-                    malId: tmdbId, // TMDB ID for Toku
+                    malId: null, // Tokusatsu tidak terdaftar di MyAnimeList (MAL ID harus null)
                     source: 'TMDB'
                 };
             }

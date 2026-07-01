@@ -25,20 +25,25 @@ export async function syncNeosatsu() {
             return;
         }
 
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+
         const tokuList = cacheData;
         const bulkOps = [];
 
         for (const toku of tokuList) {
             // Bersihkan judul dari angka episode khusus untuk pencarian DB (misal "Kamen Rider Gavv Episode 12" -> "Kamen Rider Gavv")
             let baseTitle = toku.title.replace(/Episode\s*\d+.*$/i, '').trim();
+            const normTitle = normalizeTitleForMatch(baseTitle);
 
             bulkOps.push({
                 updateOne: {
-                    filter: { title: baseTitle },
+                    filter: { normalizedTitle: normTitle },
                     update: {
                         $set: {
                             title: baseTitle,
+                            normalizedTitle: normTitle,
                             type: 'Toku',
+                            malId: null,
                             image: toku.thumb,
                             status: toku.status,
                             "sources.neosatsu": {

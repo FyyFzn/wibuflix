@@ -40,7 +40,7 @@ export async function syncUnified() {
                     // =========================================================================
                     // AUTO-MERGE DETECTOR: Mencegah duplikasi dari web yang berbeda penamaan!
                     // =========================================================================
-                    if (tmdbData.malId) {
+                    if (tmdbData.malId && !isToku) {
                         const existingDuplicate = await Anime.findOne({
                             malId: tmdbData.malId,
                             _id: { $ne: anime._id }
@@ -114,6 +114,9 @@ export async function syncUnified() {
                     // PENTING: Jangan timpa tipe jika itu adalah Tokusatsu
                     if (anime.type !== 'Toku') {
                         anime.type = tmdbData.type || anime.type;
+                        anime.malId = tmdbData.malId || anime.malId;
+                    } else {
+                        anime.malId = null; // Pastikan Tokusatsu tidak memiliki malId
                     }
 
                     anime.status = tmdbData.status && anime.status === '-' ? tmdbData.status : anime.status;
@@ -127,7 +130,11 @@ export async function syncUnified() {
                     }
                     anime.episodesCount = tmdbData.episodesCount || anime.episodesCount;
                     anime.year = tmdbData.year || anime.year;
-                    anime.malId = tmdbData.malId || anime.malId;
+                    if (anime.type !== 'Toku') {
+                        anime.malId = tmdbData.malId || anime.malId;
+                    } else {
+                        anime.malId = null;
+                    }
                     anime.malScore = tmdbData.score !== '-' ? tmdbData.score : anime.malScore;
 
                     // Gabungkan array alias untuk pencarian teks yang lebih tangguh
