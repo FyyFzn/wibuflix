@@ -188,7 +188,7 @@ function serverScore(host) {
     if (!host) return 0;
     const h = host.toLowerCase();
     if (h.includes('mega')) {
-        if (isMegaBlacklisted()) return -50;
+        if (isMegaBlacklisted()) return -1000;
         return 100;
     }
     if (h.includes('wibufile')) return 90;
@@ -317,6 +317,9 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
 
         const groups = { 1080: [], 720: [], 480: [], 360: [] };
         for (const srv of servers) {
+            if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
+                continue;
+            }
             const resGroup = getResolutionGroup(srv.nama);
             if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
         }
