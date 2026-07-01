@@ -25,8 +25,8 @@ backgroundQueue.setProcessor(async (item) => {
         return; // Otomatis menjadi COMPLETED di antrean (player akan handle progressnya)
     }
     
-    // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck
-    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck);
+    // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck serta episodeTitle
+    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle);
     if (!result.success) {
         // Jika gagal karena error beneran, lemparkan error untuk trigger retry
         if (result.reason !== 'Already processing or failed') {
@@ -232,9 +232,12 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
         let secondaryAlternativePromise = Promise.resolve([]);
 
         let primaryData = null;
-        if (!episodeTitle) {
+        if (!episodeTitle || !seriesTitle) {
             primaryData = await primaryPromise;
-            episodeTitle = primaryData.judul || '';
+            if (!episodeTitle) episodeTitle = primaryData?.judul || '';
+            if (!seriesTitle && primaryData?.judul) {
+                seriesTitle = primaryData.judul.replace(/\s+Episode\s+\d+.*$/i, '').replace(/\s+Sub(title)?\s+Indo(nesia)?.*$/i, '').trim();
+            }
             primaryPromise = Promise.resolve(primaryData);
         }
 
@@ -401,7 +404,7 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null) {
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '') {
     // For prefetch from SmartPlay window, episodeTitle is not passed, but rawEpSlug fallback still works
     const { episodeSlug, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, null, null, null); 
     
@@ -429,7 +432,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     let matchedSource = null;
 
     try {
-        const result = await findBestVideoSource(episodeUrl, seriesTitle, '', logPrefix);
+        const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix);
         matchedSource = result.matchedSource;
         
         if (!matchedSource) {
