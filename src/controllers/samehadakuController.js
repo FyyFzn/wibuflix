@@ -4,6 +4,7 @@ import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import Anime from '../models/Anime.js';
 import { extractEpNumStrict } from '../utils/stringUtils.js';
+import { resolveCatalogSource } from '../utils/animeMatcher.js';
 import { scrapeVideoServers } from '../services/extractors/videoExtractor.js';
 
 const cache = getCache('episodes', 3600);
@@ -129,40 +130,13 @@ export async function getAlternativeServers(seriesTitle, episodeTitle) {
     if (!seriesTitle || !episodeTitle) return [];
 
     try {
-        let samehadakuUrl = null;
-
-        // 1. Try unified database first for mapping
-        let matchedEntry = await Anime.findOne({
-            $or: [
-                { title: { $regex: new RegExp(`^${seriesTitle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } },
-                { aliases: { $regex: new RegExp(`^${seriesTitle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } }
-            ]
-        });
-
-        // Fuzzy match in unified_db if exact match not found
-        if (!matchedEntry) {
-            const queryWords = seriesTitle.replace(/[^a-zA-Z0-9]+/g, ' ').split(' ').filter(w => w.length > 2);
-            if (queryWords.length > 0) {
-                // Cari data yang mengandung setidaknya salah satu kata kunci
-                const regexes = queryWords.map(w => new RegExp(`\\b${w}\\b`, 'i'));
-                matchedEntry = await Anime.findOne({
-                    $or: [
-                        { title: { $in: regexes } },
-                        { aliases: { $in: regexes } }
-                    ]
-                });
-            }
-        }
-
-        if (matchedEntry && matchedEntry.sources && matchedEntry.sources.samehadaku) {
-            samehadakuUrl = matchedEntry.sources.samehadaku.url;
-        }
-
-        if (!samehadakuUrl) {
+        const source = await resolveCatalogSource(seriesTitle, 'samehadaku');
+        if (!source || !source.url) {
             console.log(`[Samehadaku Alt] Tidak menemukan kecocokan seri untuk: "${seriesTitle}"`);
             return [];
         }
 
+        const samehadakuUrl = source.url;
         console.log(`[Samehadaku Alt] Menemukan kecocokan seri Samehadaku: "${samehadakuUrl}"`);
 
         const targetEpNum = extractEpNumStrict(episodeTitle);

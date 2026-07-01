@@ -6,6 +6,7 @@ import { getCache } from '../utils/cacheManager.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict } from '../utils/stringUtils.js';
+import { resolveCatalogSource } from '../utils/animeMatcher.js';
 
 const cache = getCache('otakudesu', 3600);
 
@@ -219,33 +220,12 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
     if (!seriesTitle || !episodeTitle) return [];
 
     try {
-        const dbItems = await Anime.find({ "sources.otakudesu.url": { $ne: null } }).lean();
-        const otakuDb = dbItems.map(item => {
-            const urlParts = item.sources.otakudesu.url.split('/').filter(Boolean);
-            const slugStr = urlParts[urlParts.length - 1];
-            return { title: item.title, slug: slugStr };
-        });
-        if (!otakuDb || otakuDb.length === 0) return [];
+        const source = await resolveCatalogSource(seriesTitle, 'otakudesu');
+        if (!source || !source.url) return [];
 
-        const query = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-        const queryWords = query.split(' ').filter(w => w.length > 2);
-
-        let bestMatch = null;
-        let maxMatches = 0;
-
-        for (const item of otakuDb) {
-            const itemTitle = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
-            let matches = 0;
-            for (const w of queryWords) {
-                if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
-            }
-            if (matches > maxMatches) {
-                maxMatches = matches;
-                bestMatch = item;
-            }
-        }
-
-        if (!bestMatch || maxMatches < queryWords.length / 2) return [];
+        const urlParts = source.url.split('/').filter(Boolean);
+        const slugStr = urlParts[urlParts.length - 1];
+        const bestMatch = { title: source.title, slug: slugStr };
 
         const targetEpNumRaw = extractEpNumStrict(episodeTitle);
         if (targetEpNumRaw === null) return [];
