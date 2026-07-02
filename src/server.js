@@ -8,6 +8,7 @@ import connectDB from './config/db.js';
 
 import { initScheduler } from './jobs/scheduler.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { ssrfMiddleware } from './middlewares/urlValidator.js';
 
 // Route Imports
 import katalogRouter from './routes/katalog.js';
@@ -30,6 +31,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set('json spaces', 2);
+
+// SSRF Protection Middleware
+app.use(ssrfMiddleware);
 
 // Sajikan file statis (HTML, CSS, JS) dari direktori root proyek
 app.use(express.static(path.join(__dirname, '../')));

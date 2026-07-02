@@ -1,6 +1,7 @@
-import { acquireFromPool, releaseToPool, globalCfCookie, globalUserAgent, refreshCfCookie, waitForCloudflare } from '../puppeteer/pool.js';
+import { acquireFromPool, releaseToPool, getCfCookie, getCfCookiesArray, globalUserAgent, refreshCfCookie, waitForCloudflare } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
+import { circuitBreaker } from './circuitBreaker.js';
 
 /**
  * Cek apakah HTML adalah halaman Cloudflare challenge.
@@ -23,10 +24,17 @@ function isCloudflareHtml(html) {
  * Ini membantu agar Cloudflare langsung mengenali session yang sudah verified.
  */
 async function injectCFCookies(page, targetUrl) {
-    if (!globalCfCookie) return;
     try {
         const urlObj = new URL(targetUrl);
-        const cookieParts = globalCfCookie.split(';').map(c => c.trim()).filter(Boolean);
+        const domain = urlObj.hostname;
+        const storedCookies = getCfCookiesArray(domain);
+        if (storedCookies && storedCookies.length > 0) {
+            await page.setCookie(...storedCookies);
+            return;
+        }
+        const cookieStr = getCfCookie(domain);
+        if (!cookieStr) return;
+        const cookieParts = cookieStr.split(';').map(c => c.trim()).filter(Boolean);
         const cookies = cookieParts.map(part => {
             const [name, ...valueParts] = part.split('=');
             return {
@@ -51,6 +59,13 @@ async function injectCFCookies(page, targetUrl) {
  * @returns {Promise<{$: cheerio.CheerioAPI, html: string, slot: object}>}
  */
 export async function fetchWithCF(url, options = {}) {
+    const cbCheck = circuitBreaker.canExecute(url);
+    if (!cbCheck.allowed) {
+        const err = new Error(cbCheck.reason);
+        err.status = 503;
+        throw err;
+    }
+
     const timeout = options.timeout || 60000;
     
     // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku)
@@ -59,10 +74,14 @@ export async function fetchWithCF(url, options = {}) {
     let html = '';
     if (!isCloudflareStrict) {
         try {
+            let hostname = 'v2.samehadaku.how';
+            try { hostname = new URL(url).hostname; } catch (e) {}
+            const cookieStr = getCfCookie(hostname);
+
             const response = await axios.get(url, {
                 headers: {
                     'User-Agent': globalUserAgent,
-                    'Cookie': globalCfCookie,
+                    'Cookie': cookieStr,
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
                     'Accept-Encoding': 'gzip, deflate, br',
@@ -119,7 +138,7 @@ export async function fetchWithCF(url, options = {}) {
                 console.warn(`[scrapeHelper] CF challenge masih aktif setelah Puppeteer. Mencoba refresh cookie & retry...`);
                 releaseToPool(slot);
                 slot = null;
-                await refreshCfCookie();
+                await refreshCfCookie(url);
 
                 // Retry dengan cookie baru
                 slot = await acquireFromPool();
@@ -140,11 +159,14 @@ export async function fetchWithCF(url, options = {}) {
         if (!html) throw new Error('Gagal mengambil HTML dari target');
 
         const $ = cheerio.load(html);
+        circuitBreaker.recordSuccess(url);
         return { $, html, slot };
     } catch (err) {
         if (slot) {
             releaseToPool(slot);
         }
+        circuitBreaker.recordFailure(url, err);
         throw err;
     }
 }
+

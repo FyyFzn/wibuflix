@@ -4,16 +4,41 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
 let browserInstance = null;
-const PAGE_POOL_SIZE = 2; // Dikurangi dari 4 untuk menghemat RAM Azure B1
-const EXTRACTOR_POOL_SIZE = 1; // Dikurangi dari 2 untuk menghemat RAM
-const pagePool = [];
-const extractorPool = [];
-let poolReady = false;
-let activeTempPages = 0;
-const MAX_TEMP_PAGES = 2; // Batasi maksimal 2 tab sementara agar RAM VPS tidak habis
 
-export let globalCfCookie = '';
+// Batas konkurensi maksimal untuk VPS Azure B1 (RAM terbatas)
+const MAX_REGULAR_CONCURRENCY = 4;
+const MAX_EXTRACTOR_CONCURRENCY = 3;
+
+let activeRegularCount = 0;
+let activeExtractorCount = 0;
+const regularQueue = [];
+const extractorQueue = [];
+
+let poolReady = false;
+
+// ── Thread-safe Cookie Store dengan Mutex Lock ──
+export let globalCfCookie = ''; // Dipertahankan untuk backward-compat
 export const globalUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+
+const cfCookieStore = new Map(); // domain -> { cookieString, cookiesArray, timestamp }
+const activeRefreshLocks = new Map(); // domain -> Promise
+
+export function getCfCookie(domain = 'v2.samehadaku.how') {
+    const entry = cfCookieStore.get(domain) || cfCookieStore.get('v2.samehadaku.how');
+    return entry ? entry.cookieString : globalCfCookie;
+}
+
+export function getCfCookiesArray(domain = 'v2.samehadaku.how') {
+    const entry = cfCookieStore.get(domain) || cfCookieStore.get('v2.samehadaku.how');
+    return entry ? entry.cookiesArray : [];
+}
+
+export function setCfCookie(domain, cookieString, cookiesArray) {
+    cfCookieStore.set(domain, { cookieString, cookiesArray, timestamp: Date.now() });
+    if (domain.includes('samehadaku')) {
+        globalCfCookie = cookieString;
+    }
+}
 
 export async function getBrowser() {
     if (browserInstance) {
@@ -29,7 +54,7 @@ export async function getBrowser() {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
             headless: true,
-            protocolTimeout: 120000, // 2 minutes timeout for slow B1 core
+            protocolTimeout: 120000,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
@@ -41,8 +66,8 @@ export async function getBrowser() {
     return browserInstance;
 }
 
-export async function createPage(browser) {
-    const page = await browser.newPage();
+export async function createPage(targetContextOrBrowser) {
+    const page = await targetContextOrBrowser.newPage();
     await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
@@ -57,8 +82,8 @@ export async function createPage(browser) {
     return page;
 }
 
-export async function createExtractorPage(browser) {
-    const page = await browser.newPage();
+export async function createExtractorPage(targetContextOrBrowser) {
+    const page = await targetContextOrBrowser.newPage();
     await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
@@ -74,193 +99,184 @@ export async function createExtractorPage(browser) {
 }
 
 export async function waitForCloudflare(page) {
-    // Cloudflare Turnstile/Challenge bisa butuh hingga 10-12 detik pada server lambat
     const MAX_WAIT = 12000;
     const INTERVAL = 400;
     let elapsed = 0;
     while (elapsed < MAX_WAIT) {
+        if (page.isClosed()) return;
         const judul = await page.title().catch(() => '');
         const titleLower = judul.toLowerCase();
         if (!titleLower.includes('just a moment') && !titleLower.includes('please wait')) return;
         await new Promise(r => setTimeout(r, INTERVAL));
         elapsed += INTERVAL;
     }
-    // Jika masih CF setelah timeout, log warning tapi tidak lempar error di sini
-    const finalTitle = await page.title().catch(() => '');
-    if (finalTitle.toLowerCase().includes('just a moment')) {
-        console.warn('[waitForCloudflare] Timeout menunggu CF challenge selesai!');
+    if (!page.isClosed()) {
+        const finalTitle = await page.title().catch(() => '');
+        if (finalTitle.toLowerCase().includes('just a moment')) {
+            console.warn('[waitForCloudflare] Timeout menunggu CF challenge selesai!');
+        }
     }
 }
 
-export async function refreshCfCookie() {
-    const browser = await getBrowser();
-    const page = await createPage(browser);
+export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') {
+    let domain = 'v2.samehadaku.how';
     try {
-        console.log(`[PagePool] Me-refresh CF cookie...`);
-        // Gunakan networkidle2 agar CF challenge benar-benar selesai sebelum baca cookie
-        await page.goto('https://v2.samehadaku.how/', { waitUntil: 'networkidle2', timeout: 60000 }).catch(() =>
-            page.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 })
-        );
-        await waitForCloudflare(page);
-        const cookies = await page.cookies();
-        const cfClearance = cookies.find(c => c.name === 'cf_clearance');
-        if (cfClearance) {
-            globalCfCookie = `cf_clearance=${cfClearance.value};`;
-            console.log(`[PagePool] cf_clearance cookie berhasil diperbarui ✓`);
-        } else {
-            console.warn('[PagePool] cf_clearance cookie tidak ditemukan setelah refresh.');
-        }
-    } catch (e) {
-        console.warn(`[PagePool] Gagal me-refresh CF cookie:`, e.message);
-    } finally {
-        await page.close().catch(() => {});
+        domain = new URL(targetUrl).hostname;
+    } catch (e) {}
+
+    // Mutex Lock: Cegah race condition jika dua request merefresh domain yang sama
+    if (activeRefreshLocks.has(domain)) {
+        console.log(`[PagePool] Menunggu proses refresh CF cookie yang sedang berlangsung untuk ${domain}...`);
+        return activeRefreshLocks.get(domain);
     }
+
+    const refreshTask = (async () => {
+        const browser = await getBrowser();
+        const context = await browser.createIncognitoBrowserContext();
+        const page = await createPage(context);
+        try {
+            console.log(`[PagePool] Me-refresh CF cookie untuk ${domain}...`);
+            await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() =>
+                page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
+            );
+            await waitForCloudflare(page);
+            const cookies = await page.cookies();
+            const cfClearance = cookies.find(c => c.name === 'cf_clearance');
+            if (cfClearance) {
+                const cookieString = `cf_clearance=${cfClearance.value};`;
+                setCfCookie(domain, cookieString, cookies);
+                console.log(`[PagePool] cf_clearance cookie berhasil diperbarui untuk ${domain} ✓`);
+            } else {
+                console.warn(`[PagePool] cf_clearance cookie tidak ditemukan setelah refresh untuk ${domain}.`);
+            }
+        } catch (e) {
+            console.warn(`[PagePool] Gagal me-refresh CF cookie untuk ${domain}:`, e.message);
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            activeRefreshLocks.delete(domain);
+        }
+    })();
+
+    activeRefreshLocks.set(domain, refreshTask);
+    return refreshTask;
 }
 
 export async function initPagePool() {
     if (poolReady) return;
     poolReady = true;
-    const browser = await getBrowser();
     
-    // ── Fase 1: Warm-up 1 page untuk bypass Cloudflare ──
-    const firstPage = await createPage(browser);
-    try {
-        console.log(`[PagePool] Warming up CF cookie (networkidle2)...`);
-        // networkidle2 memastikan semua request CF challenge selesai
-        await firstPage.goto('https://v2.samehadaku.how/', { waitUntil: 'networkidle2', timeout: 60000 }).catch(() =>
-            firstPage.goto('https://v2.samehadaku.how/', { waitUntil: 'domcontentloaded', timeout: 60000 })
-        );
-        await waitForCloudflare(firstPage);
-        const cookies = await firstPage.cookies();
-        const cfClearance = cookies.find(c => c.name === 'cf_clearance');
-        if (cfClearance) {
-            globalCfCookie = `cf_clearance=${cfClearance.value};`;
-            console.log(`[PagePool] cf_clearance cookie berhasil didapat untuk Axios ✓`);
-        } else {
-            console.warn(`[PagePool] cf_clearance tidak didapat saat warm-up — Cloudflare mungkin lebih ketat.`);
-        }
-        console.log(`[PagePool] CF warm-up selesai ✓`);
-    } catch (e) {
-        console.warn(`[PagePool] CF warm-up gagal (akan dicoba ulang saat request):`, e.message);
-    }
-    pagePool.push({ page: firstPage, busy: false, type: 'regular' });
+    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie...');
+    await getBrowser();
+    await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up awal gagal:', e.message));
 
-    // ── Fase 2: Buat sisa page tanpa navigasi ──
-    const remainingPages = [];
-    for (let i = 1; i < PAGE_POOL_SIZE; i++) {
-        remainingPages.push(createPage(browser).then(page => {
-            pagePool.push({ page, busy: false, type: 'regular' });
-            console.log(`[PagePool] Page ${i + 1} siap`);
-        }));
-    }
-    for (let i = 0; i < EXTRACTOR_POOL_SIZE; i++) {
-        remainingPages.push(createExtractorPage(browser).then(page => {
-            extractorPool.push({ page, busy: false, type: 'extractor' });
-            console.log(`[ExtractorPool] Page ${i + 1} siap`);
-        }));
-    }
-    await Promise.all(remainingPages);
-    console.log(`[Pool] Semua ${PAGE_POOL_SIZE + EXTRACTOR_POOL_SIZE} page siap ✓`);
-
-    // ── Fase 3: Auto-refresh cookie setiap 30 menit ──
-    // cf_clearance token Cloudflare punya TTL ~30-60 menit, jadi perlu diperbarui berkala
+    // Auto-refresh cookie setiap 30 menit
     setInterval(async () => {
-        console.log('[PagePool] Auto-refresh CF cookie (30 menit)...');
-        await refreshCfCookie().catch(e => console.warn('[PagePool] Auto-refresh gagal:', e.message));
+        console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
+        await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh gagal:', e.message));
     }, 30 * 60 * 1000);
 }
 
-export async function acquireFromPool() {
-    let slot = pagePool.find(s => !s.busy);
-    for (let i = 0; i < 10 && !slot; i++) {
-        await new Promise(r => setTimeout(r, 1000));
-        slot = pagePool.find(s => !s.busy);
-    }
-    if (slot) { 
-        slot.busy = true; 
-        if (slot.resetPromise) {
-            await slot.resetPromise.catch(() => {});
-            slot.resetPromise = null;
-        }
+// Helper untuk menyuntikkan cookie CF ke context baru
+async function injectStoredCookies(page, domain) {
+    const cookiesArray = getCfCookiesArray(domain);
+    if (cookiesArray && cookiesArray.length > 0) {
         try {
-            if (slot.page.isClosed()) throw new Error('closed');
-            await slot.page.evaluate('1'); // Test connection
-        } catch {
-            console.log('[PagePool] Mendeteksi page mati di pool, memulihkan...');
-            const browser = await getBrowser();
-            slot.page = await createPage(browser);
-        }
-        return slot; 
+            await page.setCookie(...cookiesArray);
+        } catch (e) {}
     }
-    while (activeTempPages >= MAX_TEMP_PAGES) {
-        await new Promise(r => setTimeout(r, 1000));
+}
+
+export async function acquireFromPool() {
+    while (activeRegularCount >= MAX_REGULAR_CONCURRENCY) {
+        await new Promise(resolve => regularQueue.push(resolve));
     }
-    activeTempPages++;
-    console.log(`[PagePool] Membuka temporary page (${activeTempPages}/${MAX_TEMP_PAGES})...`);
+    activeRegularCount++;
+
     const browser = await getBrowser();
-    const page = await createPage(browser);
-    return { page, busy: true, temp: true, type: 'regular' };
+    const context = await browser.createIncognitoBrowserContext();
+    const page = await createPage(context);
+
+    // Otomatis inject cookie Samehadaku jika ada
+    await injectStoredCookies(page, 'v2.samehadaku.how');
+
+    const slot = {
+        page,
+        context,
+        busy: true,
+        type: 'regular',
+        acquiredAt: Date.now()
+    };
+
+    // Safety timeout: jika slot tidak dilepas dalam 90 detik, lepas paksa
+    slot.safetyTimer = setTimeout(() => {
+        if (slot.busy) {
+            console.warn('[PagePool] Safety timeout (90s): Melepaskan slot regular yang macet.');
+            releaseToPool(slot);
+        }
+    }, 90000);
+
+    return slot;
 }
 
 export async function acquireFromExtractorPool() {
-    let slot = extractorPool.find(s => !s.busy);
-    for (let i = 0; i < 10 && !slot; i++) {
-        await new Promise(r => setTimeout(r, 1000));
-        slot = extractorPool.find(s => !s.busy);
+    while (activeExtractorCount >= MAX_EXTRACTOR_CONCURRENCY) {
+        await new Promise(resolve => extractorQueue.push(resolve));
     }
-    if (slot) { 
-        slot.busy = true; 
-        if (slot.resetPromise) {
-            await slot.resetPromise.catch(() => {});
-            slot.resetPromise = null;
-        }
-        try {
-            if (slot.page.isClosed()) throw new Error('closed');
-            await slot.page.evaluate('1');
-        } catch {
-            console.log('[ExtractorPool] Mendeteksi page mati di pool, memulihkan...');
-            const browser = await getBrowser();
-            slot.page = await createExtractorPage(browser);
-        }
-        return slot; 
-    }
-    while (activeTempPages >= MAX_TEMP_PAGES) {
-        await new Promise(r => setTimeout(r, 1000));
-    }
-    activeTempPages++;
-    console.log(`[ExtractorPool] Membuka temporary extractor page (${activeTempPages}/${MAX_TEMP_PAGES})...`);
+    activeExtractorCount++;
+
     const browser = await getBrowser();
-    const page = await createExtractorPage(browser);
-    return { page, busy: true, temp: true, type: 'extractor' };
+    const context = await browser.createIncognitoBrowserContext();
+    const page = await createExtractorPage(context);
+
+    await injectStoredCookies(page, 'v2.samehadaku.how');
+
+    const slot = {
+        page,
+        context,
+        busy: true,
+        type: 'extractor',
+        acquiredAt: Date.now()
+    };
+
+    slot.safetyTimer = setTimeout(() => {
+        if (slot.busy) {
+            console.warn('[ExtractorPool] Safety timeout (90s): Melepaskan slot extractor yang macet.');
+            releaseToPool(slot);
+        }
+    }, 90000);
+
+    return slot;
 }
 
 export function releaseToPool(slot) {
-    if (!slot) return;
-    if (slot.temp) { 
-        if (activeTempPages > 0) activeTempPages--;
-        slot.page.close().catch(() => { }); 
-        return; 
-    }
-    try {
-        slot.page.removeAllListeners('request');
-        slot.page.removeAllListeners('response');
-        slot.page.setRequestInterception(true).catch(() => {});
-        slot.page.on('request', req => {
-            if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
-            const type = req.resourceType();
-            const url = req.url();
-            const blockedTypes = slot.type === 'extractor' ? ['font', 'image', 'stylesheet', 'media'] : ['font', 'media'];
-            if (blockedTypes.includes(type)) return req.abort().catch(() => {});
-            if (url.includes('googlesyndication') || url.includes('doubleclick') ||
-                url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
-            req.continue().catch(() => {});
-        });
-    } catch (e) {}
-
-    if (slot.type === 'extractor' || slot.type === 'regular') {
-        slot.resetPromise = slot.page.goto('about:blank').catch(() => {});
-    }
+    if (!slot || !slot.busy) return;
     slot.busy = false;
+
+    if (slot.safetyTimer) {
+        clearTimeout(slot.safetyTimer);
+        slot.safetyTimer = null;
+    }
+
+    // Bersihkan page & context secara sempurna untuk mencegah kebocoran RAM/Heap V8
+    slot.page.close().catch(() => {});
+    if (slot.context) {
+        slot.context.close().catch(() => {});
+    }
+
+    if (slot.type === 'extractor') {
+        if (activeExtractorCount > 0) activeExtractorCount--;
+        if (extractorQueue.length > 0) {
+            const next = extractorQueue.shift();
+            next();
+        }
+    } else {
+        if (activeRegularCount > 0) activeRegularCount--;
+        if (regularQueue.length > 0) {
+            const next = regularQueue.shift();
+            next();
+        }
+    }
 }
 
 export async function fetchPage(url) {
@@ -274,5 +290,6 @@ export async function fetchPage(url) {
         throw err;
     }
 }
+
 
 
