@@ -132,7 +132,7 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
 
     const refreshTask = (async () => {
         const browser = await getBrowser();
-        const context = await browser.createIncognitoBrowserContext();
+        const context = await browser.createBrowserContext();
         const page = await createPage(context);
         try {
             console.log(`[PagePool] Me-refresh CF cookie untuk ${domain}...`);
@@ -194,7 +194,7 @@ export async function acquireFromPool() {
     activeRegularCount++;
 
     const browser = await getBrowser();
-    const context = await browser.createIncognitoBrowserContext();
+    const context = await browser.createBrowserContext();
     const page = await createPage(context);
 
     // Otomatis inject cookie Samehadaku jika ada
@@ -226,7 +226,7 @@ export async function acquireFromExtractorPool() {
     activeExtractorCount++;
 
     const browser = await getBrowser();
-    const context = await browser.createIncognitoBrowserContext();
+    const context = await browser.createBrowserContext();
     const page = await createExtractorPage(context);
 
     await injectStoredCookies(page, 'v2.samehadaku.how');
