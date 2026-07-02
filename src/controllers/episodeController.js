@@ -5,6 +5,8 @@ import { getKuronimeEpisodes } from './kuronimeController.js';
 import Anime from '../models/Anime.js';
 import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber } from '../utils/stringUtils.js';
 
+const activeScrapeLocks = new Map();
+
 export async function getEpisodesMerged(req, res) {
     const targetUrl = req.query.url;
     const urlSamehadaku = req.query.urlSamehadaku;
@@ -303,9 +305,12 @@ function extractOtakuSlug(val) {
 
         // --- 4. SIMPAN HASIL SCRAPE KE DATABASE UNTUK CACHE BERIKUTNYA ---
         if (dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
-            // Jika kita sudah merespons (isCached === true), kita hanya update DB diam-diam
+            const oldEpsCount = dbAnime.episodesList ? dbAnime.episodesList.length : 0;
+            const newEpsCount = data.daftar_episode.length;
             dbAnime.episodesList = data.daftar_episode;
-            dbAnime.lastUpdated = new Date();
+            if (newEpsCount > oldEpsCount) {
+                dbAnime.lastUpdated = new Date();
+            }
             await dbAnime.save().catch(() => {});
         } else if (!dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
             // Jika belum ada di DB (jarang terjadi karena sudah disinkronisasi), tapi siapa tahu
@@ -343,8 +348,14 @@ function extractOtakuSlug(val) {
                 console.log(`[Cache] Cache sudah >24 jam. Melakukan scraping sinkron untuk: ${dbAnime.title}`);
                 await performScrape();
             } else if (cacheAge > 3600000) { // 1 jam
-                console.log(`[Cache] Memperbarui episode di latar belakang untuk: ${dbAnime.title}`);
-                performScrape(); // Jalan di background tanpa await
+                const lockKey = targetUrl || dbAnime._id.toString();
+                if (!activeScrapeLocks.has(lockKey)) {
+                    console.log(`[Cache] Memperbarui episode di latar belakang untuk: ${dbAnime.title}`);
+                    const scrapePromise = performScrape().finally(() => activeScrapeLocks.delete(lockKey));
+                    activeScrapeLocks.set(lockKey, scrapePromise);
+                } else {
+                    console.log(`[Cache] Scrape latar belakang untuk ${dbAnime.title} sudah berjalan, melewati...`);
+                }
             } else {
                 console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
             }

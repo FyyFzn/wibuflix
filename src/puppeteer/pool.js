@@ -187,7 +187,7 @@ async function injectStoredCookies(page, domain) {
     }
 }
 
-export async function acquireFromPool() {
+export async function acquireFromPool(domain = 'v2.samehadaku.how') {
     while (activeRegularCount >= MAX_REGULAR_CONCURRENCY) {
         await new Promise(resolve => regularQueue.push(resolve));
     }
@@ -197,8 +197,9 @@ export async function acquireFromPool() {
     const context = await browser.createBrowserContext();
     const page = await createPage(context);
 
-    // Otomatis inject cookie Samehadaku jika ada
-    await injectStoredCookies(page, 'v2.samehadaku.how');
+    if (domain) {
+        await injectStoredCookies(page, domain);
+    }
 
     const slot = {
         page,
@@ -219,7 +220,7 @@ export async function acquireFromPool() {
     return slot;
 }
 
-export async function acquireFromExtractorPool() {
+export async function acquireFromExtractorPool(domain = null) {
     while (activeExtractorCount >= MAX_EXTRACTOR_CONCURRENCY) {
         await new Promise(resolve => extractorQueue.push(resolve));
     }
@@ -229,7 +230,9 @@ export async function acquireFromExtractorPool() {
     const context = await browser.createBrowserContext();
     const page = await createExtractorPage(context);
 
-    await injectStoredCookies(page, 'v2.samehadaku.how');
+    if (domain) {
+        await injectStoredCookies(page, domain);
+    }
 
     const slot = {
         page,
