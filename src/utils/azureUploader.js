@@ -333,6 +333,11 @@ async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads
                         axiosConfig.proxy = false;
                     }
                     const res = await axios(axiosConfig);
+                    const contentType = (res.headers['content-type'] || '').toLowerCase();
+                    if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('manifest')) {
+                        if (res.data && typeof res.data.destroy === 'function') res.data.destroy();
+                        throw new Error(`[Stream Validator] Gagal. URL ini bukan video! Content-Type yang didapat: ${contentType}`);
+                    }
                     
                     const writer = fs.createWriteStream(chunkPath);
                     let idleTimeout;
@@ -530,12 +535,22 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                         responseType: 'stream',
                         headers: requestHeaders,
                         timeout: 30000,
+                        validateStatus: () => true,
                         signal: globalAbort.signal
                     };
                     if (videoUrl.includes('127.0.0.1') || videoUrl.includes('localhost')) {
                         axiosConfig.proxy = false;
                     }
                     const response = await axios(axiosConfig);
+                    const contentType = (response.headers['content-type'] || '').toLowerCase();
+                    if (response.status !== 200 && response.status !== 206) {
+                        if (response.data && typeof response.data.destroy === 'function') response.data.destroy();
+                        throw new Error(`[Stream Error] HTTP Status ${response.status} tidak valid untuk stream video`);
+                    }
+                    if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('manifest')) {
+                        if (response.data && typeof response.data.destroy === 'function') response.data.destroy(); // Bunuh stream-nya segera
+                        throw new Error(`[Stream Validator] Gagal. URL ini bukan video! Content-Type yang didapat: ${contentType}`);
+                    }
                     streamSource = response.data;
                 }
             }

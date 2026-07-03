@@ -62,13 +62,18 @@ export async function extract(embedUrl, req) {
         responseHandler = async (response) => {
             if (videoUrl) return;
             const url = response.url();
-            const type = response.headers()['content-type'] || '';
+            const type = (response.headers()['content-type'] || '').toLowerCase();
             
+            if (url.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|wasm|json|webmanifest|manifest|txt|xml)([?#].*)?$/i)) {
+                return;
+            }
+
             if (url.includes('filedon') || url.includes('wibufile')) console.log(`[Ext-Network] URL: ${url} | Type: ${type}`);
 
             if (
                 url.includes('.m3u8') || url.includes('.mp4') || 
-                type.includes('video') || type.includes('mpegurl') || type.includes('octet-stream')
+                type.includes('video') || type.includes('mpegurl') || 
+                (type.includes('octet-stream') && (url.includes('.m3u8') || url.includes('.mp4') || url.includes('.ts') || url.includes('/hls/')))
             ) {
                 console.log(`[Ext-Network] FOUND VIDEO URL: ${url}`);
                 videoUrl = url;

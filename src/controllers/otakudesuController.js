@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import pLimit from 'p-limit';
 import { OtakudesuInstance } from 'otakudesu-scraper';
 import Anime from '../models/Anime.js';
 import { getCache } from '../utils/cacheManager.js';
@@ -9,7 +10,9 @@ import { formatEpisodeTitle, extractEpNumStrict } from '../utils/stringUtils.js'
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
 
 const cache = getCache('otakudesu', 3600);
-
+const resolveLimit = pLimit(3); // Maksimal 3 request serentak untuk mencegah Self-DDoS
+const badHosts = new Map(); // Simpan host yang sedang cooldown
+const hostFailCounts = new Map();
 
 const otaku = new OtakudesuInstance('https://otakudesu.blog');
 
@@ -41,10 +44,10 @@ export async function getOtakuEpisodesFormatted(slug) {
     // Fallback title dari database MongoDB jika parser scraper gagal mendapatkan nama
     const found = await Anime.findOne({ "sources.otakudesu.id": slug }).lean();
     let fallbackTitle = found ? found.title : slug;
-    
+
     // Bersihkan teks status dari judul database (misal: "Anime Title On-Going")
     fallbackTitle = fallbackTitle.replace(/\s*on-going\s*$/i, '').replace(/\s*completed\s*$/i, '').replace(/\"/g, '').trim();
-    
+
     let finalTitle = details.name;
 
     // Jika library mengembalikan slug, paksa gunakan fallbackTitle
@@ -103,14 +106,22 @@ async function resolveOtakuServers($) {
             const href = $(a).attr('href');
 
             if (allowedHosts.some(h => hostLower.includes(h))) {
-                promises.push((async () => {
+                if (badHosts.has(hostLower) && Date.now() < badHosts.get(hostLower)) {
+                    console.log(`[CircuitBreaker] Melewati ${hostRaw}, sedang dalam masa cooldown.`);
+                    return;
+                }
+
+                promises.push(resolveLimit(async () => {
+                    if (badHosts.has(hostLower) && Date.now() < badHosts.get(hostLower)) {
+                        return;
+                    }
                     try {
                         // Resolve the desustream.com redirect link
                         const redRes = await axios.get(href, {
                             maxRedirects: 0,
                             validateStatus: () => true,
                             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                            timeout: 3500
+                            timeout: 4500
                         });
 
                         let directUrl = redRes.headers.location;
@@ -119,6 +130,7 @@ async function resolveOtakuServers($) {
                             directUrl = href;
                         }
                         if (directUrl) {
+                            hostFailCounts.delete(hostLower);
                             servers.push({
                                 nama: resText,
                                 namaHost: hostRaw,
@@ -128,9 +140,15 @@ async function resolveOtakuServers($) {
                             });
                         }
                     } catch (e) {
+                        const failCount = (hostFailCounts.get(hostLower) || 0) + 1;
+                        hostFailCounts.set(hostLower, failCount);
+                        if (failCount >= 3) {
+                            badHosts.set(hostLower, Date.now() + 5 * 60 * 1000); // 5 menit cooldown
+                            console.warn(`[CircuitBreaker] Host ${hostRaw} gagal ${failCount}x berturut-turut. Membuka circuit selama 5 menit.`);
+                        }
                         console.log(`[Otakudesu] Resolve failed for ${hostRaw}: ${e.message}`);
                     }
-                })());
+                }));
             }
         });
     });
@@ -171,33 +189,33 @@ export async function getServersInternal(url) {
         const fetchRes = await fetchWithCF(url, { fetchTimeout: 10000 });
         slot = fetchRes.slot;
         $ = fetchRes.$;
-        
+
         const uniqueServers = await resolveOtakuServers($);
 
-    // Ambil judul raw dari halaman episode dan bersihkan
-    let judul = $('.venutama h1.posttl').text().trim();
-    if (judul) {
-        judul = judul.replace(/^Nonton\s+/i, '');
-        judul = judul.replace(/\s*Subtitle Indonesia$/i, '');
-        judul = judul.replace(/\s*Sub Indo$/i, '');
-        judul = judul.trim();
-    }
-
-    // Parsing Prev / Next Navigation dari elemen HTML (Otakudesu class: flir)
-    let nav_prev = null;
-    let nav_next = null;
-    $('.flir a').each((i, el) => {
-        const text = $(el).text().trim().toLowerCase();
-        const href = $(el).attr('href');
-        
-        if (!href || href === '#') return;
-
-        if (text.includes('prev') || text.includes('sebelumnya')) {
-            nav_prev = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
-        } else if (text.includes('next') || text.includes('selanjutnya')) {
-            nav_next = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+        // Ambil judul raw dari halaman episode dan bersihkan
+        let judul = $('.venutama h1.posttl').text().trim();
+        if (judul) {
+            judul = judul.replace(/^Nonton\s+/i, '');
+            judul = judul.replace(/\s*Subtitle Indonesia$/i, '');
+            judul = judul.replace(/\s*Sub Indo$/i, '');
+            judul = judul.trim();
         }
-    });
+
+        // Parsing Prev / Next Navigation dari elemen HTML (Otakudesu class: flir)
+        let nav_prev = null;
+        let nav_next = null;
+        $('.flir a').each((i, el) => {
+            const text = $(el).text().trim().toLowerCase();
+            const href = $(el).attr('href');
+
+            if (!href || href === '#') return;
+
+            if (text.includes('prev') || text.includes('sebelumnya')) {
+                nav_prev = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+            } else if (text.includes('next') || text.includes('selanjutnya')) {
+                nav_next = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+            }
+        });
 
         const result = {
             judul,
@@ -240,11 +258,11 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
                 // but since we don't have it, we'll try to import dynamically and fetch
                 const episodesModule = await import('./samehadakuController.js');
                 const sameRes = await episodesModule.getSamehadakuEpisodes(seriesUrl);
-                
+
                 if (sameRes && sameRes.daftar_episode) {
                     const sameEps = sameRes.daftar_episode.map(ep => extractEpNumStrict(ep.judul)).filter(n => n !== null);
                     const otakuEps = details.episodes.map(ep => extractEpNumStrict(ep.title)).filter(n => n !== null);
-                    
+
                     if (sameEps.length > 0 && otakuEps.length > 0) {
                         const minSame = Math.min(...sameEps);
                         const minOtaku = Math.min(...otakuEps);
@@ -284,7 +302,7 @@ export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl
         } finally {
             if (slot) releaseToPool(slot);
         }
-        
+
         return servers;
     } catch (e) {
         console.error("[Otakudesu Alternative Error]", e.message);
