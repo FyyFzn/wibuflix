@@ -192,9 +192,9 @@ function serverScore(host) {
         return 100;
     }
     if (h.includes('wibufile')) return 90;
+    if (h.includes('pixeldrain')) return 85;
     if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
     if (h.includes('mediafire')) return 75;
-    if (h.includes('pixeldrain')) return 70;
     if (h.includes('acefile')) return 60;
     if (h.includes('vidhide')) return 50;
     if (h.includes('kraken') || h.includes('kuroplayer') || h.includes('kuronime')) return -100; // super lambat / mati, last resort
@@ -337,6 +337,8 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                     const bIsNegative = scoreB < 0 ? 1 : 0;
                     if (aIsNegative !== bIsNegative) return aIsNegative - bIsNegative;
 
+                    if (scoreB !== scoreA) return scoreB - scoreA;
+
                     const sScoreDiff = sourceScore(b.source) - sourceScore(a.source);
                     if (sScoreDiff !== 0) return sScoreDiff;
 
@@ -344,7 +346,7 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                     const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
                     if (aIsM3u8 !== bIsM3u8) return bIsM3u8 - aIsM3u8;
 
-                    return scoreB - scoreA;
+                    return 0;
                 });
 
                 const serverNames = groups[resVal].map(s => s.namaHost).join(', ');

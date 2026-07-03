@@ -104,26 +104,8 @@ export async function getKuronimeServers(episodeUrl) {
         const servers = [];
 
         if (sources) {
-            // 1. Stream HLS langsung (kualitas tertinggi)
-            if (sources.stream?.src) {
-                servers.push({
-                    nama: '1080p Stream',
-                    namaHost: 'KuroPlayer',
-                    iframeUrl: sources.stream.src,
-                    type: 'direct',
-                    aktif: true,
-                    headers: { Referer: 'https://kuroplayer.xyz/' }
-                });
-            }
-            if (sources.stream_sd?.src) {
-                servers.push({
-                    nama: '480p Stream',
-                    namaHost: 'KuroPlayer SD',
-                    iframeUrl: sources.stream_sd.src,
-                    type: 'direct',
-                    aktif: servers.length === 0
-                });
-            }
+            // 1. Stream HLS langsung (KuroPlayer dilewati karena sering 404/expired di FFmpeg & lambat)
+            // Hanya gunakan mirror download/embed yang stabil dan cepat
 
             // 2. Mirror download/embed dari berbagai host
             if (sources.mirror) {
