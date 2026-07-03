@@ -241,8 +241,27 @@ export function cancelUpload(seriesSlug, episodeSlug) {
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {
-        if (url.includes('/api/proxy/mega') || url.includes('.m3u8') || url.includes('/hls/')) {
-            // Bypass HTTP ping untuk Mega & M3U8 HLS playlist karena bukan single file statis
+        if (url.includes('/api/proxy/mega')) {
+            return { supported: false, totalSize: 0 };
+        }
+        if (url.includes('.m3u8') || url.includes('/hls/')) {
+            console.log(`[Ping] Memeriksa ketersediaan playlist M3U8: ${url.substring(0, 150)}`);
+            const axiosConfig = {
+                method: 'get',
+                url: url,
+                headers: headers,
+                timeout: 8000
+            };
+            if (url.includes('127.0.0.1') || url.includes('localhost')) {
+                axiosConfig.proxy = false;
+            }
+            const res = await axios(axiosConfig);
+            if (res.status !== 200 && res.status !== 206) {
+                throw new Error(`HTTP_${res.status}_M3U8_ERROR`);
+            }
+            if (!res.data || (typeof res.data === 'string' && !res.data.includes('#EXTM3U'))) {
+                throw new Error('INVALID_M3U8_PLAYLIST');
+            }
             return { supported: false, totalSize: 0 };
         }
         

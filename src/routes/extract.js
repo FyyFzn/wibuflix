@@ -330,12 +330,21 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
         for (const resVal of [1080, 720, 480, 360]) {
             if (groups[resVal].length > 0) {
                 groups[resVal].sort((a, b) => {
+                    const scoreA = serverScore(a.namaHost);
+                    const scoreB = serverScore(b.namaHost);
+
+                    const aIsNegative = scoreA < 0 ? 1 : 0;
+                    const bIsNegative = scoreB < 0 ? 1 : 0;
+                    if (aIsNegative !== bIsNegative) return aIsNegative - bIsNegative;
+
+                    const sScoreDiff = sourceScore(b.source) - sourceScore(a.source);
+                    if (sScoreDiff !== 0) return sScoreDiff;
+
                     const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
                     const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
                     if (aIsM3u8 !== bIsM3u8) return bIsM3u8 - aIsM3u8;
-                    const sScoreDiff = sourceScore(b.source) - sourceScore(a.source);
-                    if (sScoreDiff !== 0) return sScoreDiff;
-                    return serverScore(b.namaHost) - serverScore(a.namaHost);
+
+                    return scoreB - scoreA;
                 });
 
                 const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
@@ -400,6 +409,37 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
     }
 }
 
+function isCurrentlyExtracting(checkSlugs, episodeSlugs) {
+    const sList = Array.isArray(checkSlugs) ? checkSlugs : [checkSlugs].filter(Boolean);
+    const eList = Array.isArray(episodeSlugs) ? episodeSlugs : [episodeSlugs].filter(Boolean);
+    for (const s of sList) {
+        for (const e of eList) {
+            if (activeExtractions.has(getBlobPath(s, e))) return true;
+        }
+    }
+    return false;
+}
+
+function addActiveExtractions(checkSlugs, episodeSlugs) {
+    const sList = Array.isArray(checkSlugs) ? checkSlugs : [checkSlugs].filter(Boolean);
+    const eList = Array.isArray(episodeSlugs) ? episodeSlugs : [episodeSlugs].filter(Boolean);
+    for (const s of sList) {
+        for (const e of eList) {
+            activeExtractions.add(getBlobPath(s, e));
+        }
+    }
+}
+
+function removeActiveExtractions(checkSlugs, episodeSlugs) {
+    const sList = Array.isArray(checkSlugs) ? checkSlugs : [checkSlugs].filter(Boolean);
+    const eList = Array.isArray(episodeSlugs) ? episodeSlugs : [episodeSlugs].filter(Boolean);
+    for (const s of sList) {
+        for (const e of eList) {
+            activeExtractions.delete(getBlobPath(s, e));
+        }
+    }
+}
+
 /**
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
@@ -414,7 +454,6 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
     const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
     
-    const blobPath = getBlobPath(activeSlug, activeEpSlug);
     const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
@@ -422,13 +461,13 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         return { success: false, reason: 'Already processing or failed' };
     }
 
-    if (activeExtractions.has(blobPath)) {
+    if (isCurrentlyExtracting(checkSlugs, episodeSlugsToCheck)) {
         console.info(`${logPrefix} Skip ${episodeSlug} — sedang diekstrak/diunggah`);
         return { success: false, reason: 'Already extracting' };
     }
 
     console.info(`${logPrefix} Memulai proses untuk: ${episodeSlug}`);
-    activeExtractions.add(blobPath);
+    addActiveExtractions(checkSlugs, episodeSlugsToCheck);
     let matchedSource = null;
 
     try {
@@ -438,7 +477,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         if (!matchedSource) {
             console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
             markUploadFailed(activeSlug, episodeSlug);
-            activeExtractions.delete(blobPath);
+            removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
             return { success: false, reason: result.error || 'Semua server gagal atau limit.' };
         }
 
@@ -450,7 +489,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         throw err;
     } finally {
         delete global[`prefetch_src_${activeSlug}_${episodeSlug}`];
-        activeExtractions.delete(blobPath);
+        removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
     }
 }
 
@@ -468,7 +507,8 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
     const validUrls = upcomingUrls.filter(Boolean);
     if (validUrls.length === 0) return;
 
-    const loopKey = `${seriesSlug}-${validUrls.join(',')}`;
+    const cleanSeries = seriesSlug.replace(/^mal-\d+_/, '');
+    const loopKey = `${cleanSeries}-${validUrls.join(',')}`;
     if (activePrefetchLoops.has(loopKey)) return;
     activePrefetchLoops.add(loopKey);
 
@@ -477,8 +517,8 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
     for (const epUrl of validUrls) {
         try {
             const { episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, null, null, null);
-            // using activeSlug for checkUploadStatus is not perfectly robust here if seriesSlug is changed, but we assume seriesSlug is unified
-            const checkInfo = await checkUploadStatusWithFallback([seriesSlug], episodeSlugsToCheck);
+            const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug];
+            const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
             const status = checkInfo.status;
 
             if (status === 'READY' || status === 'FAILED') {
@@ -645,8 +685,7 @@ router.get('/api/smart-play', async (req, res) => {
             });
         }
 
-        const blobPath = getBlobPath(activeSlug, activeEpSlug);
-        if (activeExtractions.has(blobPath)) {
+        if (isCurrentlyExtracting(slugsToCheck, episodeSlugsToCheck)) {
             return res.json({
                 success: true,
                 status: 'UPLOADING',
@@ -657,7 +696,7 @@ router.get('/api/smart-play', async (req, res) => {
         // Status is FAILED or null -> Start extraction and upload process
         console.info(`[Smart-Play] Mulai ekstraksi server untuk: ${episodeUrl}`);
 
-        activeExtractions.add(blobPath);
+        addActiveExtractions(slugsToCheck, episodeSlugsToCheck);
         let matchedSource = null;
 
         try {
@@ -665,7 +704,7 @@ router.get('/api/smart-play', async (req, res) => {
             matchedSource = result.matchedSource;
 
             if (!matchedSource) {
-                activeExtractions.delete(blobPath);
+                removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
                 markUploadFailed(seriesSlug, episodeSlug);
                 return res.status(404).json({
                     success: false,
@@ -674,7 +713,7 @@ router.get('/api/smart-play', async (req, res) => {
                 });
             }
         } catch (err) {
-            activeExtractions.delete(blobPath);
+            removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
             throw err;
         }
 
@@ -685,17 +724,17 @@ router.get('/api/smart-play', async (req, res) => {
             // Pastikan selalu ada .catch() agar Node tidak crash jika terjadi unhandled rejection
             if (uploadTask) {
                 uploadTask.then(() => {
-                    activeExtractions.delete(blobPath);
+                    removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
                     if (prefetchWindow.length > 0) {
                         console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
-                        triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle);
+                        triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck);
                     }
                 }).catch(err => {
-                    activeExtractions.delete(blobPath);
+                    removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
                     console.error(`[Smart-Play] Upload latar belakang gagal:`, err.message);
                 });
             } else {
-                activeExtractions.delete(blobPath);
+                removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
             }
 
             const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -779,7 +818,7 @@ router.post('/cancel-stream', express.json(), async (req, res) => {
     
     console.info(`[Smart-Play] Eksplisit cancel dari client untuk: ${activeEpSlug}`);
     cancelUpload(activeSlug, activeEpSlug);
-    activeExtractions.delete(blobPath);
+    removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
     
     // Batalkan juga prefetch yang sedang berjalan karena user sudah keluar dari player
     prefetchAbortController.abort();
