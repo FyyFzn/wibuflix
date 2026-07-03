@@ -169,36 +169,72 @@ export async function runSync(isInitial = false) {
             global.anime_db_cache = allAnime;
             
             try {
-                // 1. Simpan ke MongoDB (Bulk Upsert)
                 const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+                const { searchAnime } = await import('../services/metadata/jikan.js');
                 const now = Date.now();
-                const bulkOps = allAnime.map((anime, index) => {
-                    const normTitle = normalizeTitleForMatch(anime.judul);
-                    return {
-                        updateOne: {
-                            filter: { normalizedTitle: normTitle },
-                            update: { 
-                                $set: { 
-                                    title: anime.judul,
-                                    normalizedTitle: normTitle,
-                                    image: anime.gambarScraper,
-                                    type: anime.tipe,
-                                    score: anime.skor,
-                                    status: anime.status,
-                                    'sources.samehadaku.url': anime.url,
-                                    lastUpdated: new Date(now - index * 1000)
-                                } 
-                            },
-                            upsert: true
-                        }
-                    };
-                });
+                let updatedCount = 0;
+                let createdCount = 0;
 
-                // Eksekusi operasi massal
-                if (bulkOps.length > 0) {
-                    await Anime.bulkWrite(bulkOps);
-                    log(`[Anime Sync] ✅ MongoDB Bulk Upsert berhasil untuk ${bulkOps.length} anime.`);
+                for (let index = 0; index < allAnime.length; index++) {
+                    const anime = allAnime[index];
+                    const normTitle = normalizeTitleForMatch(anime.judul);
+
+                    // 1. Cari apakah anime sudah ada berdasarkan URL atau normalizedTitle
+                    let existing = await Anime.findOne({
+                        $or: [
+                            { 'sources.samehadaku.url': anime.url },
+                            { normalizedTitle: normTitle }
+                        ]
+                    });
+
+                    if (existing) {
+                        if (!existing.isLocked) {
+                            existing.sources.samehadaku = { url: anime.url };
+                            existing.status = anime.status || existing.status;
+                            if (!existing.image || existing.image.includes('placehold')) {
+                                existing.image = anime.gambarScraper;
+                            }
+                            existing.lastUpdated = new Date(now - index * 1000);
+                            await existing.save();
+                        } else {
+                            // Jika terkunci, hanya update URL sumber dan lastUpdated
+                            existing.sources.samehadaku = { url: anime.url };
+                            existing.lastUpdated = new Date(now - index * 1000);
+                            await existing.save();
+                        }
+                        updatedCount++;
+                    } else {
+                        // 2. Jika belum ada, cegah blind insert dengan bertanya ke Jikan/MAL terlebih dahulu
+                        const metadata = await searchAnime(anime.judul);
+                        if (metadata?.malId) {
+                            const existingByMal = await Anime.findOne({ malId: metadata.malId });
+                            if (existingByMal) {
+                                // Gabungkan ke kartu MAL eksisting (Anti Duplikat!)
+                                existingByMal.sources.samehadaku = { url: anime.url };
+                                existingByMal.lastUpdated = new Date(now - index * 1000);
+                                await existingByMal.save();
+                                updatedCount++;
+                                continue;
+                            }
+                        }
+
+                        // Buat dokumen baru dengan metadata resmi jika ada
+                        await Anime.create({
+                            title: metadata?.title || anime.judul,
+                            normalizedTitle: normTitle,
+                            malId: metadata?.malId || null,
+                            image: metadata?.cover || anime.gambarScraper,
+                            type: anime.tipe,
+                            score: metadata?.malScore || anime.skor,
+                            status: anime.status,
+                            sources: { samehadaku: { url: anime.url } },
+                            lastUpdated: new Date(now - index * 1000)
+                        });
+                        createdCount++;
+                    }
                 }
+
+                log(`[Anime Sync] ✅ Sinkronisasi selesai: ${updatedCount} diupdate/digabung, ${createdCount} baru dibuat.`);
             } catch (err) {
                 log(`[Anime Sync] ❌ Gagal menyimpan data. Error: ${err.message}`);
             }

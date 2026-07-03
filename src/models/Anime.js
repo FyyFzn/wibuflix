@@ -32,22 +32,30 @@ const animeSchema = new mongoose.Schema({
         type: String,
         default: 'Completed'
     },
+    isLocked: {
+        type: Boolean,
+        default: false
+    },
     sources: {
         samehadaku: {
             url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true }
+            id: { type: String, default: null, index: true },
+            offset: { type: Number, default: 0 }
         },
         otakudesu: {
             url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true }
+            id: { type: String, default: null, index: true },
+            offset: { type: Number, default: 0 }
         },
         neosatsu: {
             url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true }
+            id: { type: String, default: null, index: true },
+            offset: { type: Number, default: 0 }
         },
         kuronime: {
             url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true }
+            id: { type: String, default: null, index: true },
+            offset: { type: Number, default: 0 }
         }
     },
     // Metadata Lanjutan dari MAL / TMDB
@@ -57,7 +65,8 @@ const animeSchema = new mongoose.Schema({
     episodesList: { type: Array, default: [] },
     year: { type: Number, default: null },
     malScore: { type: String, default: null },
-    malId: { type: Number, default: null },
+    malId: { type: Number, default: null, index: true, sparse: true },
+    tmdbId: { type: Number, default: null, index: true, sparse: true },
 
     tmdbEnriched: {
         type: Boolean,
