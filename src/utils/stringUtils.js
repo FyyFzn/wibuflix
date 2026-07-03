@@ -204,3 +204,12 @@ export function adjustTitleEpisodeNumber(title, offset) {
     }
     return title;
 }
+
+/**
+ * Mengekstrak slug Otakudesu dari string URL atau identifier.
+ */
+export function extractOtakuSlug(val) {
+    if (!val) return null;
+    if (val.includes(':')) return val.split(':').pop();
+    return val.replace(/^\/anime\//, '').replace(/^\//, '');
+}

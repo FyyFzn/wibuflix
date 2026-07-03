@@ -1,6 +1,7 @@
 node_modules/
 FYYStreamApp/
 wibuflix/
+wibuflix-app/
 .env
 scratch/
 debug/

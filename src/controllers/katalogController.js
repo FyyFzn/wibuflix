@@ -1,5 +1,6 @@
 import Anime from '../models/Anime.js';
 import { getCache } from '../utils/cacheManager.js';
+import { KatalogResponseDTO } from '../dtos/KatalogResponseDTO.js';
 
 const cache = getCache('katalog', 3600);
 
@@ -77,13 +78,23 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
                     }
                 },
                 { $match: query },
+                {
+                    $project: {
+                        title: 1,
+                        image: 1,
+                        type: 1,
+                        score: 1,
+                        status: 1,
+                        sources: 1
+                    }
+                },
                 { $skip: skip },
                 { $limit: limit + 1 }
             ];
             results = await Anime.aggregate(pipeline);
         } else {
             // Jika bukan pencarian, gunakan query reguler dan sorting
-            let dbQuery = Anime.find(query);
+            let dbQuery = Anime.find(query).select('title image type score status sources');
              // Urutkan berdasarkan yang paling baru diupdate (episode baru rilis)
              dbQuery = dbQuery.sort({ lastUpdated: -1, _id: -1 });
 
@@ -94,48 +105,8 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
         const hasNext = results.length > limit;
         const paginated = results.slice(0, limit);
 
-        // 3. Format Response agar sama persis dengan yang diharapkan Frontend React Native
-        const formatted = paginated.map(item => {
-            let finalUrl = '';
-            let finalId = '';
-            
-            if (item.sources?.samehadaku?.url) {
-                finalUrl = item.sources.samehadaku.url;
-                finalId = item.sources.samehadaku.id || '';
-            } else if (item.sources?.otakudesu?.url) {
-                finalUrl = `/anime/${item.sources.otakudesu.id || ''}`;
-                finalId = item.sources.otakudesu.id || '';
-            } else if (item.sources?.neosatsu?.url) {
-                finalUrl = item.sources.neosatsu.url;
-                finalId = ''; // Neosatsu menggunakan endpoint URL langsung
-            } else if (item.sources?.kuronime?.url) {
-                finalUrl = item.sources.kuronime.url;
-                finalId = item.sources.kuronime.id || '';
-            }
-
-            let displayType = item.type;
-            if (item.type === 'Toku') {
-                const lowerTitle = item.title.toLowerCase();
-                if (lowerTitle.includes('kamen rider')) displayType = 'Kamen Rider';
-                else if (lowerTitle.includes('ultraman')) displayType = 'Ultraman';
-                else if (lowerTitle.includes('sentai')) displayType = 'Super Sentai';
-                else if (lowerTitle.includes('power rangers')) displayType = 'Power Rangers';
-                else if (lowerTitle.includes('garo')) displayType = 'Garo';
-                else if (lowerTitle.includes('metal hero') || lowerTitle.includes('gavan')) displayType = 'Metal Hero';
-            }
-
-            return {
-                judul: item.title,
-                url: finalUrl,
-                gambar: item.image,
-                gambarScraper: item.image,
-                tipe: displayType,
-                skor: item.score,
-                status: item.status,
-                id: finalId,
-                sources: item.sources
-            };
-        });
+        // 3. Format Response menggunakan DTO
+        const formatted = KatalogResponseDTO.fromList(paginated);
 
         const resultObj = { list: formatted, hasNext };
         
