@@ -1,12 +1,27 @@
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch } from './stringUtils.js';
 
+function extractSequelMetadata(str) {
+    if (!str) return { season: 1, part: 1 };
+    const sMatch = str.match(/(?:season|s)\s*(\d+)/i) || 
+                   str.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || 
+                   str.match(/-s(\d+)(?:-|$)/i) || 
+                   str.match(/-season-(\d+)(?:-|$)/i);
+    const pMatch = str.match(/(?:part|cour|pt)\s*(\d+)/i) || 
+                   str.match(/-part-(\d+)(?:-|$)/i);
+    
+    let season = sMatch ? parseInt(sMatch[1], 10) : 1;
+    let part = pMatch ? parseInt(pMatch[1], 10) : 1;
+    return { season, part };
+}
+
 /**
  * Global method untuk memetakan judul seri (seriesTitle) ke entri katalog di database (Anime)
  * untuk penyedia tertentu (providerKey: 'samehadaku' | 'kuronime' | 'otakudesu').
  * 
  * Menerapkan Exact 1-to-1 match terlebih dahulu, kemudian fallback ke fuzzy matching
- * dengan proteksi anti-Live Action / Movie dan skoring selisih panjang judul.
+ * dengan proteksi anti-Live Action / Movie, skoring selisih panjang judul, dan
+ * Absolute Versioning (Semantic Sequel Matching).
  */
 export async function resolveCatalogSource(seriesTitle, providerKey) {
     if (!seriesTitle || !providerKey) return null;
@@ -14,6 +29,7 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
     try {
         const query = normalizeTitleForMatch(seriesTitle);
         const sourceUrlField = `sources.${providerKey}.url`;
+        const qSeq = extractSequelMetadata(seriesTitle);
 
         // 1. Prioritaskan pencarian Exact 1-to-1 match dari database (title atau aliases)
         const exactMatch = await Anime.findOne({
@@ -25,14 +41,17 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
         }).lean();
 
         if (exactMatch && exactMatch.sources && exactMatch.sources[providerKey]) {
-            return {
-                title: exactMatch.title,
-                url: exactMatch.sources[providerKey].url,
-                entry: exactMatch
-            };
+            const itemSeq = extractSequelMetadata(`${exactMatch.title} ${exactMatch.sources[providerKey].url}`);
+            if (qSeq.season === itemSeq.season && qSeq.part === itemSeq.part) {
+                return {
+                    title: exactMatch.title,
+                    url: exactMatch.sources[providerKey].url,
+                    entry: exactMatch
+                };
+            }
         }
 
-        // 2. Fallback ke Safe Fuzzy Match dengan skoring penalti selisih panjang
+        // 2. Fallback ke Safe Fuzzy Match dengan Semantic Versioning & skoring penalti selisih panjang
         const dbItems = await Anime.find({ [sourceUrlField]: { $ne: null } }).lean();
         if (!dbItems || dbItems.length === 0) return null;
 
@@ -52,6 +71,12 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
             // Mencegah anime salah masuk ke Live Action / Movie
             if (!isLiveActionQuery && (itemTitle.includes('live action') || itemUrl.includes('live-action'))) continue;
             if (!isMovieQuery && (itemTitle.includes('movie') || itemUrl.includes('-movie'))) continue;
+
+            // HARD REJECT: Absolute Versioning Weight (Jika Season atau Part/Cour berbeda, langsung tolak!)
+            const itemSeq = extractSequelMetadata(`${item.title} ${itemUrl}`);
+            if (qSeq.season !== itemSeq.season || qSeq.part !== itemSeq.part) {
+                continue;
+            }
 
             let matches = 0;
             for (const w of queryWords) {

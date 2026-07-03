@@ -241,8 +241,8 @@ export function cancelUpload(seriesSlug, episodeSlug) {
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {
-        if (url.includes('/api/proxy/mega')) {
-            // Bypass HTTP ping untuk Mega karena kita akan download native
+        if (url.includes('/api/proxy/mega') || url.includes('.m3u8') || url.includes('/hls/')) {
+            // Bypass HTTP ping untuk Mega & M3U8 HLS playlist karena bukan single file statis
             return { supported: false, totalSize: 0 };
         }
         

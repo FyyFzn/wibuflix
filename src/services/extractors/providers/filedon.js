@@ -9,9 +9,11 @@ export function match(url) {
 export async function extract(embedUrl, req) {
     try {
         let normalizedEmbedUrl = embedUrl;
-        const isStrictEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => embedUrl.includes(h));
-        if (isStrictEmbedHost && embedUrl.match(/\/f\/[^/]+\/?$/)) {
-            normalizedEmbedUrl = embedUrl.replace(/\/f\//, '/e/');
+        if (normalizedEmbedUrl.includes('/view/')) {
+            normalizedEmbedUrl = normalizedEmbedUrl.replace('/view/', '/embed/');
+            console.log(`[Filedon/Pucuk] Normalisasi URL view: ${embedUrl} → ${normalizedEmbedUrl}`);
+        } else if (normalizedEmbedUrl.match(/\/f\/[^/]+\/?$/)) {
+            normalizedEmbedUrl = normalizedEmbedUrl.replace(/\/f\//, '/e/');
             console.log(`[Filedon/Pucuk] Normalisasi URL: ${embedUrl} → ${normalizedEmbedUrl}`);
         }
 
