@@ -92,16 +92,16 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
     const episodeSlugsToCheck = [];
     let unifiedEpSlug = null;
     
-    if (uniqueId && uniqueId.toString().trim() !== '') {
-        let epNum = null;
-        if (episodeTitle) epNum = extractEpNumStrict(episodeTitle);
-        if (epNum === null) epNum = extractEpNumStrict(rawEpSlug.replace(/-/g, ' '));
-        
-        if (epNum !== null) {
-            unifiedEpSlug = `episode-${epNum}`;
+    let epNum = null;
+    if (episodeTitle) epNum = extractEpNumStrict(episodeTitle);
+    if (epNum === null) epNum = extractEpNumStrict(rawEpSlug.replace(/-/g, ' '));
+    
+    if (epNum !== null) {
+        unifiedEpSlug = `episode-${epNum}`;
+        if (!episodeSlugsToCheck.includes(unifiedEpSlug)) {
             episodeSlugsToCheck.push(unifiedEpSlug);
-            episodeSlug = unifiedEpSlug; // use this as the primary for new uploads
         }
+        episodeSlug = unifiedEpSlug; // use this as the primary for new uploads
     }
     
     if (rawEpSlug && !episodeSlugsToCheck.includes(rawEpSlug)) {
@@ -444,9 +444,9 @@ function removeActiveExtractions(checkSlugs, episodeSlugs) {
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '') {
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null) {
     // For prefetch from SmartPlay window, episodeTitle is not passed, but rawEpSlug fallback still works
-    const { episodeSlug, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, null, null, null); 
+    const { episodeSlug, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, null, uniqueId, episodeTitle); 
     
     const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug, oldSeriesSlug].filter(Boolean);
     const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
@@ -501,7 +501,7 @@ const activePrefetchLoops = new Set();
  * Logika: selalu jaga 2 episode ke depan sudah READY.
  * Jika ada upload Mega yang sedang berjalan, tunggu dulu.
  */
-async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slugsToCheck = null) {
+async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slugsToCheck = null, uniqueId = null) {
     if (!upcomingUrls || upcomingUrls.length === 0) return;
 
     const validUrls = upcomingUrls.filter(Boolean);
@@ -516,7 +516,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
     for (const epUrl of validUrls) {
         try {
-            const { episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, null, null, null);
+            const { episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, null, uniqueId, null);
             const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug];
             const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
             const status = checkInfo.status;
@@ -558,7 +558,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
             if (prefetchAbortController.signal.aborted) return;
 
-            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck);
+            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck, '', uniqueId);
 
             // Jeda antar episode untuk mencegah ETOOMANY dari Mega
             if (validUrls.indexOf(epUrl) < validUrls.length - 1) {
@@ -636,7 +636,7 @@ router.get('/api/smart-play', async (req, res) => {
         if (status === 'READY') {
             if (prefetchWindow.length > 0) {
                 // Selalu prefetch ke folder baru (seriesSlug)
-                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck);
+                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
             }
             return res.json({
                 success: true,
@@ -647,7 +647,7 @@ router.get('/api/smart-play', async (req, res) => {
 
         if (status === 'UPLOADING') {
             if (prefetchWindow.length > 0) {
-                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck);
+                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
             }
 
             let cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
@@ -727,7 +727,7 @@ router.get('/api/smart-play', async (req, res) => {
                     removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
                     if (prefetchWindow.length > 0) {
                         console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
-                        triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck);
+                        triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
                     }
                 }).catch(err => {
                     removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
