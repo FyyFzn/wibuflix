@@ -519,7 +519,9 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 if (
                     hostLow.includes('googleapis') ||
                     hostLow.includes('drive.google') ||
-                    hostLow.includes('mediafire')
+                    hostLow.includes('mediafire') ||
+                    hostLow.includes('pixeldrain') ||
+                    hostLow.includes('wibufile')
                 ) {
                     numThreads = 4;
                 }
