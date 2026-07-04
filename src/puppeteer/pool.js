@@ -351,6 +351,7 @@ export async function fetchPage(url, signal = null) {
     } catch (err) {
         releaseToPool(slot);
         throw err;
+    }
 }
 
 export async function closeAllBrowsers() {
