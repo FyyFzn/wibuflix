@@ -168,12 +168,34 @@ export function formatEpisodeTitle(title) {
 
 export function extractEpNumStrict(title) {
     if (!title) return null;
-    const stdMatch = title.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i);
+    const str = String(title).trim();
+    
+    // 1. Jika teks adalah murni MAL ID atau DB ID (misal: "mal-34443", "db-67890"), langsung abaikan!
+    if (/^(mal-\d+|db-[a-f0-9]+)$/i.test(str)) return null;
+
+    // 2. Bersihkan resolusi, ekstensi file, dan penanda kualitas agar tidak keliru terdeteksi
+    let clean = str.replace(/\b(1080p|720p|480p|360p|240p|x264|x265|mkv|mp4|avi|bd|bluray|web-dl|aac|h264)\b/gi, ' ');
+    clean = clean.replace(/\b(mal-\d+|db-[a-f0-9]+)\b/gi, ' ');
+
+    // 3. Pola standar: Episode / Ep / Eps / E / OVA / Special / SP
+    const stdMatch = clean.match(/(?:episode|eps|ep|ova|special|sp)\s*0*(\d+(?:\.\d+)?)/i);
     if (stdMatch) return parseFloat(stdMatch[1]);
-    const ovaMatch = title.match(/(?:OVA|Special|SP)\s*(\d+(\.\d+)?)/i);
-    if (ovaMatch) return parseFloat(ovaMatch[1]);
-    const fallbackMatch = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
-    if (fallbackMatch) return parseFloat(fallbackMatch[1]);
+
+    // 4. Pola pemisah ganda khas Otakudesu / Fansub (misal: "Otakudesu_Baki--01_", "Baki - 01 -", "[01]")
+    const sepMatch = clean.match(/(?:--|__|-\s*|\s+-\s*|\[|\()\s*0*(\d+(?:\.\d+)?)\s*(?:--|__|-\s*|\s+-\s*|\]|\)|_|\.|$)/);
+    if (sepMatch) {
+        const num = parseFloat(sepMatch[1]);
+        // Pastikan angka masuk akal sebagai nomor episode (bukan tahun rilis misal 2024)
+        if (num < 1900 || num > 2100) return num;
+    }
+
+    // 5. Pola angka di akhir string (misal "Baki 01 (End)", "Baki 01")
+    const fallbackMatch = clean.match(/\b0*(\d+(?:\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    if (fallbackMatch) {
+        const num = parseFloat(fallbackMatch[1]);
+        if (num < 1900 || num > 2100) return num;
+    }
+
     return null;
 }
 

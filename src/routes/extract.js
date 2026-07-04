@@ -577,7 +577,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
             if (status === 'READY' || status === 'FAILED') {
                 // Sudah done atau sudah gagal — skip
-                // console.info(`[PrefetchWindow] Skip ${episodeSlug} — status: ${status}`);
+                console.info(`[PrefetchWindow] ✓ Skip prefetch untuk ${episodeSlug} — status sudah ${status} di Azure.`);
                 continue;
             }
 

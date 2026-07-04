@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import ffmpegPath from 'ffmpeg-static';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import pLimit from 'p-limit';
 import { setMaxListeners } from 'events';
@@ -548,7 +548,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     hostLow.includes('pixeldrain') ||
                     hostLow.includes('wibufile')
                 ) {
-                    numThreads = 4;
+                    numThreads = 2; // Turunkan dari 4 ke 2 agar bandwidth VPS tidak habis oleh download, sisakan untuk Puppeteer/scraper
                 }
                 
                 if (rangeCheck.supported && numThreads > 1) {
@@ -656,15 +656,30 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 };
                 globalAbort.signal.addEventListener('abort', onAbort);
 
-                ffmpegProcess = execFile(ffmpegPath, ffmpegArgs, (error, stdout, stderr) => {
+                // Jalankan FFmpeg dengan prioritas rendah (nice -n 15) agar CPU VPS
+                // selalu memprioritaskan Puppeteer/scraper (interaksi user) di atas pemotongan HLS latar belakang
+                ffmpegProcess = spawn('nice', ['-n', '15', ffmpegPath, ...ffmpegArgs], {
+                    stdio: isPipeMode ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']
+                });
+
+                let ffmpegStderr = '';
+                ffmpegProcess.stderr.on('data', (chunk) => { ffmpegStderr += chunk.toString(); });
+
+                ffmpegProcess.on('error', (error) => {
                     globalAbort.signal.removeEventListener('abort', onAbort);
-                    if (error && !isUploadError) {
-                        const errOutput = stderr ? stderr.toString() : '';
+                    if (!isUploadError) {
+                        reject(new Error(`FFmpeg Gagal: ${error.message}`));
+                    }
+                });
+
+                ffmpegProcess.on('close', (code) => {
+                    globalAbort.signal.removeEventListener('abort', onAbort);
+                    if (code !== 0 && !isUploadError) {
                         if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
                             console.warn('[Azure Uploader] Mega FFmpeg error. Blacklisting Mega for 10 minutes.');
                             globalBlacklistCache.set('mega_blacklist', true, 600);
                         }
-                        reject(new Error(`FFmpeg Gagal: ${error.message}\n${errOutput}`));
+                        reject(new Error(`FFmpeg Gagal (exit code ${code}):\n${ffmpegStderr}`));
                         return;
                     }
                     isFfmpegDone = true;
