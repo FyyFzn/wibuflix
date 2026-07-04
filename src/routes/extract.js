@@ -450,10 +450,10 @@ function removeActiveExtractions(checkSlugs, episodeSlugs) {
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
 export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null) {
-    // For prefetch from SmartPlay window, episodeTitle is not passed, but rawEpSlug fallback still works
-    const { episodeSlug, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, null, uniqueId, episodeTitle); 
+    // Global Slug Normalization: selalu teruskan seriesTitle & uniqueId agar slugsToCheck dan episodeSlugsToCheck konsisten 100% di seluruh pipeline
+    const { seriesSlug: extractedSeriesSlug, episodeSlug, oldSeriesSlug: extractedOldSlug, slugsToCheck: extractedSlugs, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, seriesTitle, uniqueId, episodeTitle); 
     
-    const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug, oldSeriesSlug].filter(Boolean);
+    const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : (extractedSlugs && extractedSlugs.length > 0 ? extractedSlugs : [seriesSlug, oldSeriesSlug, extractedSeriesSlug, extractedOldSlug].filter(Boolean));
     const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
     const status = checkInfo.status;
     const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
@@ -503,7 +503,6 @@ const activePrefetchLoops = new Set();
 /**
  * Prefetch sliding window — unduh episode dalam `upcomingUrls` satu per satu
  * secara sekuensial dengan jeda antar episode.
- * Logika: selalu jaga 2 episode ke depan sudah READY.
  * Jika ada upload Mega yang sedang berjalan, tunggu dulu.
  */
 async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slugsToCheck = null, uniqueId = null) {
@@ -521,8 +520,9 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
     for (const epUrl of validUrls) {
         try {
-            const { episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, null, uniqueId, null);
-            const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug];
+            // Global Slug Normalization: teruskan seriesTitle & uniqueId untuk pencocokan kunci yang konsisten
+            const { slugsToCheck: extractedSlugs, episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, seriesTitle, uniqueId, null);
+            const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : (extractedSlugs && extractedSlugs.length > 0 ? extractedSlugs : [seriesSlug]);
             const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
             const status = checkInfo.status;
 
@@ -877,7 +877,7 @@ router.post('/api/queue/cancel', express.json(), async (req, res) => {
     try {
         const task = await QueueTask.findOne({ id });
         if (task && task.status === 'UPLOADING') {
-            const { seriesSlug, episodeSlug } = extractSlugs(task.episodeUrl, task.seriesUrl, task.seriesTitle, task.uniqueId);
+            const { seriesSlug, episodeSlug } = extractSlugs(task.episodeUrl, task.seriesUrl, task.seriesTitle, task.uniqueId, task.episodeTitle);
             
             if (seriesSlug && episodeSlug) {
                 cancelUpload(seriesSlug, episodeSlug);
