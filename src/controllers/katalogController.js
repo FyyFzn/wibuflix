@@ -4,9 +4,9 @@ import { KatalogResponseDTO } from '../dtos/KatalogResponseDTO.js';
 
 const cache = getCache('katalog', 3600);
 
-export async function getKatalog(pageParams, searchParam, typeFilter = '', tabParam = 'all', genreFilter = '') {
+export async function getKatalog(pageParams, searchParam, typeFilter = '', tabParam = 'all', genreFilter = '', sortParam = 'az') {
     const isSearch = searchParam.trim() !== '';
-    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}_${tabParam}_${genreFilter}`;
+    const cacheKey = `katalog_${pageParams}_${searchParam}_${typeFilter}_${tabParam}_${genreFilter}_${sortParam}`;
     
     const cachedData = cache.get(cacheKey);
     if (cachedData) {
@@ -95,8 +95,13 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
         } else {
             // Jika bukan pencarian, gunakan query reguler dan sorting
             let dbQuery = Anime.find(query).select('title image type score status sources');
-             // Urutkan berdasarkan yang paling baru diupdate (episode baru rilis)
-             dbQuery = dbQuery.sort({ lastUpdated: -1, _id: -1 });
+            if (sortParam === 'latest') {
+                // Urutkan berdasarkan yang paling baru diupdate (episode baru rilis)
+                dbQuery = dbQuery.sort({ lastUpdated: -1, _id: -1 });
+            } else {
+                // Urutkan A-Z secara alfabetis dengan case-insensitive & numeric ordering (#/0-9 paling depan)
+                dbQuery = dbQuery.sort({ title: 1 }).collation({ locale: 'en', strength: 2, numericOrdering: true });
+            }
 
             // Ambil data + 1 untuk mengetahui apakah masih ada halaman selanjutnya
             results = await dbQuery.skip(skip).limit(limit + 1).lean(); 

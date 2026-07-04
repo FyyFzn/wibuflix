@@ -236,8 +236,33 @@ export function cancelUpload(seriesSlug, episodeSlug) {
     }
 }
 
+/**
+ * Menghapus/meng-invalidasi blob dari Azure Storage dan cache saat pengguna melapor video rusak/tanpa sub.
+ */
+export async function invalidateAndDeleteBlob(seriesSlug, episodeSlug) {
+    const seriesSlugs = Array.isArray(seriesSlug) ? seriesSlug : [seriesSlug].filter(Boolean);
+    const episodeSlugs = Array.isArray(episodeSlug) ? episodeSlug : [episodeSlug].filter(Boolean);
 
+    for (const sSlug of seriesSlugs) {
+        for (const eSlug of episodeSlugs) {
+            const blobPath = getBlobPath(sSlug, eSlug);
+            console.info(`[Azure Uploader] 🗑️ Menghapus blob rusak/tanpa sub: ${blobPath}`);
+            cancelUpload(sSlug, eSlug);
+            uploadCache.del(blobPath);
+            failureCountCache.del(blobPath);
 
+            if (containerClient) {
+                try {
+                    await ensureContainerExists();
+                    const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+                    await blockBlobClient.deleteIfExists();
+                } catch (err) {
+                    console.warn(`[Azure Uploader] Gagal menghapus blob ${blobPath}:`, err.message);
+                }
+            }
+        }
+    }
+}
 // --- FUNGSI JDOWNLOADER ---
 export async function checkRangeSupport(url, headers) {
     try {

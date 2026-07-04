@@ -14,9 +14,10 @@ router.get('/api/katalog', async (req, res) => {
     const tabParam = req.query.tab || 'all';
     const typeFilter = req.query.typeFilter || '';
     const genreFilter = req.query.genre || '';
+    const sortParam = req.query.sort || 'az';
 
     try {
-        const data = await getKatalog(pageParams, searchParam, typeFilter, tabParam, genreFilter);
+        const data = await getKatalog(pageParams, searchParam, typeFilter, tabParam, genreFilter, sortParam);
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Katalog Error]', err.message);

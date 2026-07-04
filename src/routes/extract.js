@@ -1,7 +1,7 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
 import { getAlternativeServers as getAlternativeServersSamehadaku } from '../controllers/samehadakuController.js';
-import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted } from '../utils/azureUploader.js';
+import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted, invalidateAndDeleteBlob } from '../utils/azureUploader.js';
 import { normalizeTitleForMatch, extractEpNumStrict } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
@@ -892,6 +892,29 @@ router.post('/cancel-stream', express.json(), async (req, res) => {
     cancelAllUploads('prefetch');
     
     return res.json({ success: true });
+});
+
+// POST /api/report-broken
+// Menghapus blob rusak/tanpa sub dari cloud & me-reset status agar player bisa beralih ke server alternatif
+router.post('/api/report-broken', express.json(), async (req, res) => {
+    try {
+        let { url, seriesUrl, seriesTitle, uniqueId, episodeTitle, currentServer } = req.body;
+        if (!url) return res.status(400).json({ success: false, message: "URL diperlukan" });
+
+        uniqueId = await resolveCanonicalUniqueId(seriesUrl, url, seriesTitle, uniqueId);
+        const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId, episodeTitle);
+        
+        console.warn(`[Report Broken] ⚠️ Laporan dari pengguna untuk video: "${episodeTitle || url}" (Server: ${currentServer || 'Unknown'})`);
+        
+        // Hapus blob dari Azure dan bersihkan cache agar upload baru dari server lain bisa berjalan
+        await invalidateAndDeleteBlob(slugsToCheck, episodeSlugsToCheck);
+        removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
+        
+        res.json({ success: true, message: "Video rusak/tanpa subtitle berhasil dihapus dari cloud. Silakan ganti server." });
+    } catch (e) {
+        console.error(`[Report Broken Error]:`, e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
 });
 
 // ============================================================
