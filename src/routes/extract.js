@@ -9,11 +9,15 @@ import { getKuronimeServers, getAlternativeServers as getKuronimeAlternativeServ
 import { backgroundQueue } from '../utils/queueManager.js';
 import QueueTask from '../models/QueueTask.js';
 import { getCache } from '../utils/cacheManager.js';
+import { findAnimeInDatabase } from '../services/episodeService.js';
+import { resolveCatalogSource } from '../utils/animeMatcher.js';
 
 const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
+    // Canonical Database Identity Lookup
+    item.uniqueId = await resolveCanonicalUniqueId(item.seriesUrl, item.episodeUrl, item.seriesTitle, item.uniqueId);
     // Extract slugs with uniqueId to get full fallback slugsToCheck array
     const { episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(item.episodeUrl, item.seriesUrl, item.seriesTitle, item.uniqueId, item.episodeTitle);
     
@@ -41,6 +45,50 @@ backgroundQueue.setProcessor(async (item) => {
 const router = express.Router();
 const activeExtractions = new Set();
 let prefetchAbortController = new AbortController();
+
+/**
+ * Canonical Database Identity Lookup:
+ * Memastikan bahwa dari web mana pun (Samehadaku, Otakudesu, Kuronime, Neosatsu) anime diputar,
+ * jika uniqueId belum ada dari frontend, kita secara otomatis mengaitkannya dengan malId atau ObjectId
+ * dari database MongoDB lokal agar selalu masuk ke dalam 1 folder kanonikal yang sama di Azure Blob Storage!
+ */
+export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, currentUniqueId) {
+    if (currentUniqueId && currentUniqueId.toString().trim() !== '') {
+        return currentUniqueId.toString().trim();
+    }
+    
+    try {
+        let dbAnime = null;
+        if (seriesUrl || episodeUrl) {
+            const targetUrl = seriesUrl || episodeUrl;
+            dbAnime = await findAnimeInDatabase({ targetUrl });
+        }
+        
+        if (!dbAnime && seriesTitle) {
+            for (const prov of ['samehadaku', 'otakudesu', 'kuronime', 'neosatsu']) {
+                const res = await resolveCatalogSource(seriesTitle, prov);
+                if (res && res.entry) {
+                    dbAnime = res.entry;
+                    break;
+                }
+            }
+        }
+        
+        if (dbAnime) {
+            if (dbAnime.malId) {
+                console.info(`[CanonicalLookup] ✓ Mengaitkan "${seriesTitle || seriesUrl}" dengan mal-${dbAnime.malId} dari database.`);
+                return `mal-${dbAnime.malId}`;
+            } else if (dbAnime._id) {
+                console.info(`[CanonicalLookup] ✓ Mengaitkan "${seriesTitle || seriesUrl}" dengan db-${dbAnime._id} dari database.`);
+                return `db-${dbAnime._id}`;
+            }
+        }
+    } catch (err) {
+        console.warn(`[CanonicalLookup Error]:`, err.message);
+    }
+    
+    return currentUniqueId || null;
+}
 
 export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle = '') {
     let episodeSlug = '';
@@ -450,6 +498,7 @@ function removeActiveExtractions(checkSlugs, episodeSlugs) {
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
 export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null) {
+    uniqueId = await resolveCanonicalUniqueId(null, episodeUrl, seriesTitle, uniqueId);
     // Global Slug Normalization: selalu teruskan seriesTitle & uniqueId agar slugsToCheck dan episodeSlugsToCheck konsisten 100% di seluruh pipeline
     const { seriesSlug: extractedSeriesSlug, episodeSlug, oldSeriesSlug: extractedOldSlug, slugsToCheck: extractedSlugs, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, seriesTitle, uniqueId, episodeTitle); 
     
@@ -630,10 +679,12 @@ router.get('/api/extract-video', async (req, res) => {
 // Parameter: episodeUrl (wajib), seriesUrl, nextEpisodeUrl
 // ============================================================
 router.get('/api/smart-play', async (req, res) => {
-    const { episodeUrl, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle, uniqueId } = req.query;
+    let { episodeUrl, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle, uniqueId } = req.query;
     if (!episodeUrl) {
         return res.status(400).json({ success: false, error: "Parameter 'episodeUrl' wajib diisi!" });
     }
+
+    uniqueId = await resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, uniqueId);
 
     // Susun window prefetch: [N+1, N+2] — hanya yang ada nilainya
     const prefetchWindow = [nextEpisodeUrl].filter(Boolean);
@@ -801,9 +852,10 @@ router.post('/api/cancel-uploads', (req, res) => {
 // ============================================================
 router.get('/api/upload-status', async (req, res) => {
     try {
-        const { episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.query;
+        let { episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.query;
         if (!episodeUrl) return res.status(400).json({ success: false, message: "URL required" });
         
+        uniqueId = await resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, uniqueId);
         const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
         const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
         const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
@@ -819,9 +871,10 @@ router.get('/api/upload-status', async (req, res) => {
 
 // Endpoint untuk membatalkan upload secara eksplisit dari client
 router.post('/cancel-stream', express.json(), async (req, res) => {
-    const { url, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.body;
+    let { url, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.body;
     if (!url) return res.json({ success: false });
     
+    uniqueId = await resolveCanonicalUniqueId(seriesUrl, url, seriesTitle, uniqueId);
     const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId, episodeTitle);
     const checkInfo = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
     const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
@@ -847,9 +900,10 @@ router.post('/cancel-stream', express.json(), async (req, res) => {
 
 router.post('/api/queue/add', express.json(), async (req, res) => {
     try {
-        const { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId } = req.body;
+        let { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId } = req.body;
         if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
         
+        uniqueId = await resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, uniqueId);
         const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
         
         const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId);
