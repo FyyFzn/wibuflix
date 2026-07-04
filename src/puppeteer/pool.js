@@ -6,8 +6,8 @@ puppeteer.use(StealthPlugin());
 let browserInstance = null;
 
 // Batas konkurensi maksimal untuk VPS Azure B1 (RAM terbatas)
-const MAX_REGULAR_CONCURRENCY = 4;
-const MAX_EXTRACTOR_CONCURRENCY = 3;
+const MAX_REGULAR_CONCURRENCY = 2;
+const MAX_EXTRACTOR_CONCURRENCY = 1;
 
 let activeRegularCount = 0;
 let activeExtractorCount = 0;
@@ -351,6 +351,17 @@ export async function fetchPage(url, signal = null) {
     } catch (err) {
         releaseToPool(slot);
         throw err;
+}
+
+export async function closeAllBrowsers() {
+    console.log('[PagePool] Menutup semua instance browser...');
+    if (browserInstance) {
+        try {
+            await browserInstance.close();
+        } catch (e) {
+            console.warn('[PagePool] Error menutup browser:', e.message);
+        }
+        browserInstance = null;
     }
 }
 

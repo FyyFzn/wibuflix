@@ -43,7 +43,8 @@ export function initScheduler() {
         import('path').then(path => {
             import('os').then(os => {
                 const cleanStaleTempFiles = () => {
-                    const tmpDir = os.tmpdir();
+                    const tmpDir = path.join(os.tmpdir(), 'wibuflix_temp');
+                    if (!fs.existsSync(tmpDir)) return;
                     fs.readdir(tmpDir, (err, files) => {
                         if (err) return;
                         const now = Date.now();

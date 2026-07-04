@@ -1,10 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import { initPagePool } from './puppeteer/pool.js';
+import { initPagePool, closeAllBrowsers } from './puppeteer/pool.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { backgroundQueue } from './utils/queueManager.js';
 import connectDB from './config/db.js';
+import mongoose from 'mongoose';
 import fs from 'fs';
 import os from 'os';
 import { cancelAllUploads } from './utils/azureUploader.js';
@@ -26,45 +27,47 @@ import adminRouter from './routes/admin.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const APP_TMP_DIR = path.join(os.tmpdir(), 'wibuflix_temp');
+if (!fs.existsSync(APP_TMP_DIR)) {
+    fs.mkdirSync(APP_TMP_DIR, { recursive: true });
+}
+
 export function sweepOrphanedTempFiles() {
     console.log('[System] Menyapu file sampah dari sesi sebelumnya...');
-    const tmpDir = os.tmpdir();
+    fs.readdir(APP_TMP_DIR, (err, files) => {
+        if (err) return console.warn('[System] Gagal memindai direktori temp:', err.message);
+        files.forEach(file => {
+            const fullPath = path.join(APP_TMP_DIR, file);
+            fs.rm(fullPath, { recursive: true, force: true }, err => {
+                if (err && err.code !== 'ENOENT') console.warn(`Gagal menghapus: ${file}`);
+            });
+        });
+    });
+}
+
+async function gracefulShutdown(signal) {
+    console.warn(`[System] Menerima ${signal}. Memulai Graceful Shutdown...`);
     try {
-        const files = fs.readdirSync(tmpDir);
-        for (const file of files) {
-            if (file.startsWith('hls_') || file.endsWith('.mp4') || file.includes('.mp4.part') || file.endsWith('.ts.uploading')) {
-                const fullPath = path.join(tmpDir, file);
-                try {
-                    fs.rmSync(fullPath, { recursive: true, force: true });
-                    console.log(`[Cleaned] ${file}`);
-                } catch (e) {
-                    console.warn(`Gagal menghapus: ${file}`);
-                }
-            }
-        }
-    } catch (err) {
-        console.warn('[System] Gagal memindai direktori temp:', err.message);
+        cancelAllUploads('player');
+        cancelAllUploads('prefetch');
+        
+        // 1. Matikan koneksi DB dengan aman
+        await mongoose.connection.close(false);
+        console.log('[System] Koneksi MongoDB ditutup.');
+
+        // 2. Bersihkan Browser Puppeteer jika ada instance yang jalan
+        await closeAllBrowsers();
+        console.log('[System] Browser Puppeteer ditutup.');
+        
+        process.exit(0);
+    } catch (e) {
+        console.error('[System] Error saat shutdown:', e);
+        process.exit(1);
     }
 }
 
-// Tangkap sinyal terminasi (PM2 restart / Ctrl+C / Docker Stop) untuk Graceful Shutdown
-process.on('SIGTERM', () => {
-    console.warn('[System] Menerima sinyal mati (SIGTERM). Membatalkan semua upload...');
-    try {
-        cancelAllUploads('player');
-        cancelAllUploads('prefetch');
-    } catch (e) {}
-    process.exit(0);
-});
-
-process.on('SIGINT', () => {
-    console.warn('[System] Menerima sinyal mati (SIGINT). Membatalkan semua upload...');
-    try {
-        cancelAllUploads('player');
-        cancelAllUploads('prefetch');
-    } catch (e) {}
-    process.exit(0);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 const app = express();
 app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure (di belakang proxy)

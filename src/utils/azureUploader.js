@@ -485,9 +485,11 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
         const globalAbort = new AbortController();
         try { setMaxListeners(50, globalAbort.signal); } catch (e) {}
         
+        const appTmpDir = path.join(os.tmpdir(), 'wibuflix_temp');
+        if (!fs.existsSync(appTmpDir)) fs.mkdirSync(appTmpDir, { recursive: true });
         const tempFileName = crypto.randomUUID() + '.mp4';
-        const tempFilePath = path.join(os.tmpdir(), tempFileName);
-        const hlsOutputDir = path.join(os.tmpdir(), `hls_${crypto.randomUUID()}`);
+        const tempFilePath = path.join(appTmpDir, tempFileName);
+        const hlsOutputDir = path.join(appTmpDir, `hls_${crypto.randomUUID()}`);
         
         activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath, source });
         
