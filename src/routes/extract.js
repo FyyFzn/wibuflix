@@ -122,6 +122,12 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
         const cleanUrl = realEpUrl.replace(/\/$/, '');
         episodeSlug = cleanUrl.split('/').pop() || 'uncategorized_ep';
 
+        // Kuronime menggunakan prefix "nonton-" di URL episode (misal: /nonton-baki-dou-episode-1/)
+        // Hapus prefix ini dari episodeSlug agar nama folder di Azure konsisten dengan provider lain
+        if (realEpUrl.includes('kuronime.sbs') && episodeSlug.startsWith('nonton-')) {
+            episodeSlug = episodeSlug.replace(/^nonton-/, '');
+        }
+
         if (seriesUrl) {
             let realSeriesUrl = seriesUrl;
             if (seriesUrl.includes('?url=')) {
@@ -130,9 +136,6 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
             seriesSlug = realSeriesUrl.replace(/\/$/, '').split('/').pop() || 'uncategorized';
         } else {
             seriesSlug = episodeSlug.replace(/-episode-\d+.*$/i, '').replace(/-dan-sub-indo.*$/i, '');
-            if (episodeUrl.includes('kuronime.sbs') && seriesSlug.startsWith('nonton-')) {
-                seriesSlug = seriesSlug.replace(/^nonton-/, '');
-            }
         }
 
     }
