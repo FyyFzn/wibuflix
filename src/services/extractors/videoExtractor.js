@@ -53,7 +53,7 @@ async function resolveServerIframe(page, { post, nume, type, episodeUrl }, req) 
             if (url) return url;
         }
 
-        const urlMatch = result.text.match(/(https?:\/\/[^\s"'<>]+)/) || result.text.match(/(\/\/[^\s"'<>]+)/);
+        const urlMatch = result.text.match(/(https?:\/\/[^\s"'<>]{1,2048})/) || result.text.match(/(\/\/[^\s"'<>]{1,2048})/);
         if (urlMatch) return urlMatch[1];
 
         const vidlionMatch = result.text.match(/\[vidlion id=([^\]]+)\]/i);

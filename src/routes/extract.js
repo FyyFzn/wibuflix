@@ -8,6 +8,9 @@ import { getServersInternal as getOtakuServers, getAlternativeServers as getOtak
 import { getKuronimeServers, getAlternativeServers as getKuronimeAlternativeServers } from '../controllers/kuronimeController.js';
 import { backgroundQueue } from '../utils/queueManager.js';
 import QueueTask from '../models/QueueTask.js';
+import { getCache } from '../utils/cacheManager.js';
+
+const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
@@ -483,14 +486,14 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
             return { success: false, reason: result.error || 'Semua server gagal atau limit.' };
         }
 
-        global[`prefetch_src_${activeSlug}_${episodeSlug}`] = matchedSource;
+        proxyCache.set(`prefetch_src_${activeSlug}_${episodeSlug}`, matchedSource);
         await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
         return { success: true };
     } catch (err) {
         markUploadFailed(activeSlug, episodeSlug);
         throw err;
     } finally {
-        delete global[`prefetch_src_${activeSlug}_${episodeSlug}`];
+        proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
         removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
     }
 }
@@ -539,23 +542,31 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
             // Jika ada upload aktif lainnya di series ini, tunggu dulu sebelum mulai prefetch
             let activeUploadExists = hasActiveUploadForSeries(seriesSlug);
             let globalUploadCount = getActiveUploadCount();
+            let waitAttempts = 0;
+            const maxWaitAttempts = 30; // Maksimal tunggu 5 menit (30 x 10 detik) untuk mencegah Thread Blocking abadi / zombie process
 
-            while (activeUploadExists || globalUploadCount >= 3) {
+            while ((activeUploadExists || globalUploadCount >= 3) && waitAttempts < maxWaitAttempts) {
                 if (prefetchAbortController.signal.aborted) {
                     console.info(`[PrefetchWindow] Dibatalkan oleh pengguna saat menunggu antrean untuk ${episodeSlug}`);
                     return;
                 }
 
                 if (activeUploadExists) {
-                    console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}...`);
+                    console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}... (${waitAttempts + 1}/${maxWaitAttempts})`);
                 } else if (globalUploadCount >= 3) {
-                    console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}...`);
+                    console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}... (${waitAttempts + 1}/${maxWaitAttempts})`);
                 }
 
                 await new Promise(r => setTimeout(r, 10000)); // Cek setiap 10 detik
+                waitAttempts++;
 
                 activeUploadExists = hasActiveUploadForSeries(seriesSlug);
                 globalUploadCount = getActiveUploadCount();
+            }
+
+            if (waitAttempts >= maxWaitAttempts && (activeUploadExists || globalUploadCount >= 3)) {
+                console.warn(`[PrefetchWindow] Timeout menunggu antrean untuk ${episodeSlug} setelah ${maxWaitAttempts * 10} detik. Melewati episode ini.`);
+                continue;
             }
 
             if (prefetchAbortController.signal.aborted) return;
@@ -652,9 +663,9 @@ router.get('/api/smart-play', async (req, res) => {
                 triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
             }
 
-            let cachedProxyUrl = global[`proxy_${seriesSlug}_${episodeSlug}`];
-            if (!cachedProxyUrl && global[`prefetch_src_${seriesSlug}_${episodeSlug}`]) {
-                const src = global[`prefetch_src_${seriesSlug}_${episodeSlug}`];
+            let cachedProxyUrl = proxyCache.get(`proxy_${seriesSlug}_${episodeSlug}`);
+            if (!cachedProxyUrl && proxyCache.has(`prefetch_src_${seriesSlug}_${episodeSlug}`)) {
+                const src = proxyCache.get(`prefetch_src_${seriesSlug}_${episodeSlug}`);
                 const baseUrl = `${req.protocol}://${req.get('host')}`;
                 if (src.headers && src.headers.token) {
                     cachedProxyUrl = `${baseUrl}/api/proxy/kraken?url=${encodeURIComponent(src.url)}&token=${encodeURIComponent(src.headers.token)}&referer=${encodeURIComponent(src.headers.Referer || '')}`;
@@ -747,8 +758,8 @@ router.get('/api/smart-play', async (req, res) => {
                 proxyUrl = `${baseUrl}/api/proxy/filedon?url=${encodeURIComponent(matchedSource.url)}`;
             }
 
-            // Simpan proxy URL sementara ke global (opsional)
-            global[`proxy_${seriesSlug}_${episodeSlug}`] = proxyUrl;
+            // Simpan proxy URL sementara ke cache (opsional)
+            proxyCache.set(`proxy_${seriesSlug}_${episodeSlug}`, proxyUrl);
 
             return res.json({
                 success: true,

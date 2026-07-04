@@ -5,6 +5,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { backgroundQueue } from './utils/queueManager.js';
 import connectDB from './config/db.js';
+import fs from 'fs';
+import os from 'os';
+import { cancelAllUploads } from './utils/azureUploader.js';
 
 import { initScheduler } from './jobs/scheduler.js';
 import { errorHandler } from './middlewares/errorHandler.js';
@@ -22,6 +25,46 @@ import adminRouter from './routes/admin.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+export function sweepOrphanedTempFiles() {
+    console.log('[System] Menyapu file sampah dari sesi sebelumnya...');
+    const tmpDir = os.tmpdir();
+    try {
+        const files = fs.readdirSync(tmpDir);
+        for (const file of files) {
+            if (file.startsWith('hls_') || file.endsWith('.mp4') || file.includes('.mp4.part') || file.endsWith('.ts.uploading')) {
+                const fullPath = path.join(tmpDir, file);
+                try {
+                    fs.rmSync(fullPath, { recursive: true, force: true });
+                    console.log(`[Cleaned] ${file}`);
+                } catch (e) {
+                    console.warn(`Gagal menghapus: ${file}`);
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('[System] Gagal memindai direktori temp:', err.message);
+    }
+}
+
+// Tangkap sinyal terminasi (PM2 restart / Ctrl+C / Docker Stop) untuk Graceful Shutdown
+process.on('SIGTERM', () => {
+    console.warn('[System] Menerima sinyal mati (SIGTERM). Membatalkan semua upload...');
+    try {
+        cancelAllUploads('player');
+        cancelAllUploads('prefetch');
+    } catch (e) {}
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.warn('[System] Menerima sinyal mati (SIGINT). Membatalkan semua upload...');
+    try {
+        cancelAllUploads('player');
+        cancelAllUploads('prefetch');
+    } catch (e) {}
+    process.exit(0);
+});
 
 const app = express();
 app.set('trust proxy', true); // Fix: agar req.protocol terbaca 'https' di Azure (di belakang proxy)
@@ -53,6 +96,7 @@ app.use(adminRouter);
 app.use(errorHandler);
 
 function startServer() {
+    sweepOrphanedTempFiles();
     // 1. Hubungkan ke MongoDB terlebih dahulu
     connectDB().then(() => {
         // 2. Jalankan Express App

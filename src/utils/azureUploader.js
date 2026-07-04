@@ -607,7 +607,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 '-f', 'hls',
                 '-hls_time', '10',
                 '-hls_playlist_type', 'vod',
-                '-hls_flags', 'independent_segments',
+                '-hls_flags', 'independent_segments+temp_file',
                 '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
                 m3u8Path
             );
@@ -675,7 +675,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                             const remainingFiles = fs.readdirSync(hlsOutputDir);
                             const finalTsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
                             
-                            if (finalTsFiles.length <= 2 && !blobPath.includes('trailer')) {
+                            const totalTsCount = totalUploadedChunks + finalTsFiles.length;
+                            if (totalTsCount <= 2 && !blobPath.includes('trailer')) {
                                 if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
                                     console.warn('[Azure Uploader] Mega failed to provide segments. Blacklisting Mega for 10 minutes.');
                                     globalBlacklistCache.set('mega_blacklist', true, 600);
@@ -686,10 +687,14 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
                             await Promise.all(remainingFiles.map(file => uploadLimit(async () => {
                                 const localPath = path.join(hlsOutputDir, file);
+                                if (file.endsWith('.tmp') || file.endsWith('.uploading')) return;
+                                
                                 const azureDest = `${baseAzurePath}/${file}`;
                                 const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
                                 
                                 if (!fs.existsSync(localPath)) return;
+                                const stats = fs.statSync(localPath);
+                                if (stats.size === 0) return;
 
                                 const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
                                 await blockBlobClient.uploadFile(localPath, {
@@ -699,6 +704,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                                     },
                                     abortSignal: globalAbort.signal
                                 });
+                                try { fs.unlinkSync(localPath); } catch (e) {}
                             })));
 
                             resolve();
@@ -706,30 +712,35 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                         }
                         
                         const files = fs.readdirSync(hlsOutputDir);
-                        const tsFiles = files.filter(f => f.endsWith('.ts')).sort();
+                        // HANYA ambil file .ts, ABAIKAN file .tmp (karena temp_file flag)
+                        const validTsFiles = files.filter(f => f.endsWith('.ts')).sort();
                         
-                        if (tsFiles.length > 1 && !isFfmpegDone) {
-                            tsFiles.pop(); 
-                        }
-
-                        if (tsFiles.length === 0) {
+                        // Tidak perlu lagi membuang file terakhir (pop) karena dijamin sudah selesai ditulis oleh FFmpeg temp_file flag
+                        if (validTsFiles.length === 0) {
                             isProcessingInterval = false;
                             return;
                         }
 
-                        await Promise.all(tsFiles.map(file => uploadLimit(async () => {
+                        await Promise.all(validTsFiles.map(file => uploadLimit(async () => {
                             if (isUploadError) return;
                             const localPath = path.join(hlsOutputDir, file);
                             const azureDest = `${baseAzurePath}/${file}`;
                             
                             if (!fs.existsSync(localPath)) return;
                             
-                            // Tambahan cek ukuran file agar tidak crash (Azure ReadStream error)
                             const stats = fs.statSync(localPath);
                             if (stats.size === 0) return;
 
+                            // Pindahkan file ke direktori staging sebelum upload untuk mencegah lock conflict & race condition
+                            const stagingPath = localPath + '.uploading';
+                            try {
+                                fs.renameSync(localPath, stagingPath);
+                            } catch (renameErr) {
+                                return;
+                            }
+
                             const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
-                            await blockBlobClient.uploadFile(localPath, {
+                            await blockBlobClient.uploadFile(stagingPath, {
                                 blobHTTPHeaders: { 
                                     blobContentType: 'video/mp2t', 
                                     blobCacheControl: 'public, max-age=31536000' 
@@ -737,7 +748,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                                 abortSignal: globalAbort.signal
                             });
                             
-                            try { fs.unlinkSync(localPath); } catch (e) {}
+                            try { fs.unlinkSync(stagingPath); } catch (e) {}
                             totalUploadedChunks++;
                             uploadProgressCache.set(blobPath, `Mencicil unggahan pecahan video... (${totalUploadedChunks} pecahan terkirim)`);
                         })));

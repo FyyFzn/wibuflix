@@ -187,9 +187,34 @@ async function injectStoredCookies(page, domain) {
     }
 }
 
-export async function acquireFromPool(domain = 'v2.samehadaku.how') {
+export async function acquireFromPool(domain = 'v2.samehadaku.how', signal = null) {
+    if (signal && signal.aborted) {
+        throw new Error('REQUEST_ABORTED_BEFORE_ACQUIRE');
+    }
     while (activeRegularCount >= MAX_REGULAR_CONCURRENCY) {
-        await new Promise(resolve => regularQueue.push(resolve));
+        await new Promise((resolve, reject) => {
+            const queueItem = { resolve, reject };
+            regularQueue.push(queueItem);
+            
+            if (signal) {
+                const onAbort = () => {
+                    const index = regularQueue.indexOf(queueItem);
+                    if (index > -1) {
+                        regularQueue.splice(index, 1);
+                        reject(new Error('REQUEST_ABORTED_BEFORE_ACQUIRE'));
+                    }
+                };
+                signal.addEventListener('abort', onAbort, { once: true });
+                const originalResolve = resolve;
+                queueItem.resolve = () => {
+                    signal.removeEventListener('abort', onAbort);
+                    originalResolve();
+                };
+            }
+        });
+        if (signal && signal.aborted) {
+            throw new Error('REQUEST_ABORTED_BEFORE_ACQUIRE');
+        }
     }
     activeRegularCount++;
 
@@ -220,9 +245,34 @@ export async function acquireFromPool(domain = 'v2.samehadaku.how') {
     return slot;
 }
 
-export async function acquireFromExtractorPool(domain = null) {
+export async function acquireFromExtractorPool(domain = null, signal = null) {
+    if (signal && signal.aborted) {
+        throw new Error('REQUEST_ABORTED_BEFORE_ACQUIRE');
+    }
     while (activeExtractorCount >= MAX_EXTRACTOR_CONCURRENCY) {
-        await new Promise(resolve => extractorQueue.push(resolve));
+        await new Promise((resolve, reject) => {
+            const queueItem = { resolve, reject };
+            extractorQueue.push(queueItem);
+            
+            if (signal) {
+                const onAbort = () => {
+                    const index = extractorQueue.indexOf(queueItem);
+                    if (index > -1) {
+                        extractorQueue.splice(index, 1);
+                        reject(new Error('REQUEST_ABORTED_BEFORE_ACQUIRE'));
+                    }
+                };
+                signal.addEventListener('abort', onAbort, { once: true });
+                const originalResolve = resolve;
+                queueItem.resolve = () => {
+                    signal.removeEventListener('abort', onAbort);
+                    originalResolve();
+                };
+            }
+        });
+        if (signal && signal.aborted) {
+            throw new Error('REQUEST_ABORTED_BEFORE_ACQUIRE');
+        }
     }
     activeExtractorCount++;
 
@@ -252,7 +302,7 @@ export async function acquireFromExtractorPool(domain = null) {
     return slot;
 }
 
-export function releaseToPool(slot) {
+export async function releaseToPool(slot) {
     if (!slot || !slot.busy) return;
     slot.busy = false;
 
@@ -261,29 +311,39 @@ export function releaseToPool(slot) {
         slot.safetyTimer = null;
     }
 
-    // Bersihkan page & context secara sempurna untuk mencegah kebocoran RAM/Heap V8
-    slot.page.close().catch(() => {});
-    if (slot.context) {
-        slot.context.close().catch(() => {});
-    }
-
-    if (slot.type === 'extractor') {
-        if (activeExtractorCount > 0) activeExtractorCount--;
-        if (extractorQueue.length > 0) {
-            const next = extractorQueue.shift();
-            next();
+    try {
+        // Hapus listeners, hapus DOM reference, dan await penutupan
+        await slot.page.removeAllListeners();
+        await slot.page.goto('about:blank', { timeout: 3000 }).catch(()=>{});
+        await slot.page.close({ runBeforeUnload: false }).catch(()=>{});
+        if (slot.context) {
+            await slot.context.close().catch(()=>{});
         }
-    } else {
-        if (activeRegularCount > 0) activeRegularCount--;
-        if (regularQueue.length > 0) {
-            const next = regularQueue.shift();
-            next();
+    } catch (error) {
+        console.warn(`[PagePool] Gagal membersihkan slot memori: ${error.message}`);
+    } finally {
+        if (slot.type === 'extractor') {
+            if (activeExtractorCount > 0) activeExtractorCount--;
+            if (extractorQueue.length > 0) {
+                const next = extractorQueue.shift();
+                if (next && typeof next.resolve === 'function') next.resolve();
+                else if (typeof next === 'function') next();
+            }
+        } else {
+            if (activeRegularCount > 0) activeRegularCount--;
+            if (regularQueue.length > 0) {
+                const next = regularQueue.shift();
+                if (next && typeof next.resolve === 'function') next.resolve();
+                else if (typeof next === 'function') next();
+            }
         }
     }
 }
 
-export async function fetchPage(url) {
-    const slot = await acquireFromPool();
+export async function fetchPage(url, signal = null) {
+    let domain = 'v2.samehadaku.how';
+    try { domain = new URL(url).hostname; } catch (e) {}
+    const slot = await acquireFromPool(domain, signal);
     try {
         await slot.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await waitForCloudflare(slot.page);
