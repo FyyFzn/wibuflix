@@ -170,7 +170,7 @@ export function markUploadFailed(seriesSlug, episodeSlug) {
     const count = (failureCountCache.get(blobPath) || 0) + 1;
     failureCountCache.set(blobPath, count);
     
-    if (count >= 3) {
+    if (count >= 5) {
         console.warn(`[Azure Uploader] ${blobPath} gagal ${count} kali. Menandai sebagai FAILED permanen (10 menit).`);
         uploadCache.set(blobPath, 'FAILED', 600); // 10 minutes failure cache TTL
     } else {
@@ -825,6 +825,13 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 }
                 markUploadFailed(seriesSlug, episodeSlug);
                 uploadProgressCache.delete(blobPath);
+            }
+            // Hapus playlist.m3u8 parsial dari Azure jika upload gagal atau dibatalkan agar tidak dianggap READY oleh checkUploadStatus
+            if (containerClient) {
+                try {
+                    const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+                    blockBlobClient.deleteIfExists().catch(() => {});
+                } catch (delErr) {}
             }
             activeUploadControllers.delete(blobPath);
             throw err;

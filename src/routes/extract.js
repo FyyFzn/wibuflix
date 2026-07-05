@@ -528,7 +528,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     let matchedSource = null;
 
     try {
-        const maxAttempts = 3;
+        const maxAttempts = 5;
         let lastError = null;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -556,6 +556,12 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 return { success: true };
             } catch (err) {
                 proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
+                const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || (source === 'prefetch' && prefetchAbortController.signal.aborted);
+                if (isCanceled) {
+                    console.info(`${logPrefix} Upload dibatalkan oleh pengguna (cancel/exit app). Menghentikan proses retry.`);
+                    removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                    return { success: false, reason: 'UPLOAD_CANCELLED' };
+                }
                 console.warn(`${logPrefix} Upload/Ekstraksi gagal pada percobaan ${attempt}/${maxAttempts} (${err.message}). Mencoba server/web alternatif lain...`);
                 lastError = err;
                 if (attempt < maxAttempts) {
@@ -647,7 +653,11 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
 
             if (prefetchAbortController.signal.aborted) return;
 
-            await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck, '', uniqueId);
+            const res = await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck, '', uniqueId);
+            if ((res && res.reason === 'UPLOAD_CANCELLED') || prefetchAbortController.signal.aborted) {
+                console.info(`[PrefetchWindow] Dibatalkan oleh pengguna. Menghentikan seluruh antrean prefetch window.`);
+                return;
+            }
 
             // Jeda antar episode untuk mencegah ETOOMANY dari Mega
             if (validUrls.indexOf(epUrl) < validUrls.length - 1) {
@@ -655,6 +665,11 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
                 await new Promise(r => setTimeout(r, 30000));
             }
         } catch (err) {
+            const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || prefetchAbortController.signal.aborted;
+            if (isCanceled) {
+                console.info(`[PrefetchWindow] Dibatalkan oleh pengguna. Menghentikan seluruh antrean prefetch window.`);
+                return;
+            }
             console.error(`[PrefetchWindow Error] ${epUrl}:`, err.message);
         }
     }
@@ -809,9 +824,9 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (matchedSource) {
-            // Start upload in background with 3x retry loop across candidate servers
+            // Start upload in background with 5x retry loop across candidate servers
             const runBackgroundUpload = async () => {
-                const maxAttempts = 3;
+                const maxAttempts = 5;
                 let currentSource = matchedSource;
                 for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                     try {
@@ -831,6 +846,12 @@ router.get('/api/smart-play', async (req, res) => {
                         }
                         return;
                     } catch (err) {
+                        const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || prefetchAbortController.signal.aborted;
+                        if (isCanceled) {
+                            console.info(`[Smart-Play] Upload dibatalkan oleh pengguna (cancel/exit app). Menghentikan proses retry.`);
+                            removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
+                            return;
+                        }
                         console.error(`[Smart-Play] Upload latar belakang gagal pada percobaan ${attempt}/${maxAttempts}:`, err.message);
                         if (attempt === maxAttempts) {
                             removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
