@@ -564,13 +564,11 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     const { File } = await import('megajs');
                     const file = File.fromURL(megaUrl);
                     await file.loadAttributes();
-                    streamSource = file.download({ maxConnections: 8 });
+                    streamSource = file.download({ maxConnections: 2 });
                     streamSource.on('error', (err) => {
                         console.error('[Azure Uploader] Mega Stream Error:', err.message);
-                        if (err && (err.message?.includes('Bandwidth limit reached') || err.message?.includes('MAC verification failed') || err.message?.includes('EBLOCKED') || err.message?.includes('User blocked') || err.code === 'EBLOCKED')) {
-                            console.warn('[Azure Uploader] Mega limit/blocked hit. Blacklisting Mega for 10 minutes.');
-                            globalBlacklistCache.set('mega_blacklist', true, 600); // 10 minutes TTL
-                        }
+                        console.warn('[Azure Uploader] Mega limit/blocked/disconnected hit. Blacklisting Mega for 10 minutes.');
+                        globalBlacklistCache.set('mega_blacklist', true, 600); // 10 minutes TTL
                     });
                 } else {
                     console.info(`[Azure Uploader] Mode Single Stream: Mengalirkan data (Pipe)...`);

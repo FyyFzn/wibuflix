@@ -528,25 +528,49 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     let matchedSource = null;
 
     try {
-        const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix);
-        matchedSource = result.matchedSource;
-        
-        if (!matchedSource) {
-            console.info(`${logPrefix} Tidak ada server untuk: ${episodeSlug}`);
-            markUploadFailed(activeSlug, episodeSlug);
-            removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
-            return { success: false, reason: result.error || 'Semua server gagal atau limit.' };
+        const maxAttempts = 3;
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
+                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix);
+                matchedSource = result.matchedSource;
+                
+                if (!matchedSource) {
+                    console.info(`${attemptPrefix} Tidak ada server untuk: ${episodeSlug}`);
+                    if (attempt === maxAttempts) {
+                        markUploadFailed(activeSlug, episodeSlug);
+                        removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                        return { success: false, reason: result.error || 'Semua server gagal atau limit.' };
+                    }
+                    lastError = new Error(result.error || 'Semua server gagal atau limit.');
+                    await new Promise(r => setTimeout(r, 3000));
+                    continue;
+                }
+
+                proxyCache.set(`prefetch_src_${activeSlug}_${episodeSlug}`, matchedSource);
+                await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
+                proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
+                removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                return { success: true };
+            } catch (err) {
+                proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
+                console.warn(`${logPrefix} Upload/Ekstraksi gagal pada percobaan ${attempt}/${maxAttempts} (${err.message}). Mencoba server/web alternatif lain...`);
+                lastError = err;
+                if (attempt < maxAttempts) {
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+            }
         }
 
-        proxyCache.set(`prefetch_src_${activeSlug}_${episodeSlug}`, matchedSource);
-        await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
-        return { success: true };
+        markUploadFailed(activeSlug, episodeSlug);
+        removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+        throw lastError || new Error('All prefetch retry attempts failed.');
     } catch (err) {
         markUploadFailed(activeSlug, episodeSlug);
-        throw err;
-    } finally {
-        proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
         removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+        throw err;
     }
 }
 
@@ -785,24 +809,39 @@ router.get('/api/smart-play', async (req, res) => {
         }
 
         if (matchedSource) {
-            // Start upload in background, then chain prefetch window
-            const uploadTask = uploadStream(matchedSource.url, matchedSource.headers, seriesSlug, episodeSlug);
-
-            // Pastikan selalu ada .catch() agar Node tidak crash jika terjadi unhandled rejection
-            if (uploadTask) {
-                uploadTask.then(() => {
-                    removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
-                    if (prefetchWindow.length > 0) {
-                        console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
-                        triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
+            // Start upload in background with 3x retry loop across candidate servers
+            const runBackgroundUpload = async () => {
+                const maxAttempts = 3;
+                let currentSource = matchedSource;
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    try {
+                        if (attempt > 1) {
+                            console.info(`[Smart-Play] Mencoba ulang upload latar belakang (${attempt}/${maxAttempts})...`);
+                            const res = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, `[Smart-Play Retry ${attempt}/${maxAttempts}]`, req);
+                            currentSource = res.matchedSource;
+                            if (!currentSource) {
+                                throw new Error(res.error || 'Tidak ada server cadangan lain.');
+                            }
+                        }
+                        await uploadStream(currentSource.url, currentSource.headers, seriesSlug, episodeSlug, 'player');
+                        removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
+                        if (prefetchWindow.length > 0) {
+                            console.info(`[Smart-Play] Upload selesai. Memulai prefetch window [${prefetchWindow.length} episode]...`);
+                            triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
+                        }
+                        return;
+                    } catch (err) {
+                        console.error(`[Smart-Play] Upload latar belakang gagal pada percobaan ${attempt}/${maxAttempts}:`, err.message);
+                        if (attempt === maxAttempts) {
+                            removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
+                            markUploadFailed(seriesSlug, episodeSlug);
+                        } else {
+                            await new Promise(r => setTimeout(r, 3000));
+                        }
                     }
-                }).catch(err => {
-                    removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
-                    console.error(`[Smart-Play] Upload latar belakang gagal:`, err.message);
-                });
-            } else {
-                removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
-            }
+                }
+            };
+            runBackgroundUpload();
 
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             let proxyUrl = matchedSource.url;
