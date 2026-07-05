@@ -1,7 +1,8 @@
 import * as cheerio from 'cheerio';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
-import Anime from '../models/Anime.js'; // Model MongoDB
+import Anime from '../models/Anime.js';
+import { cleanSeriesTitle } from '../utils/stringUtils.js';
 
 let isSyncing = false;
 
@@ -19,16 +20,16 @@ export async function startBackgroundAnimeSync() {
         const count = await Anime.countDocuments({ 'sources.samehadaku.url': { $exists: true, $ne: null } });
         
         if (count === 0) {
-            log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z...");
-            runSync(true);
+            log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z penuh...");
+            runSync(true, Infinity);
         } else {
             const latestDoc = await Anime.findOne({ 'sources.samehadaku.url': { $exists: true, $ne: null } }).sort({ lastUpdated: -1 });
             const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
             const twelveHours = 12 * 60 * 60 * 1000;
             
             if (ageInMs > twelveHours || !latestDoc || !latestDoc.lastUpdated) {
-                log(`[Anime Sync] Database Samehadaku sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan (Delay 1 menit)...`);
-                setTimeout(() => runSync(false), 60000);
+                log(`[Anime Sync] Database Samehadaku sudah usang (>12 jam). Menjalankan Quick-Sync Halaman 1-3 (Delay 1 menit)...`);
+                setTimeout(() => runSync(false, 3), 60000);
             } else {
                 log(`[Anime Sync] Database Samehadaku masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
             }
@@ -37,18 +38,25 @@ export async function startBackgroundAnimeSync() {
         log("[Anime Sync] Error mengecek status database:", err.message);
     }
 
-    // Schedule every 7 days (604800000 ms) karena daftar A-Z jarang berubah
+    // 1. Quick-Sync (Hanya Halaman 1-3) setiap 6 JAM sekali agar anime baru langsung terbuat kartunya
     setInterval(() => {
-        runSync(false);
-    }, 604800000);
+        log("[Anime Sync] Menjalankan Quick-Sync 6 Jam (Halaman 1-3)...");
+        runSync(false, 3);
+    }, 6 * 60 * 60 * 1000); // 6 Jam
+
+    // 2. Full Archive Sync (Seluruh Halaman 1-50+) setiap 7 HARI sekali untuk pemeriksaan arsip mendalam
+    setInterval(() => {
+        log("[Anime Sync] Menjalankan Full Archive Sync Mingguan (Seluruh Halaman)...");
+        runSync(false, Infinity);
+    }, 7 * 24 * 60 * 60 * 1000); // 7 Hari
 }
 
-export async function runSync(isInitial = false) {
+export async function runSync(isInitial = false, maxPages = Infinity) {
     if (isSyncing) return;
     isSyncing = true;
     
     log(`\n===========================================`);
-    log(`[Anime Sync] Memulai sinkronisasi katalog...`);
+    log(`[Anime Sync] Memulai sinkronisasi katalog (Max Halaman: ${maxPages === Infinity ? 'Semua' : maxPages})...`);
     log(`===========================================\n`);
 
     const allAnime = [];
@@ -57,7 +65,7 @@ export async function runSync(isInitial = false) {
     let consecutiveFails = 0;
 
     try {
-        while (hasNext) {
+        while (hasNext && page <= maxPages) {
             const url = page === 1 ? `https://v2.samehadaku.how/daftar-anime-2/` : `https://v2.samehadaku.how/daftar-anime-2/page/${page}/`;
             log(`[Anime Sync] Scraping Halaman ${page}...`);
 
@@ -110,16 +118,21 @@ export async function runSync(isInitial = false) {
                             (imgNode.attr('srcset') ? imgNode.attr('srcset').split(' ')[0] : null) || 
                             imgNode.attr('src') || '';
 
-                        allAnime.push({
-                            judul: titleNode.text().trim(),
-                            url: linkNode.attr('href'),
-                            gambar: gambarScraper,
-                            gambarScraper,
-                            tipe: typeNode.length ? typeNode.text().trim().toUpperCase() : 'TV',
-                            skor: skorAngka || '-',
-                            status: epText || (statusNode.length ? statusNode.text().trim() : 'Completed'),
-                        });
-                        itemCount++;
+                        const rawJudul = titleNode.text().trim();
+                        const judul = cleanSeriesTitle(rawJudul);
+
+                        if (judul) {
+                            allAnime.push({
+                                judul: judul,
+                                url: linkNode.attr('href'),
+                                gambar: gambarScraper,
+                                gambarScraper,
+                                tipe: typeNode.length ? typeNode.text().trim().toUpperCase() : 'TV',
+                                skor: skorAngka || '-',
+                                status: epText || (statusNode.length ? statusNode.text().trim() : 'Completed'),
+                            });
+                            itemCount++;
+                        }
                     }
                 });
 
@@ -153,8 +166,8 @@ export async function runSync(isInitial = false) {
 
             if (!hasNext) break;
 
-            if (!hasNextPage) {
-                console.log(`[Anime Sync] Tidak ada tombol Next. Sinkronisasi selesai.`);
+            if (!hasNextPage || page >= maxPages) {
+                console.log(`[Anime Sync] Batas halaman (${page}/${maxPages}) atau akhir katalog dicapai. Scraping selesai.`);
                 hasNext = false;
             } else {
                 page++;
@@ -248,4 +261,3 @@ export async function runSync(isInitial = false) {
         isSyncing = false;
     }
 }
-
