@@ -3,7 +3,7 @@ import { getNeosatsuEpisodes } from '../controllers/neosatsuController.js';
 import * as otakudesu from '../controllers/otakudesuController.js';
 import { getKuronimeEpisodes } from '../controllers/kuronimeController.js';
 import Anime from '../models/Anime.js';
-import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug } from '../utils/stringUtils.js';
+import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle } from '../utils/stringUtils.js';
 
 const activeScrapeLocks = new Map();
 
@@ -122,6 +122,56 @@ export async function findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakude
 }
 
 /**
+ * Strategy Pattern Gateway: Mendelegasikan scraping berdasarkan provider URL
+ * dan menerapkan standarisasi judul & format episode secara terpadu.
+ */
+async function executeScraperStrategy(targetUrl) {
+    let data = null;
+    let providerName = 'samehadaku';
+
+    if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
+        providerName = 'neosatsu';
+        data = await getNeosatsuEpisodes(targetUrl);
+    } else if (targetUrl.startsWith('/anime/') || (targetUrl.includes('otakudesu') && !targetUrl.includes('samehadaku'))) {
+        providerName = 'otakudesu';
+        const slug = extractOtakuSlug(targetUrl);
+        data = await otakudesu.getOtakuEpisodesFormatted(slug);
+        if (!data) throw new Error("Anime tidak ditemukan di Otakudesu");
+    } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
+        providerName = 'kuronime';
+        data = await getKuronimeEpisodes(targetUrl);
+    } else {
+        providerName = 'samehadaku';
+        data = await getSamehadakuEpisodes(targetUrl);
+    }
+
+    if (!data) return { judul_seri: 'Unknown', daftar_episode: [] };
+
+    // 1. Standarisasi Judul Seri
+    data.judul_seri = cleanSeriesTitle(data.judul_seri);
+
+    // 2. Standarisasi & Pembersihan Daftar Episode (Unified Pipeline)
+    if (data.daftar_episode && Array.isArray(data.daftar_episode)) {
+        data.daftar_episode = data.daftar_episode
+            .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+            .map(ep => {
+                const rawNum = extractEpNum(ep.judul);
+                const finalJudul = providerName === 'neosatsu' && typeof rawNum !== 'number' 
+                    ? ep.judul 
+                    : formatEpisodeTitle(ep.judul);
+
+                return {
+                    judul: finalJudul,
+                    urls: { [providerName]: ep.url },
+                    num: typeof rawNum === 'number' && !isNaN(rawNum) ? rawNum : null
+                };
+            });
+    }
+
+    return data;
+}
+
+/**
  * Scrape dari beberapa sumber sekaligus, hitung offset, dan merge episode.
  */
 async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime }) {
@@ -147,7 +197,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
         ]);
         
         data = {
-            judul_seri: (sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || (kuroRes && kuroRes.judul_seri) || 'Unknown',
+            judul_seri: cleanSeriesTitle((sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || (kuroRes && kuroRes.judul_seri) || 'Unknown'),
             daftar_episode: []
         };
 
@@ -228,65 +278,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
         
         data.daftar_episode = mergedEps;
     } else if (targetUrl) {
-        if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
-            data = await getNeosatsuEpisodes(targetUrl);
-            if (data && data.daftar_episode) {
-                data.daftar_episode = data.daftar_episode
-                    .filter(ep => !ep.judul.toLowerCase().includes('batch'))
-                    .map(ep => {
-                        const rawNum = extractEpNum(ep.judul);
-                        return {
-                            judul: ep.judul,
-                            urls: { neosatsu: ep.url },
-                            num: typeof rawNum === 'number' && !isNaN(rawNum) ? rawNum : null
-                        };
-                    });
-            }
-        } else if (targetUrl.startsWith('/anime/') || (targetUrl.includes('otakudesu') && !targetUrl.includes('samehadaku'))) {
-            const slug = extractOtakuSlug(targetUrl);
-            data = await otakudesu.getOtakuEpisodesFormatted(slug);
-            if (!data) throw new Error("Anime tidak ditemukan di Otakudesu");
-            if (data && data.daftar_episode) {
-                data.daftar_episode = data.daftar_episode
-                    .filter(ep => !ep.judul.toLowerCase().includes('batch'))
-                    .map(ep => {
-                        const rawNum = extractEpNum(ep.judul);
-                        return {
-                            judul: formatEpisodeTitle(ep.judul),
-                            urls: { otakudesu: ep.url },
-                            num: typeof rawNum === 'number' && !isNaN(rawNum) ? rawNum : null
-                        };
-                    });
-            }
-        } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
-            data = await getKuronimeEpisodes(targetUrl);
-            if (data && data.daftar_episode) {
-                data.daftar_episode = data.daftar_episode
-                    .filter(ep => !ep.judul.toLowerCase().includes('batch'))
-                    .map(ep => {
-                        const rawNum = extractEpNum(ep.judul);
-                        return {
-                            judul: formatEpisodeTitle(ep.judul),
-                            urls: { kuronime: ep.url },
-                            num: typeof rawNum === 'number' && !isNaN(rawNum) ? rawNum : null
-                        };
-                    });
-            }
-        } else {
-            data = await getSamehadakuEpisodes(targetUrl);
-            if (data && data.daftar_episode) {
-                data.daftar_episode = data.daftar_episode
-                    .filter(ep => !ep.judul.toLowerCase().includes('batch'))
-                    .map(ep => {
-                        const rawNum = extractEpNum(ep.judul);
-                        return {
-                            judul: formatEpisodeTitle(ep.judul),
-                            urls: { samehadaku: ep.url },
-                            num: typeof rawNum === 'number' && !isNaN(rawNum) ? rawNum : null
-                        };
-                    });
-            }
-        }
+        data = await executeScraperStrategy(targetUrl);
     }
 
     if (data && data.daftar_episode && data.daftar_episode.length > 0) {

@@ -3,7 +3,7 @@ import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronimeDecryptor.js';
 import { getCache } from '../utils/cacheManager.js';
-import { formatEpisodeTitle, extractEpNumStrict } from '../utils/stringUtils.js';
+import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
 import Anime from '../models/Anime.js';
 
@@ -32,7 +32,7 @@ export async function getKuronimeEpisodes(animeUrl) {
         $ = fetchRes.$;
         slot = fetchRes.slot;
 
-        const judul = ($('h1.entry-title').text() || $('h1[itemprop="name"]').text() || '').trim();
+        const judul = cleanSeriesTitle(($('h1.entry-title').text() || $('h1[itemprop="name"]').text() || '').trim());
         const cover = $('img[itemprop="image"]').attr('src') || $('.thumb img').attr('src') || '';
 
         const daftar_episode = [];
@@ -87,7 +87,7 @@ export async function getKuronimeServers(episodeUrl) {
 
         // Judul episode
         let judul = ($('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
-        judul = judul.replace(/^Nonton\s+/i, ''); // Hapus kata "Nonton" di awal judul
+        judul = cleanSeriesTitle(judul.replace(/^Nonton\s+/i, '')); // Hapus kata "Nonton" di awal judul dan bersihkan SEO text
 
         // Navigasi prev/next
         let nav_prev = null, nav_next = null;

@@ -3,27 +3,14 @@ import * as cheerio from 'cheerio';
 import { searchTokusatsu } from '../services/metadata/tmdb.js';
 import { filterByTokuType, decryptNeosatsuLink, normalizeGDriveUrl } from '../utils/neosatsuUtils.js';
 import { getCache } from '../utils/cacheManager.js';
+import { cleanSeriesTitle } from '../utils/stringUtils.js';
 
 export const cache = getCache('neosatsu', 3600); // 1 jam TTL
 const IGNORED_CATS = ['episode', 'movie', 'batch', 'completed', 'ongoing', 'kamen rider', 'super sentai', 'ultraman', 'metal hero', 'tokusatsu', 'spesial', 'spin-off', 'hyper battle dvd', 'project red', 'dvd', 'tv series', 'series'];
 
 function cleanTitle(title) {
     if (!title) return '';
-    let t = title;
-    // Hapus Subtitle Indonesia
-    t = t.replace(/Subtitle Indonesia.*$/i, '');
-    t = t.replace(/Sub Indo.*$/i, '');
-    // Hapus Episode XX - XX Tamat / Eps XX - XX
-    t = t.replace(/(?:Episode|Eps)\s*\d+\s*-\s*\d+.*$/i, '');
-    t = t.replace(/(?:Episode|Eps)\s*\d+.*$/i, '');
-    // Hapus 1 - 49 Tamat (tanpa kata Episode)
-    t = t.replace(/\s*\d+\s*-\s*\d+\s*(?:Tamat|End)?.*$/i, '');
-    // Hapus (Batch), [Batch], BD Batch, dll
-    t = t.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '');
-    // Hapus (End), [End], Tamat
-    t = t.replace(/\s*[\(\[]?(?:End|Tamat)[\)\]]?\s*/gi, '');
-    // Hapus karakter non-alfanumerik di ujung
-    return t.replace(/[-\s]+$/, '').trim();
+    return cleanSeriesTitle(title);
 }
 /**
  * [TAHAP 1] Mengambil katalog dari Neosatsu. 

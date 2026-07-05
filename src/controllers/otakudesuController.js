@@ -6,7 +6,7 @@ import Anime from '../models/Anime.js';
 import { getCache } from '../utils/cacheManager.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
-import { formatEpisodeTitle, extractEpNumStrict } from '../utils/stringUtils.js';
+import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
 
 const cache = getCache('otakudesu', 3600);
@@ -63,7 +63,7 @@ export async function getOtakuEpisodesFormatted(slug) {
     }
 
     const result = {
-        judul_seri: finalTitle,
+        judul_seri: cleanSeriesTitle(finalTitle),
         cover_scraper: details.thumb || '',
         daftar_episode: details.episodes.map(ep => {
             const epParts = ep.url.split('/').filter(Boolean);
@@ -196,9 +196,7 @@ export async function getServersInternal(url) {
         let judul = $('.venutama h1.posttl').text().trim();
         if (judul) {
             judul = judul.replace(/^Nonton\s+/i, '');
-            judul = judul.replace(/\s*Subtitle Indonesia$/i, '');
-            judul = judul.replace(/\s*Sub Indo$/i, '');
-            judul = judul.trim();
+            judul = cleanSeriesTitle(judul);
         }
 
         // Parsing Prev / Next Navigation dari elemen HTML (Otakudesu class: flir)

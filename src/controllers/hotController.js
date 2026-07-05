@@ -2,6 +2,7 @@ import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
+import { cleanSeriesTitle } from '../utils/stringUtils.js';
 
 const cache = getCache('hot', 3600);
 
@@ -32,7 +33,7 @@ export async function getHotAnime() {
 
         $('.widgetseries ul li a.series').each((_, el) => {
             const url = $(el).attr('href');
-            const judul = $(el).find('.judul').text().trim();
+            const judul = cleanSeriesTitle($(el).find('.judul').text() || '');
             const gambar = $(el).find('img').attr('src') || $(el).find('img').attr('data-lazy-src') || '';
             const skorRaw = $(el).find('.rating').text().trim();
             const skor = skorRaw.replace(/[^\d.]/g, '') || '-';

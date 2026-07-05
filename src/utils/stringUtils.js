@@ -235,3 +235,26 @@ export function extractOtakuSlug(val) {
     if (val.includes(':')) return val.split(':').pop();
     return val.replace(/^\/anime\//, '').replace(/^\//, '');
 }
+
+/**
+ * Membersihkan judul anime dari teks SEO (Sub Indo, Subtitle Indonesia, dll)
+ * serta metadata episode/batch (Episode X, Batch, End, Tamat)
+ * dan menstandarkannya agar rapi untuk disimpan di database/UI.
+ */
+export function cleanSeriesTitle(title) {
+    if (!title) return '';
+    let t = String(title).trim();
+    // 1. Hapus nama situs & kata kunci SEO (Sub Indo, Subtitle Indonesia, dll.)
+    t = t.replace(/[-–|]\s*(?:Samehadaku|Otakudesu|Kuronime|Neosatsu).*$/i, '');
+    t = t.replace(/\s*(?:\(?Sub(?:title)?\s*Indo(?:nesia)?\)?)\s*/gi, '');
+    // 2. Hapus metadata episode & batch (Episode XX - XX, Tamat, End, OVA, Batch)
+    t = t.replace(/(?:Episode|Eps)\s*\d+\s*-\s*\d+.*$/i, '');
+    t = t.replace(/(?:Episode|Eps)\s*\d+.*$/i, '');
+    t = t.replace(/\s*\d+\s*-\s*\d+\s*(?:Tamat|End)?.*$/i, '');
+    t = t.replace(/\s*OVA\s*\d*.*$/i, '');
+    t = t.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '');
+    t = t.replace(/\s*[\(\[]?(?:End|Tamat)[\)\]]?\s*/gi, '');
+    // 3. Hapus pemisah dan karakter sisa di akhir string
+    t = t.replace(/\s*[-–|]\s*$/i, '');
+    return t.replace(/[-\s]+$/, '').replace(/\s+/g, ' ').trim();
+}

@@ -3,7 +3,7 @@ import { fetchWithCF } from '../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import Anime from '../models/Anime.js';
-import { extractEpNumStrict } from '../utils/stringUtils.js';
+import { extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
 import { scrapeVideoServers } from '../services/extractors/videoExtractor.js';
 
@@ -32,7 +32,7 @@ export async function getSamehadakuEpisodes(targetUrl) {
             throw new Error("Target URL returned 404");
         }
 
-        const rawTitle = ($('title').text() || '').replace(/[-–|].*$/, '').trim();
+        const rawTitle = cleanSeriesTitle($('title').text() || '');
         const daftar_episode = [];
 
         const coverImg = 
