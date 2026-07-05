@@ -282,8 +282,8 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
     let matchedSource = null;
     try {
         let primaryPromise = getServersBasedOnUrl(episodeUrl);
-        let alternativePromise = Promise.resolve([]);
-        let secondaryAlternativePromise = Promise.resolve([]);
+        let alternativePromise = null;
+        let secondaryAlternativePromise = null;
 
         let primaryData = null;
         if (!episodeTitle || !seriesTitle) {
@@ -311,12 +311,12 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                     otakuUrl = new URL('http://localhost' + otakuUrl).searchParams.get('url') || otakuUrl;
                 }
                 const p = getOtakuServers(otakuUrl).then(res => res?.servers || []).catch(() => []);
-                if (alternativePromise === Promise.resolve([])) alternativePromise = p;
+                if (!alternativePromise) alternativePromise = p;
                 else secondaryAlternativePromise = p;
             }
             if (urlsObj.kuronime && !episodeUrl.includes('kuronime')) {
                 const p = getKuronimeServers(urlsObj.kuronime).then(res => res?.servers || []).catch(() => []);
-                if (alternativePromise === Promise.resolve([])) alternativePromise = p;
+                if (!alternativePromise) alternativePromise = p;
                 else secondaryAlternativePromise = p;
             }
         } else if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
@@ -341,11 +341,11 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
 
         const [resolvedPrimary, alternativeServers, secondaryAlternativeServers] = await Promise.all([
             primaryPromise,
-            alternativePromise.catch(err => {
+            (alternativePromise || Promise.resolve([])).catch(err => {
                 console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
                 return [];
             }),
-            secondaryAlternativePromise.catch(err => {
+            (secondaryAlternativePromise || Promise.resolve([])).catch(err => {
                 console.error(`${logPrefix} Secondary Alternative Fetch Error:`, err.message);
                 return [];
             })

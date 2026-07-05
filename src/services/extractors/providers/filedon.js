@@ -66,7 +66,7 @@ export async function extract(embedUrl, req) {
                 withCredentials: true
             });
             const cookies = csrfRes.headers['set-cookie'] || [];
-            const xsrfToken = cookies.find(c => c.startsWith('XSRF-TOKEN='))?.split('=')[1]?.split(';')[0];
+            const xsrfToken = cookies.find(c => c.startsWith('XSRF-TOKEN='))?.slice('XSRF-TOKEN='.length)?.split(';')[0];
             const cookieStr = cookies.map(c => c.split(';')[0]).join('; ');
 
             const downloadRes = await axios.post(`${baseUrl}/embed/${slug}/download/start`, {}, {

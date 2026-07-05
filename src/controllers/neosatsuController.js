@@ -568,8 +568,8 @@ export async function getNeosatsuEpisodes(targetUrl) {
         // Sorting Pintar
         if (daftar_episode.length > 1) {
             const getEpNum = (title) => {
-                const match = title.match(/Episode\s*(\d+)/i) || title.match(/Ep\s*(\d+)/i);
-                return match ? parseInt(match[1]) : -1;
+                const match = title.match(/Episode\s*(\d+(?:\.\d+)?)/i) || title.match(/Ep\s*(\d+(?:\.\d+)?)/i);
+                return match ? parseFloat(match[1]) : -1;
             };
 
             // Deduplikasi
