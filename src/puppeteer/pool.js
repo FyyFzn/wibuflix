@@ -88,7 +88,11 @@ export async function getBrowser() {
                     '--safebrowsing-disable-auto-update',
                     '--disable-breakpad',
                     '--disable-crash-reporter',
-                    '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process'
+                    '--js-flags=--max-old-space-size=256',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-renderer-backgrounding',
+                    '--enable-features=NetworkService,NetworkServiceInProcess',
+                    '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,CalculateNativeWinOcclusion,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,AutofillServerCommunication,UniversalFederatedAnalytics'
                 ]
             };
             
@@ -97,7 +101,19 @@ export async function getBrowser() {
                 console.log(`[Browser] Menggunakan Chromium OS: ${execPath}`);
             }
             
-            const browser = await puppeteer.launch(launchOptions);
+            let browser = null;
+            const maxRetries = 3;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    browser = await puppeteer.launch(launchOptions);
+                    break;
+                } catch (err) {
+                    console.warn(`[Browser] ⚠️ Percobaan ${attempt}/${maxRetries} gagal membuka browser (${err.message})...`);
+                    if (attempt === maxRetries) throw err;
+                    // Tunggu 3 detik sebelum retry agar lonjakan CPU/RAM saat startup mereda
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+            }
             browserInstance = browser;
             
             // Log versi browser untuk debugging kompatibilitas
@@ -106,8 +122,8 @@ export async function getBrowser() {
             
             // Diagnostik: pantau kapan browser mati secara tiba-tiba
             browser.on('disconnected', () => {
-                console.error(`[Browser] ⚠️ BROWSER MATI TIBA-TIBA! (disconnected event) — Kemungkinan OOM Killer atau crash.`);
                 if (browserInstance === browser) {
+                    console.error(`[Browser] ⚠️ BROWSER MATI TIBA-TIBA! (disconnected event) — Kemungkinan OOM Killer atau crash.`);
                     browserInstance = null;
                 }
             });
@@ -412,12 +428,13 @@ export async function fetchPage(url, signal = null) {
 export async function closeAllBrowsers() {
     console.log('[PagePool] Menutup semua instance browser...');
     if (browserInstance) {
+        const instanceToClose = browserInstance;
+        browserInstance = null;
         try {
-            await browserInstance.close();
+            await instanceToClose.close();
         } catch (e) {
             console.warn('[PagePool] Error menutup browser:', e.message);
         }
-        browserInstance = null;
     }
 }
 
