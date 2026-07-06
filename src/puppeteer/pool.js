@@ -78,23 +78,7 @@ export async function getBrowser() {
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
-                    '--no-zygote',
-                    '--disable-seccomp-filter-sandbox',
-                    '--disable-namespace-sandbox',
-                    '--disable-software-rasterizer',
-                    '--disable-extensions',
-                    '--disable-background-networking',
-                    '--disable-default-apps',
-                    '--disable-sync',
-                    '--disable-translate',
-                    '--hide-scrollbars',
-                    '--metrics-recording-only',
-                    '--mute-audio',
-                    '--no-first-run',
-                    '--safebrowsing-disable-auto-update',
-                    '--ignore-certificate-errors',
-                    '--ignore-ssl-errors',
-                    '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess'
+                    '--js-flags=--max-old-space-size=512'
                 ]
             });
             browserInstance = browser;
@@ -208,7 +192,7 @@ export async function initPagePool() {
     poolReady = true;
     
     console.log('[PagePool] Inisialisasi pool dan warming up CF cookie...');
-    await getBrowser();
+    await getBrowser().catch(e => console.error('[PagePool] Gagal membuka browser awal:', e.message));
     await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up awal gagal:', e.message));
 
     // Auto-refresh cookie setiap 30 menit
