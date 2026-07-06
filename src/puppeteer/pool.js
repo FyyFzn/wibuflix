@@ -52,16 +52,37 @@ export async function getBrowser() {
     }
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
-        browserInstance = await puppeteer.launch({
-            headless: true,
-            protocolTimeout: 300000,
-            args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        });
+        try {
+            browserInstance = await puppeteer.launch({
+                headless: true,
+                protocolTimeout: 300000,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-dbus',
+                    '--disable-software-rasterizer',
+                    '--disable-extensions',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--metrics-recording-only',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--safebrowsing-disable-auto-update',
+                    '--ignore-certificate-errors',
+                    '--ignore-ssl-errors',
+                    '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess'
+                ]
+            });
+        } catch (err) {
+            console.error('[Browser] Gagal membuka browser instance:', err.message);
+            browserInstance = null;
+            throw err;
+        }
     }
     return browserInstance;
 }
@@ -77,7 +98,12 @@ function isBrowserFatalError(error) {
            msg.includes('connection closed') ||
            msg.includes('session closed') ||
            msg.includes('target closed') ||
-           msg.includes('disconnected');
+           msg.includes('disconnected') ||
+           msg.includes('failed to launch') ||
+           msg.includes('crashed') ||
+           msg.includes('code: null') ||
+           msg.includes('dbus') ||
+           msg.includes('socket');
 }
 
 export async function createPage(targetContextOrBrowser) {
