@@ -55,6 +55,10 @@ export async function getBrowser() {
         browserInstance = await puppeteer.launch({
             headless: true,
             protocolTimeout: 120000,
+            env: {
+                ...process.env,
+                DBUS_SESSION_BUS_ADDRESS: '/dev/null'
+            },
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
@@ -67,7 +71,14 @@ export async function getBrowser() {
                 '--mute-audio',
                 '--no-default-browser-check',
                 '--no-first-run',
-                '--disable-background-networking'
+                '--disable-background-networking',
+                '--no-zygote',
+                '--single-process',
+                '--disable-seccomp-filter-sandbox',
+                '--disable-namespace-sandbox',
+                '--disable-site-isolation-trials',
+                '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess',
+                '--js-flags="--max-old-space-size=256"'
             ]
         });
     }
