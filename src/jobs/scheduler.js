@@ -15,7 +15,7 @@ export function initScheduler() {
     startBackgroundLatestSync();
     startBackgroundKuronimeSync();
 
-    // 2. Memulai proses unified sync (dijadwalkan setelah 10 detik agar server stabil)
+    // 2. Memulai proses unified sync & neosatsu (dijadwalkan setelah 60 detik agar Chromium selesai booting & warming up tanpa lonjakan RAM/CPU)
     setTimeout(() => {
         const runUnifiedLoop = async () => {
             let hasMore = false;
@@ -36,7 +36,7 @@ export function initScheduler() {
             setTimeout(runNeosatsuLoop, 604800000);
         };
         runNeosatsuLoop();
-    }, 10000);
+    }, 60000);
 
     // 3. Pembersihan file sampah temporer (Garbage Collection) setiap 12 jam
     import('fs').then(fs => {
