@@ -63,22 +63,14 @@ export async function getBrowser() {
     console.log('[Browser] Membuka instance baru...');
     browserLaunchPromise = (async () => {
         try {
-            const cleanEnv = { ...process.env };
-            for (const key of Object.keys(cleanEnv)) {
-                if (key.toUpperCase().includes('DBUS')) delete cleanEnv[key];
-            }
-
             const browser = await puppeteer.launch({
                 headless: true,
-                timeout: 180000,
-                protocolTimeout: 180000,
-                env: cleanEnv,
+                protocolTimeout: 120000,
                 args: [
                     '--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--js-flags=--max-old-space-size=512'
+                    '--disable-gpu'
                 ]
             });
             browserInstance = browser;
@@ -99,7 +91,7 @@ export async function createPage(targetContextOrBrowser) {
         if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
         const type = req.resourceType();
         const url = req.url();
-        if (['font', 'media'].includes(type)) return req.abort().catch(() => {});
+        if (['font', 'image', 'stylesheet', 'media'].includes(type)) return req.abort().catch(() => {});
         if (url.includes('googlesyndication') || url.includes('doubleclick') ||
             url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
         req.continue().catch(() => {});
