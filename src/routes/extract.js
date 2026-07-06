@@ -500,7 +500,7 @@ function removeActiveExtractions(checkSlugs, episodeSlugs) {
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null) {
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null, customSignal = null) {
     uniqueId = await resolveCanonicalUniqueId(null, episodeUrl, seriesTitle, uniqueId);
     // Global Slug Normalization: selalu teruskan seriesTitle & uniqueId agar slugsToCheck dan episodeSlugsToCheck konsisten 100% di seluruh pipeline
     const { seriesSlug: extractedSeriesSlug, episodeSlug, oldSeriesSlug: extractedOldSlug, slugsToCheck: extractedSlugs, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, seriesTitle, uniqueId, episodeTitle); 
@@ -512,6 +512,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
     
     const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
+    const activeSignal = customSignal || (source === 'prefetch' ? prefetchAbortController.signal : null);
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
     if (status === 'READY' || status === 'UPLOADING' || (status === 'FAILED' && source !== 'queue')) {
@@ -533,10 +534,22 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                if (activeSignal && activeSignal.aborted) {
+                    console.info(`${logPrefix} Dibatalkan oleh pengguna sebelum percobaan ${attempt}.`);
+                    removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                    return { success: false, reason: 'UPLOAD_CANCELLED' };
+                }
+
                 const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
                 const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix);
                 matchedSource = result.matchedSource;
                 
+                if (activeSignal && activeSignal.aborted) {
+                    console.info(`${attemptPrefix} Dibatalkan oleh pengguna saat mencari source video.`);
+                    removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                    return { success: false, reason: 'UPLOAD_CANCELLED' };
+                }
+
                 if (!matchedSource) {
                     console.info(`${attemptPrefix} Tidak ada server untuk: ${episodeSlug}`);
                     if (attempt === maxAttempts) {
@@ -556,7 +569,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 return { success: true };
             } catch (err) {
                 proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
-                const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || (source === 'prefetch' && prefetchAbortController.signal.aborted);
+                const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || (activeSignal && activeSignal.aborted);
                 if (isCanceled) {
                     console.info(`${logPrefix} Upload dibatalkan oleh pengguna (cancel/exit app). Menghentikan proses retry.`);
                     removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
@@ -598,6 +611,8 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
     if (activePrefetchLoops.has(loopKey)) return;
     activePrefetchLoops.add(loopKey);
 
+    const activeSignal = prefetchAbortController.signal;
+
     try {
 
     for (const epUrl of validUrls) {
@@ -628,7 +643,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
             const maxWaitAttempts = 30; // Maksimal tunggu 5 menit (30 x 10 detik) untuk mencegah Thread Blocking abadi / zombie process
 
             while ((activeUploadExists || globalUploadCount >= 3) && waitAttempts < maxWaitAttempts) {
-                if (prefetchAbortController.signal.aborted) {
+                if (activeSignal.aborted) {
                     console.info(`[PrefetchWindow] Dibatalkan oleh pengguna saat menunggu antrean untuk ${episodeSlug}`);
                     return;
                 }
@@ -651,10 +666,10 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
                 continue;
             }
 
-            if (prefetchAbortController.signal.aborted) return;
+            if (activeSignal.aborted) return;
 
-            const res = await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck, '', uniqueId);
-            if ((res && res.reason === 'UPLOAD_CANCELLED') || prefetchAbortController.signal.aborted) {
+            const res = await prefetchOneEpisode(seriesSlug, epUrl, seriesTitle, 'prefetch', null, slugsToCheck, '', uniqueId, activeSignal);
+            if ((res && res.reason === 'UPLOAD_CANCELLED') || activeSignal.aborted) {
                 console.info(`[PrefetchWindow] Dibatalkan oleh pengguna. Menghentikan seluruh antrean prefetch window.`);
                 return;
             }
@@ -665,7 +680,7 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
                 await new Promise(r => setTimeout(r, 30000));
             }
         } catch (err) {
-            const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || prefetchAbortController.signal.aborted;
+            const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || activeSignal.aborted;
             if (isCanceled) {
                 console.info(`[PrefetchWindow] Dibatalkan oleh pengguna. Menghentikan seluruh antrean prefetch window.`);
                 return;
@@ -990,6 +1005,11 @@ router.all(['/api/report-broken', '/report-broken'], express.json(), async (req,
         // Hapus blob dari Azure dan bersihkan cache agar upload baru dari server lain bisa berjalan
         await invalidateAndDeleteBlob(slugsToCheck, episodeSlugsToCheck);
         removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);
+        
+        // Batalkan juga prefetch yang sedang berjalan agar tidak membuang resource VPS
+        prefetchAbortController.abort();
+        prefetchAbortController = new AbortController();
+        cancelAllUploads('prefetch');
         
         res.json({ success: true, message: "Video rusak/tanpa subtitle berhasil dihapus dari cloud. Silakan ganti server." });
     } catch (e) {
