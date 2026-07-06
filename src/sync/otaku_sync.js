@@ -153,8 +153,8 @@ export async function startBackgroundOtakuSync() {
         const count = await Anime.countDocuments({ 'sources.otakudesu': { $exists: true } });
         
         if (count === 0) {
-            log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal...");
-            syncOtakudesu();
+            log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal (Delay 90 detik)...");
+            setTimeout(() => syncOtakudesu(), 90000);
         } else {
             // Otakudesu A-Z list jarang update secara masif, kita bisa cek dari lastUpdated
             const latestDoc = await Anime.findOne({ 'sources.otakudesu': { $exists: true } }).sort({ lastUpdated: -1 });
@@ -162,8 +162,8 @@ export async function startBackgroundOtakuSync() {
             const sixHours = 6 * 60 * 60 * 1000;
             
             if (ageInMs > sixHours || !latestDoc || !latestDoc.lastUpdated) {
-                log(`[OtakuSync] Database Otakudesu usang. Memulai sinkronisasi pembaruan...`);
-                syncOtakudesu();
+                log(`[OtakuSync] Database Otakudesu usang. Memulai sinkronisasi pembaruan (Delay 90 detik)...`);
+                setTimeout(() => syncOtakudesu(), 90000);
             } else {
                 log(`[OtakuSync] Database Otakudesu masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
             }
