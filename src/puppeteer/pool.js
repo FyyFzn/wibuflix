@@ -52,9 +52,14 @@ export async function getBrowser() {
     }
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
+        const cleanEnv = { ...process.env };
+        delete cleanEnv.DBUS_SESSION_BUS_ADDRESS;
+        delete cleanEnv.DBUS_SYSTEM_BUS_ADDRESS;
+
         browserInstance = await puppeteer.launch({
             headless: true,
             protocolTimeout: 120000,
+            env: cleanEnv,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
