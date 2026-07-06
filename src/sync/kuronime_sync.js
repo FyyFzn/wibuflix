@@ -145,8 +145,8 @@ export async function startBackgroundKuronimeSync() {
         const count = await Anime.countDocuments({ 'sources.kuronime.url': { $ne: null } });
 
         if (count === 0) {
-            log('[KuronimeSync] Database Kuronime kosong. Memulai sinkronisasi awal (Delay 90 detik)...');
-            setTimeout(() => syncKuronime(), 90000);
+            log('[KuronimeSync] Database Kuronime kosong. Memulai sinkronisasi awal...');
+            setTimeout(() => syncKuronime(), 10000);
         } else {
             const latestDoc = await Anime
                 .findOne({ 'sources.kuronime.url': { $ne: null } })
@@ -157,8 +157,8 @@ export async function startBackgroundKuronimeSync() {
             const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
             if (ageInMs > sevenDays) {
-                log('[KuronimeSync] Data Kuronime sudah usang (>7 hari). Memulai sinkronisasi pembaruan (Delay 90 detik)...');
-                setTimeout(() => syncKuronime(), 90000);
+                log('[KuronimeSync] Data Kuronime sudah usang (>7 hari). Memulai sinkronisasi pembaruan...');
+                setTimeout(() => syncKuronime(), 10000);
             } else {
                 log(`[KuronimeSync] ${count} anime Kuronime masih baru (${Math.round(ageInMs / 1000 / 60 / 60)} jam). Melewati sync awal.`);
             }
