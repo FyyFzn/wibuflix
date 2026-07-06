@@ -40,30 +40,69 @@ export function setCfCookie(domain, cookieString, cookiesArray) {
     }
 }
 
+let browserLaunchPromise = null;
+
 export async function getBrowser() {
     if (browserInstance) {
         try {
             await browserInstance.version();
+            return browserInstance;
         } catch {
             console.log('[Browser] Instance lama mati, membuka yang baru...');
             try { browserInstance.close().catch(() => {}); } catch(e){}
             browserInstance = null;
         }
     }
-    if (!browserInstance) {
-        console.log('[Browser] Membuka instance baru...');
-        browserInstance = await puppeteer.launch({
-            headless: true,
-            protocolTimeout: 120000,
-            args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        });
+
+    // Mutex Lock: Jika browser sedang dalam proses dibuka (launching), tunggu promise yang sama!
+    if (browserLaunchPromise) {
+        console.log('[Browser] Menunggu instance browser yang sedang dibuka...');
+        return await browserLaunchPromise;
     }
-    return browserInstance;
+
+    console.log('[Browser] Membuka instance baru...');
+    browserLaunchPromise = (async () => {
+        try {
+            const cleanEnv = { ...process.env };
+            for (const key of Object.keys(cleanEnv)) {
+                if (key.toUpperCase().includes('DBUS')) delete cleanEnv[key];
+            }
+
+            const browser = await puppeteer.launch({
+                headless: true,
+                protocolTimeout: 180000,
+                env: cleanEnv,
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-seccomp-filter-sandbox',
+                    '--disable-namespace-sandbox',
+                    '--disable-software-rasterizer',
+                    '--disable-extensions',
+                    '--disable-background-networking',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--metrics-recording-only',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--safebrowsing-disable-auto-update',
+                    '--ignore-certificate-errors',
+                    '--ignore-ssl-errors',
+                    '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess'
+                ]
+            });
+            browserInstance = browser;
+            return browser;
+        } finally {
+            browserLaunchPromise = null;
+        }
+    })();
+
+    return await browserLaunchPromise;
 }
 
 export async function createPage(targetContextOrBrowser) {
