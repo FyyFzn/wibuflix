@@ -42,6 +42,10 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     xdg-utils \
     wget \
+    unzip \
+    tar \
+    bzip2 \
+    xz-utils \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
