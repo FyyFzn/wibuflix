@@ -6,7 +6,7 @@ puppeteer.use(StealthPlugin());
 let browserInstance = null;
 
 // Batas konkurensi maksimal untuk VPS Azure B1 (RAM terbatas)
-const MAX_REGULAR_CONCURRENCY = 2;
+const MAX_REGULAR_CONCURRENCY = 1; // Diturunkan dari 2 ke 1 untuk mencegah OOM saat sync serentak
 const MAX_EXTRACTOR_CONCURRENCY = 1;
 
 let activeRegularCount = 0;
@@ -53,32 +53,30 @@ export async function getBrowser() {
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
-            headless: true,
+            headless: false, // Mode GUI wajib aktif untuk lolos verifikasi Cloudflare Turnstile
             protocolTimeout: 120000,
             env: {
                 ...process.env,
-                DBUS_SESSION_BUS_ADDRESS: '/dev/null'
+                DBUS_SESSION_BUS_ADDRESS: 'disabled:'
             },
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-dbus',
-                '--disable-software-rasterizer',
-                '--disable-extensions',
-                '--disable-breakpad',
-                '--mute-audio',
+                '--window-size=1920,1080',
+                '--start-maximized',
+                '--disable-blink-features=AutomationControlled',
                 '--no-default-browser-check',
                 '--no-first-run',
                 '--disable-background-networking',
-                '--no-zygote',
-                '--single-process',
                 '--disable-seccomp-filter-sandbox',
                 '--disable-namespace-sandbox',
                 '--disable-site-isolation-trials',
                 '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess',
-                '--js-flags="--max-old-space-size=256"'
+                '--renderer-process-limit=1',
+                '--disk-cache-size=1',
+                '--media-cache-size=1',
+                '--js-flags="--max-old-space-size=128"'
             ]
         });
     }

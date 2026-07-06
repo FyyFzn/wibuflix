@@ -67,6 +67,8 @@ export async function fetchWithCF(url, options = {}) {
     }
 
     const timeout = options.timeout || 60000;
+    let hostname = 'v2.samehadaku.how';
+    try { hostname = new URL(url).hostname; } catch (e) {}
     
     // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku)
     const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku');
@@ -74,8 +76,6 @@ export async function fetchWithCF(url, options = {}) {
     let html = '';
     if (!isCloudflareStrict) {
         try {
-            let hostname = 'v2.samehadaku.how';
-            try { hostname = new URL(url).hostname; } catch (e) {}
             const cookieStr = getCfCookie(hostname);
 
             const response = await axios.get(url, {
@@ -108,7 +108,7 @@ export async function fetchWithCF(url, options = {}) {
     try {
         if (!html || html.trim() === '') {
             console.log(`[scrapeHelper] Fallback ke Puppeteer page.goto: ${url}`);
-            slot = await acquireFromPool();
+            slot = await acquireFromPool(hostname);
             const page = slot.page;
 
             // ⚠️ FIX 1: Inject cookie CF yang ada sebelum navigasi
@@ -141,7 +141,7 @@ export async function fetchWithCF(url, options = {}) {
                 await refreshCfCookie(url);
 
                 // Retry dengan cookie baru
-                slot = await acquireFromPool();
+                slot = await acquireFromPool(hostname);
                 const retryPage = slot.page;
                 await injectCFCookies(retryPage, url);
                 await retryPage.goto(url, { waitUntil: 'networkidle2', timeout }).catch(() =>
