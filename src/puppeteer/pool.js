@@ -53,13 +53,14 @@ export async function getBrowser() {
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
-            headless: false, // Mode GUI wajib aktif untuk lolos verifikasi Cloudflare Turnstile
+            headless: 'new', // New Headless Mode (Full Chrome tanpa Xvfb/X11, cocok untuk Azure CI/CD & kebal Cloudflare)
             protocolTimeout: 120000,
             env: {
                 ...process.env,
                 DBUS_SESSION_BUS_ADDRESS: 'disabled:'
             },
             args: [
+                '--headless=new',
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
