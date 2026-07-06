@@ -8,6 +8,7 @@
 FROM node:20-slim
 
 # Install Chromium dependencies
+# Install Chromium and all required X11/DRI/Mesa/Pango dependencies
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -17,18 +18,31 @@ RUN apt-get update && apt-get install -y \
     libatk1.0-0 \
     libcups2 \
     libdbus-1-3 \
+    libdrm2 \
     libgbm1 \
+    libgdk-pixbuf-2.0-0 \
+    libglib2.0-0 \
     libgtk-3-0 \
     libnspr4 \
     libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libx11-6 \
     libx11-xcb1 \
+    libxcb1 \
+    libxcb-dri3-0 \
     libxcomposite1 \
     libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
     libxrandr2 \
+    libxrender1 \
+    libxshmfence1 \
+    libxtst6 \
     xdg-utils \
     wget \
     ca-certificates \
-    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Puppeteer to use system Chromium
