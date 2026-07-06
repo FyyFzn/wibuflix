@@ -59,7 +59,15 @@ export async function getBrowser() {
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--disable-dbus',
+                '--disable-software-rasterizer',
+                '--disable-extensions',
+                '--disable-breakpad',
+                '--mute-audio',
+                '--no-default-browser-check',
+                '--no-first-run',
+                '--disable-background-networking'
             ]
         });
     }
