@@ -63,8 +63,8 @@ export async function getBrowser() {
     console.log('[Browser] Membuka instance baru...');
     browserLaunchPromise = (async () => {
         try {
-            // Gunakan Chromium OS jika tersedia (Docker), atau biarkan Puppeteer cari sendiri (lokal)
-            const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || null;
+            // Gunakan official Chrome for Testing (CfT) bawaan Puppeteer
+            // (Abaikan process.env.PUPPETEER_EXECUTABLE_PATH agar tidak crash memakai /usr/bin/chromium di Azure)
             
             const launchOptions = {
                 headless: true,
@@ -104,10 +104,7 @@ export async function getBrowser() {
                 ]
             };
             
-            if (execPath) {
-                launchOptions.executablePath = execPath;
-                console.log(`[Browser] Menggunakan Chromium OS: ${execPath}`);
-            }
+            console.log('[Browser] Menggunakan official Chrome for Testing (CfT) bawaan Puppeteer...');
             
             let browser = null;
             const maxRetries = 3;
