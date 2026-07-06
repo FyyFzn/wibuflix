@@ -1,8 +1,8 @@
-import axios from 'axios';
 import * as cheerio from 'cheerio';
+import axios from 'axios';
 import { fileURLToPath } from 'url';
 import Anime from '../models/Anime.js';
-import { cleanSeriesTitle, normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
+import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 
 const log = (...args) => {
     if (global.forceLog) global.forceLog(...args);
@@ -11,36 +11,33 @@ const log = (...args) => {
 
 /**
  * Sinkronisasi katalog anime dari Kuronime (A-Z list).
- * Menggunakan fetchWithCF agar kebal Cloudflare dan isSafeToMerge agar tidak ada duplikasi kartu.
+ * Menggunakan Fuzzy Matching (isSafeToMerge) agar tidak ada duplikasi kartu.
  */
 export async function syncKuronime() {
-    log('[KuronimeSync] Memulai sinkronisasi katalog Kuronime (menggunakan Axios HTTP)...');
+    log('[KuronimeSync] Memulai sinkronisasi katalog Kuronime...');
+    const list = [];
+
     try {
         // URL list A-Z yang menampilkan semua anime dalam satu halaman (tidak perlu pagination)
         const { data } = await axios.get('https://kuronime.sbs/anime/?list', {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-            },
-            timeout: 25000
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            timeout: 15000
         });
 
-        if (!data) {
-            log('[KuronimeSync] Gagal memuat halaman A-Z Kuronime.');
-            return;
-        }
-
         const $ = cheerio.load(data);
-        const list = [];
 
         // Selector terverifikasi: menghasilkan ~2378 anime dalam sekali fetch
         $('.soralist ul li a').each((_, el) => {
-            const rawTitle = $(el).text().trim();
+            let title = $(el).text().trim();
             const url = $(el).attr('href');
-            if (!rawTitle || !url) return;
+            if (!title || !url) return;
 
-            // Bersihkan embel-embel judul menggunakan fungsi global
-            const title = cleanSeriesTitle(rawTitle);
-            if (!title) return;
+            // Bersihkan embel-embel
+            title = title
+                .replace(/\s*Subtitle\s*Indonesia\s*/i, '')
+                .replace(/\s*Sub\s*Indo\s*/i, '')
+                .replace(/\s*Batch\s*/i, '')
+                .trim();
 
             const parts = url.replace(/\/$/, '').split('/');
             const slug = parts[parts.length - 1];
@@ -141,7 +138,7 @@ export async function syncKuronime() {
 }
 
 /**
- * Jalankan sync sekali saat startup (jika perlu), lalu setiap 6 jam.
+ * Jalankan sync sekali saat startup (jika perlu), lalu setiap 7 hari.
  */
 export async function startBackgroundKuronimeSync() {
     try {
@@ -157,21 +154,21 @@ export async function startBackgroundKuronimeSync() {
             const ageInMs = latestDoc?.lastUpdated
                 ? Date.now() - latestDoc.lastUpdated.getTime()
                 : Infinity;
-            const sixHours = 6 * 60 * 60 * 1000;
+            const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
-            if (ageInMs > sixHours) {
-                log('[KuronimeSync] Data Kuronime sudah usang (>6 jam). Memulai sinkronisasi pembaruan...');
+            if (ageInMs > sevenDays) {
+                log('[KuronimeSync] Data Kuronime sudah usang (>7 hari). Memulai sinkronisasi pembaruan...');
                 syncKuronime();
             } else {
-                log(`[KuronimeSync] ${count} anime Kuronime masih baru (${Math.round(ageInMs / 1000 / 60)} menit). Melewati sync awal.`);
+                log(`[KuronimeSync] ${count} anime Kuronime masih baru (${Math.round(ageInMs / 1000 / 60 / 60)} jam). Melewati sync awal.`);
             }
         }
     } catch (err) {
         log('[KuronimeSync] Error cek status:', err.message);
     }
 
-    // Ulangi setiap 6 JAM sekali (bukan 7 hari!)
-    setInterval(() => syncKuronime(), 6 * 60 * 60 * 1000);
+    // Ulangi setiap 7 hari
+    setInterval(() => syncKuronime(), 7 * 24 * 60 * 60 * 1000);
 }
 
 

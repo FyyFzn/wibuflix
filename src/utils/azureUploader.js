@@ -249,7 +249,7 @@ export async function invalidateAndDeleteBlob(seriesSlug, episodeSlug) {
             console.info(`[Azure Uploader] 🗑️ Menghapus blob rusak/tanpa sub: ${blobPath}`);
             cancelUpload(sSlug, eSlug);
             uploadCache.del(blobPath);
-            failureCountCache.delete(blobPath);
+            failureCountCache.del(blobPath);
 
             if (containerClient) {
                 try {

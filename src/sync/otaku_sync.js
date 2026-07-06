@@ -1,8 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { fileURLToPath } from 'url';
-import Anime from '../models/Anime.js';
-import { cleanSeriesTitle, normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
+import Anime from '../models/Anime.js'; // Model MongoDB
 
 const log = (...args) => {
     if (global.forceLog) {
@@ -13,51 +12,49 @@ const log = (...args) => {
 };
 
 export async function syncOtakudesu() {
-    log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu (menggunakan Axios HTTP)...');
+    log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu...');
     try {
         const { data } = await axios.get('https://otakudesu.blog/anime-list/', {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             },
-            timeout: 25000
+            timeout: 15000
         });
-
-        if (!data) {
-            log('[OtakuSync] Gagal memuat halaman A-Z Otakudesu.');
-            return;
-        }
 
         const $ = cheerio.load(data);
         const list = [];
         
         $('.penzbar .jdlbar ul li a').each((_, el) => {
-            const rawTitle = $(el).text().trim();
+            let title = $(el).text().trim();
             const url = $(el).attr('href');
-            if (rawTitle && url) {
+            if (title && url) {
                 const parts = url.split('/').filter(Boolean);
                 const slug = parts[parts.length - 1];
                 
-                // Bersihkan embel-embel judul dengan fungsi standar global
-                const title = cleanSeriesTitle(rawTitle);
+                // Bersihkan embel-embel agar bisa dicocokkan dengan Samehadaku
+                title = title.replace(/\s*Subtitle\s*Indonesia\s*/i, '')
+                             .replace(/\s*Sub\s*Indo\s*/i, '')
+                             .replace(/\s*On-Going\s*/i, '')
+                             .replace(/\s*Ongoing\s*/i, '')
+                             .replace(/\s*Batch\s*/i, '')
+                             .trim();
                 
-                if (title) {
-                    list.push({
-                        title: title,
-                        url: url,
-                        slug: slug,
-                        id: `otakudesu:${slug}`
-                    });
-                }
+                list.push({
+                    title: title,
+                    url: url,
+                    slug: slug,
+                    id: `otakudesu:${slug}`
+                });
             }
         });
 
         if (list.length > 0) {
             global.otakudesu_db_cache = list;
-            log(`[OtakuSync] ${list.length} anime ditemukan dari A-Z list. Memulai pemetaan ke database...`);
             
             try {
-                // Pre-fetch seluruh database untuk Fuzzy Matching (Hindari menyentuh data Tokusatsu dari Neosatsu)
+                // 1. Pre-fetch seluruh database untuk Fuzzy Matching (Hindari menyentuh data Tokusatsu dari Neosatsu)
                 const existingAnimes = await Anime.find({ type: { $ne: 'Toku' } }, { title: 1, aliases: 1, 'sources.otakudesu': 1 }).lean();
+                const { normalizeTitleForMatch, isSafeToMerge } = await import('../utils/stringUtils.js');
                 
                 const now = Date.now();
                 const bulkOps = [];
@@ -111,6 +108,7 @@ export async function syncOtakudesu() {
                         // Jika tidak ada yang mirip, buat dokumen baru
                         bulkOps.push({
                             updateOne: {
+                                // Fallback filter untuk keamanan ganda jika skrip diinterupsi
                                 filter: { title: anime.title },
                                 update: { 
                                     $set: { 
@@ -136,7 +134,7 @@ export async function syncOtakudesu() {
 
                 if (bulkOps.length > 0) {
                     const result = await Anime.bulkWrite(bulkOps);
-                    log(`[OtakuSync] ✅ MongoDB Bulk Update berhasil memetakan/membuat ${result.modifiedCount + result.upsertedCount} anime dari Otakudesu.`);
+                    log(`[OtakuSync] ✅ MongoDB Bulk Update berhasil memetakan ${result.modifiedCount} anime dari Otakudesu.`);
                 }
             } catch (err) {
                 log(`[OtakuSync] ❌ Gagal menyimpan data. Error: ${err.message}`);
@@ -158,12 +156,13 @@ export async function startBackgroundOtakuSync() {
             log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal...");
             syncOtakudesu();
         } else {
+            // Otakudesu A-Z list jarang update secara masif, kita bisa cek dari lastUpdated
             const latestDoc = await Anime.findOne({ 'sources.otakudesu': { $exists: true } }).sort({ lastUpdated: -1 });
             const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
             const sixHours = 6 * 60 * 60 * 1000;
             
             if (ageInMs > sixHours || !latestDoc || !latestDoc.lastUpdated) {
-                log(`[OtakuSync] Database Otakudesu usang (>6 jam). Memulai sinkronisasi pembaruan...`);
+                log(`[OtakuSync] Database Otakudesu usang. Memulai sinkronisasi pembaruan...`);
                 syncOtakudesu();
             } else {
                 log(`[OtakuSync] Database Otakudesu masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
@@ -173,10 +172,10 @@ export async function startBackgroundOtakuSync() {
         log("[OtakuSync] Error mengecek status database:", err.message);
     }
 
-    // Jalankan ulang setiap 6 JAM sekali (bukan 7 hari!) agar anime baru seperti Yani Neko langsung terbuat kartunya
+    // Jalankan ulang setiap 7 hari karena ini hanya full list A-Z (Update episode diambil alih latest_sync.js)
     setInterval(() => {
         syncOtakudesu();
-    }, 6 * 60 * 60 * 1000); // 6 Jam
+    }, 7 * 24 * 60 * 60 * 1000); // 7 Hari
 }
 
 // Jika dijalankan langsung
