@@ -2,7 +2,6 @@ import * as cheerio from 'cheerio';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import Anime from '../models/Anime.js';
-import { cleanSeriesTitle, normalizeTitleForMatch } from '../utils/stringUtils.js';
 
 let isLatestSyncing = false;
 
@@ -30,7 +29,7 @@ export async function runLatestSync() {
     isLatestSyncing = true;
     
     log(`\n===========================================`);
-    log(`[Latest Sync] Memulai Fast-Sync Beranda Samehadaku, Otakudesu & Kuronime...`);
+    log(`[Latest Sync] Memulai Fast-Sync Beranda Samehadaku & Otakudesu...`);
     log(`===========================================\n`);
 
     try {
@@ -66,20 +65,15 @@ async function scrapeSamehadakuLatest() {
         $('.post-show ul li, .animepost').each((_, el) => {
             const titleNode = $(el).find('.title, .entry-title, .tt h2').first();
             const epNode = $(el).find('author[itemprop="name"], .epx').first();
-            const linkNode = $(el).find('a').first();
             
             if (titleNode.length && epNode.length) {
-                const rawJudul = titleNode.text().trim();
-                const judul = cleanSeriesTitle(rawJudul);
+                const judul = titleNode.text().trim();
                 const epsText = epNode.text().trim();
-                const href = linkNode.attr('href') || '';
                 
                 // Format eps jika perlu (contoh: "12" menjadi "Eps 12")
                 const finalStatus = epsText.toLowerCase().includes('eps') ? epsText : `Eps ${epsText}`;
 
-                if (judul) {
-                    updates.push({ judul, status: finalStatus, url: href });
-                }
+                updates.push({ judul, status: finalStatus });
             }
         });
     } catch (e) {
@@ -90,30 +84,21 @@ async function scrapeSamehadakuLatest() {
     }
 
     if (updates.length > 0) {
-        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Samehadaku. Melakukan sinkronisasi ke MongoDB...`);
+        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate. Melakukan sinkronisasi ke MongoDB...`);
         
-        const now = Date.now();
-        const bulkOps = updates.map((anime, index) => {
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+        const bulkOps = updates.map(anime => {
             const normTitle = normalizeTitleForMatch(anime.judul);
-            const queryFilter = anime.url 
-                ? { $or: [{ 'sources.samehadaku.url': anime.url }, { normalizedTitle: normTitle }, { title: anime.judul }] }
-                : { $or: [{ normalizedTitle: normTitle }, { title: anime.judul }] };
-
             return {
                 updateOne: {
-                    filter: queryFilter,
-                    update: { 
-                        $set: { 
-                            status: anime.status,
-                            lastUpdated: new Date(now - index * 1000)
-                        } 
-                    }
+                    filter: { normalizedTitle: normTitle },
+                    update: { $set: { status: anime.status } }
                 }
             };
         });
 
         const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Samehadaku: Berhasil mengupdate status & waktu ${result.modifiedCount} anime.`);
+        log(`[Latest Sync] ✅ Samehadaku: Berhasil mengupdate status ${result.modifiedCount} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Samehadaku.`);
     }
@@ -137,15 +122,11 @@ async function scrapeOtakudesuLatest() {
         const $ = fetchRes.$;
 
         $('.venz ul li').each((_, el) => {
-            const rawTitle = $(el).find('.jdlflm').text().trim();
+            const title = $(el).find('.jdlflm').text().trim();
             const ep = $(el).find('.epz').text().trim();
-            const href = $(el).find('a').first().attr('href') || '';
             
-            if (rawTitle && ep) {
-                const title = cleanSeriesTitle(rawTitle);
-                if (title) {
-                    updates.push({ title, status: ep, url: href });
-                }
+            if (title && ep) {
+                updates.push({ title, status: ep });
             }
         });
     } catch (e) {
@@ -158,16 +139,13 @@ async function scrapeOtakudesuLatest() {
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Otakudesu. Melakukan sinkronisasi ke MongoDB...`);
         
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
         const now = Date.now();
         const bulkOps = updates.map((anime, index) => {
             const normTitle = normalizeTitleForMatch(anime.title);
-            const queryFilter = anime.url 
-                ? { $or: [{ 'sources.otakudesu.url': anime.url }, { normalizedTitle: normTitle }, { title: anime.title }] }
-                : { $or: [{ normalizedTitle: normTitle }, { title: anime.title }] };
-
             return {
                 updateOne: {
-                    filter: queryFilter,
+                    filter: { normalizedTitle: normTitle },
                     update: { 
                         $set: { 
                             status: anime.status,
@@ -179,7 +157,7 @@ async function scrapeOtakudesuLatest() {
         });
 
         const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Otakudesu: Berhasil mengupdate status & waktu ${result.modifiedCount} anime.`);
+        log(`[Latest Sync] ✅ Otakudesu: Berhasil mengupdate status ${result.modifiedCount} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Otakudesu.`);
     }
@@ -205,16 +183,13 @@ async function scrapeKuronimeLatest() {
 
         // Hanya ambil section "New Episodes" pertama, bukan "Top Episodes Of The Week"
         $('.bixbox').first().find('article.bsu').each((_, el) => {
-            const rawTitle = $(el).find('.bsuxtt h2').text().trim();
+            const title = $(el).find('.bsuxtt h2').text().trim();
             const ep = $(el).find('.bt .ep').text().trim();
             const href = $(el).find('a').attr('href');
 
-            if (rawTitle && ep && href && !seenUrls.has(href)) {
+            if (title && ep && href && !seenUrls.has(href)) {
                 seenUrls.add(href);
-                const title = cleanSeriesTitle(rawTitle);
-                if (title) {
-                    updates.push({ title, status: ep, url: href });
-                }
+                updates.push({ title, status: ep });
             }
         });
     } catch (e) {
@@ -225,29 +200,30 @@ async function scrapeKuronimeLatest() {
     }
 
     if (updates.length > 0) {
-        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Kuronime. Melakukan sinkronisasi ke MongoDB...`);
+        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Kuronime.`);
 
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
         const now = Date.now();
         const bulkOps = updates.map((anime, index) => {
             const normTitle = normalizeTitleForMatch(anime.title);
-            const queryFilter = { $or: [{ 'sources.kuronime.url': anime.url }, { normalizedTitle: normTitle }, { title: anime.title }] };
-
             return {
                 updateOne: {
-                    filter: queryFilter,
+                    filter: { normalizedTitle: normTitle },
                     update: {
                         $set: {
                             status: anime.status,
                             lastUpdated: new Date(now - index * 1000)
                         }
                     }
+                    // Tidak pakai upsert — hanya update yang sudah ada di database
                 }
             };
         });
 
         const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Kuronime: Berhasil mengupdate status & waktu ${result.modifiedCount} anime.`);
+        log(`[Latest Sync] ✅ Kuronime: Berhasil mengupdate status ${result.modifiedCount} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Kuronime.`);
     }
 }
+
