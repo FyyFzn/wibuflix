@@ -70,6 +70,7 @@ export async function getBrowser() {
 
             const browser = await puppeteer.launch({
                 headless: true,
+                timeout: 180000,
                 protocolTimeout: 180000,
                 env: cleanEnv,
                 args: [
@@ -77,6 +78,7 @@ export async function getBrowser() {
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
+                    '--no-zygote',
                     '--disable-seccomp-filter-sandbox',
                     '--disable-namespace-sandbox',
                     '--disable-software-rasterizer',

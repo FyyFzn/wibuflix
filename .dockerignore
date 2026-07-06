@@ -1,6 +1,10 @@
-# For development, don't ignore FYYStreamApp
+# For development, don't ignore wibuflix-app
 node_modules
 .git
 *.log
-FYYStreamApp/node_modules
-FYYStreamApp/.expo
+wibuflix-app/node_modules
+wibuflix-app/.expo
+wibuflix-app/.android
+wibuflix-app/.ios
+scratch
+debug
