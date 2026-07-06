@@ -63,17 +63,41 @@ export async function getBrowser() {
     console.log('[Browser] Membuka instance baru...');
     browserLaunchPromise = (async () => {
         try {
-            const browser = await puppeteer.launch({
+            // Gunakan Chromium OS jika tersedia (Docker), atau biarkan Puppeteer cari sendiri (lokal)
+            const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || null;
+            
+            const launchOptions = {
                 headless: true,
                 protocolTimeout: 120000,
                 args: [
                     '--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    '--single-process'
                 ]
-            });
+            };
+            
+            if (execPath) {
+                launchOptions.executablePath = execPath;
+                console.log(`[Browser] Menggunakan Chromium OS: ${execPath}`);
+            }
+            
+            const browser = await puppeteer.launch(launchOptions);
             browserInstance = browser;
+            
+            // Log versi browser untuk debugging kompatibilitas
+            const version = await browser.version().catch(() => 'unknown');
+            console.log(`[Browser] ✅ Browser berhasil dibuka! Versi: ${version}`);
+            
+            // Diagnostik: pantau kapan browser mati secara tiba-tiba
+            browser.on('disconnected', () => {
+                console.error(`[Browser] ⚠️ BROWSER MATI TIBA-TIBA! (disconnected event) — Kemungkinan OOM Killer atau crash.`);
+                if (browserInstance === browser) {
+                    browserInstance = null;
+                }
+            });
+            
             return browser;
         } finally {
             browserLaunchPromise = null;
