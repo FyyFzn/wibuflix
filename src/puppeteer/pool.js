@@ -63,12 +63,12 @@ export async function getBrowser() {
     console.log('[Browser] Membuka instance baru...');
     browserLaunchPromise = (async () => {
         try {
-            const cleanEnv = { 
-                ...process.env,
-                DBUS_SESSION_BUS_ADDRESS: 'unix:path=/dev/null',
-                DBUS_SYSTEM_BUS_ADDRESS: 'unix:path=/dev/null',
-                DBUS_STARTER_ADDRESS: 'unix:path=/dev/null'
-            };
+            const cleanEnv = { ...process.env };
+            for (const key of Object.keys(cleanEnv)) {
+                if (key.toUpperCase().includes('DBUS')) {
+                    delete cleanEnv[key];
+                }
+            }
 
             const browser = await puppeteer.launch({
                 headless: true,
@@ -78,7 +78,23 @@ export async function getBrowser() {
                     '--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    '--disable-seccomp-filter-sandbox',
+                    '--disable-namespace-sandbox',
+                    '--disable-software-rasterizer',
+                    '--disable-extensions',
+                    '--disable-background-networking',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--hide-scrollbars',
+                    '--metrics-recording-only',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--safebrowsing-disable-auto-update',
+                    '--ignore-certificate-errors',
+                    '--ignore-ssl-errors',
+                    '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess'
                 ]
             });
             browserInstance = browser;
