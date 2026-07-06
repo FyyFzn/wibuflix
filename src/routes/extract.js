@@ -36,7 +36,7 @@ backgroundQueue.setProcessor(async (item) => {
     const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle);
     if (!result.success) {
         // Jika gagal karena error beneran, lemparkan error untuk trigger retry
-        if (result.reason !== 'Already processing or failed') {
+        if (result.reason !== 'Already processing or failed' && result.reason !== 'Already extracting') {
              throw new Error(result.reason || 'Prefetch failed');
         }
     }
@@ -933,8 +933,15 @@ router.get('/api/upload-status', async (req, res) => {
 });
 
 // Endpoint untuk membatalkan upload secara eksplisit dari client
-router.post('/cancel-stream', express.json(), async (req, res) => {
-    let { url, seriesUrl, seriesTitle, uniqueId, episodeTitle } = req.body;
+router.all(['/api/cancel-stream', '/cancel-stream'], express.json(), async (req, res) => {
+    const body = req.body || {};
+    const query = req.query || {};
+    let url = body.url || body.episodeUrl || query.url || query.episodeUrl;
+    let seriesUrl = body.seriesUrl || query.seriesUrl;
+    let seriesTitle = body.seriesTitle || query.seriesTitle;
+    let uniqueId = body.uniqueId || query.uniqueId;
+    let episodeTitle = body.episodeTitle || query.episodeTitle;
+
     if (!url) return res.json({ success: false });
     
     uniqueId = await resolveCanonicalUniqueId(seriesUrl, url, seriesTitle, uniqueId);
@@ -957,12 +964,23 @@ router.post('/cancel-stream', express.json(), async (req, res) => {
     return res.json({ success: true });
 });
 
-// POST /api/report-broken
+// POST / GET /api/report-broken
 // Menghapus blob rusak/tanpa sub dari cloud & me-reset status agar player bisa beralih ke server alternatif
-router.post('/api/report-broken', express.json(), async (req, res) => {
+router.all(['/api/report-broken', '/report-broken'], express.json(), async (req, res) => {
     try {
-        let { url, seriesUrl, seriesTitle, uniqueId, episodeTitle, currentServer } = req.body;
-        if (!url) return res.status(400).json({ success: false, message: "URL diperlukan" });
+        const body = req.body || {};
+        const query = req.query || {};
+        let url = body.url || body.episodeUrl || body.embedUrl || body.videoUrl || query.url || query.episodeUrl || query.embedUrl || query.videoUrl;
+        let seriesUrl = body.seriesUrl || query.seriesUrl;
+        let seriesTitle = body.seriesTitle || query.seriesTitle;
+        let uniqueId = body.uniqueId || query.uniqueId;
+        let episodeTitle = body.episodeTitle || query.episodeTitle;
+        let currentServer = body.currentServer || query.currentServer;
+
+        if (!url) {
+            console.warn(`[Report Broken] ⚠️ Gagal: Laporan diterima namun parameter URL kosong! Body: ${JSON.stringify(body)} | Query: ${JSON.stringify(query)}`);
+            return res.status(400).json({ success: false, message: "URL diperlukan" });
+        }
 
         uniqueId = await resolveCanonicalUniqueId(seriesUrl, url, seriesTitle, uniqueId);
         const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId, episodeTitle);
