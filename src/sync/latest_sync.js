@@ -13,10 +13,10 @@ const log = (...args) => {
 export async function startBackgroundLatestSync() {
     log("[Latest Sync] Memulai penjadwalan pengecekan update episode (setiap 30 menit)...");
     
-    // Jalankan pertama kali (delay 20 detik agar pool puppeteer siap)
+    // Jalankan pertama kali (tunggu 120 detik / 2 menit agar pool puppeteer & Chromium selesai booting dan warming up)
     setTimeout(() => {
         runLatestSync();
-    }, 20000);
+    }, 120000);
 
     // Jadwalkan setiap 30 menit (1.800.000 ms)
     setInterval(() => {

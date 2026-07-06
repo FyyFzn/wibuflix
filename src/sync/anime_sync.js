@@ -19,16 +19,16 @@ export async function startBackgroundAnimeSync() {
         const count = await Anime.countDocuments({ 'sources.samehadaku.url': { $exists: true, $ne: null } });
         
         if (count === 0) {
-            log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z...");
-            setTimeout(() => runSync(true), 10000);
+            log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z (Delay 90 detik)...");
+            setTimeout(() => runSync(true), 90000);
         } else {
             const latestDoc = await Anime.findOne({ 'sources.samehadaku.url': { $exists: true, $ne: null } }).sort({ lastUpdated: -1 });
             const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
             const twelveHours = 12 * 60 * 60 * 1000;
             
             if (ageInMs > twelveHours || !latestDoc || !latestDoc.lastUpdated) {
-                log(`[Anime Sync] Database Samehadaku sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan...`);
-                setTimeout(() => runSync(false), 10000);
+                log(`[Anime Sync] Database Samehadaku sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan (Delay 90 detik)...`);
+                setTimeout(() => runSync(false), 90000);
             } else {
                 log(`[Anime Sync] Database Samehadaku masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
             }

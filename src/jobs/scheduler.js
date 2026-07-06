@@ -36,7 +36,7 @@ export function initScheduler() {
             setTimeout(runNeosatsuLoop, 604800000);
         };
         runNeosatsuLoop();
-    }, 10000);
+    }, 60000);
 
     // 3. Pembersihan file sampah temporer (Garbage Collection) setiap 12 jam
     import('fs').then(fs => {
