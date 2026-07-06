@@ -86,6 +86,8 @@ export async function getBrowser() {
                     '--mute-audio',
                     '--no-first-run',
                     '--safebrowsing-disable-auto-update',
+                    '--disable-breakpad',
+                    '--disable-crash-reporter',
                     '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process'
                 ]
             };
