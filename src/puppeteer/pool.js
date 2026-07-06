@@ -54,7 +54,7 @@ export async function getBrowser() {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
             headless: true,
-            protocolTimeout: 120000,
+            protocolTimeout: 300000,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
@@ -64,6 +64,20 @@ export async function getBrowser() {
         });
     }
     return browserInstance;
+}
+
+function isBrowserFatalError(error) {
+    if (!error) return false;
+    const msg = (error.message || error.toString()).toLowerCase();
+    return msg.includes('timed out') ||
+           msg.includes('protocolerror') ||
+           msg.includes('target.createtarget') ||
+           msg.includes('addscripttoevaluateonnewdocument') ||
+           msg.includes('network.enable') ||
+           msg.includes('connection closed') ||
+           msg.includes('session closed') ||
+           msg.includes('target closed') ||
+           msg.includes('disconnected');
 }
 
 export async function createPage(targetContextOrBrowser) {
@@ -131,10 +145,11 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
     }
 
     const refreshTask = (async () => {
-        const browser = await getBrowser();
-        const context = await browser.createBrowserContext();
-        const page = await createPage(context);
+        let browser, context, page;
         try {
+            browser = await getBrowser();
+            context = await browser.createBrowserContext();
+            page = await createPage(context);
             console.log(`[PagePool] Me-refresh CF cookie untuk ${domain}...`);
             await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() =>
                 page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
@@ -151,9 +166,13 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
             }
         } catch (e) {
             console.warn(`[PagePool] Gagal me-refresh CF cookie untuk ${domain}:`, e.message);
+            if (isBrowserFatalError(e)) {
+                console.warn('[PagePool] Terdeteksi browser error/timeout saat refresh CF cookie. Me-restart browser instance...');
+                await closeAllBrowsers();
+            }
         } finally {
-            await page.close().catch(() => {});
-            await context.close().catch(() => {});
+            if (page) await page.close().catch(() => {});
+            if (context) await context.close().catch(() => {});
             activeRefreshLocks.delete(domain);
         }
     })();
@@ -218,31 +237,45 @@ export async function acquireFromPool(domain = 'v2.samehadaku.how', signal = nul
     }
     activeRegularCount++;
 
-    const browser = await getBrowser();
-    const context = await browser.createBrowserContext();
-    const page = await createPage(context);
+    try {
+        const browser = await getBrowser();
+        const context = await browser.createBrowserContext();
+        const page = await createPage(context);
 
-    if (domain) {
-        await injectStoredCookies(page, domain);
-    }
-
-    const slot = {
-        page,
-        context,
-        busy: true,
-        type: 'regular',
-        acquiredAt: Date.now()
-    };
-
-    // Safety timeout: jika slot tidak dilepas dalam 90 detik, lepas paksa
-    slot.safetyTimer = setTimeout(() => {
-        if (slot.busy) {
-            console.warn('[PagePool] Safety timeout (90s): Melepaskan slot regular yang macet.');
-            releaseToPool(slot);
+        if (domain) {
+            await injectStoredCookies(page, domain);
         }
-    }, 90000);
 
-    return slot;
+        const slot = {
+            page,
+            context,
+            busy: true,
+            type: 'regular',
+            acquiredAt: Date.now()
+        };
+
+        // Safety timeout: jika slot tidak dilepas dalam 90 detik, lepas paksa
+        slot.safetyTimer = setTimeout(() => {
+            if (slot.busy) {
+                console.warn('[PagePool] Safety timeout (90s): Melepaskan slot regular yang macet.');
+                releaseToPool(slot);
+            }
+        }, 90000);
+
+        return slot;
+    } catch (error) {
+        if (activeRegularCount > 0) activeRegularCount--;
+        if (regularQueue.length > 0) {
+            const next = regularQueue.shift();
+            if (next && typeof next.resolve === 'function') next.resolve();
+            else if (typeof next === 'function') next();
+        }
+        if (isBrowserFatalError(error)) {
+            console.warn(`[PagePool] Terdeteksi browser error/timeout saat acquire regular (${error.message}). Me-restart browser instance...`);
+            await closeAllBrowsers();
+        }
+        throw error;
+    }
 }
 
 export async function acquireFromExtractorPool(domain = null, signal = null) {
@@ -276,30 +309,44 @@ export async function acquireFromExtractorPool(domain = null, signal = null) {
     }
     activeExtractorCount++;
 
-    const browser = await getBrowser();
-    const context = await browser.createBrowserContext();
-    const page = await createExtractorPage(context);
+    try {
+        const browser = await getBrowser();
+        const context = await browser.createBrowserContext();
+        const page = await createExtractorPage(context);
 
-    if (domain) {
-        await injectStoredCookies(page, domain);
-    }
-
-    const slot = {
-        page,
-        context,
-        busy: true,
-        type: 'extractor',
-        acquiredAt: Date.now()
-    };
-
-    slot.safetyTimer = setTimeout(() => {
-        if (slot.busy) {
-            console.warn('[ExtractorPool] Safety timeout (90s): Melepaskan slot extractor yang macet.');
-            releaseToPool(slot);
+        if (domain) {
+            await injectStoredCookies(page, domain);
         }
-    }, 90000);
 
-    return slot;
+        const slot = {
+            page,
+            context,
+            busy: true,
+            type: 'extractor',
+            acquiredAt: Date.now()
+        };
+
+        slot.safetyTimer = setTimeout(() => {
+            if (slot.busy) {
+                console.warn('[ExtractorPool] Safety timeout (90s): Melepaskan slot extractor yang macet.');
+                releaseToPool(slot);
+            }
+        }, 90000);
+
+        return slot;
+    } catch (error) {
+        if (activeExtractorCount > 0) activeExtractorCount--;
+        if (extractorQueue.length > 0) {
+            const next = extractorQueue.shift();
+            if (next && typeof next.resolve === 'function') next.resolve();
+            else if (typeof next === 'function') next();
+        }
+        if (isBrowserFatalError(error)) {
+            console.warn(`[ExtractorPool] Terdeteksi browser error/timeout saat acquire extractor (${error.message}). Me-restart browser instance...`);
+            await closeAllBrowsers();
+        }
+        throw error;
+    }
 }
 
 export async function releaseToPool(slot) {
@@ -349,7 +396,11 @@ export async function fetchPage(url, signal = null) {
         await waitForCloudflare(slot.page);
         return slot;
     } catch (err) {
-        releaseToPool(slot);
+        await releaseToPool(slot);
+        if (isBrowserFatalError(err)) {
+            console.warn(`[PagePool] Terdeteksi browser error/timeout saat fetchPage (${err.message}). Me-restart browser instance...`);
+            await closeAllBrowsers();
+        }
         throw err;
     }
 }
