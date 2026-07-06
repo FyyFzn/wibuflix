@@ -1,7 +1,7 @@
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { fileURLToPath } from 'url';
 import Anime from '../models/Anime.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { releaseToPool } from '../puppeteer/pool.js';
 import { cleanSeriesTitle, normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 
 const log = (...args) => {
@@ -14,22 +14,22 @@ const log = (...args) => {
  * Menggunakan fetchWithCF agar kebal Cloudflare dan isSafeToMerge agar tidak ada duplikasi kartu.
  */
 export async function syncKuronime() {
-    log('[KuronimeSync] Memulai sinkronisasi katalog Kuronime (menggunakan fetchWithCF)...');
-    let fetchRes, slot;
+    log('[KuronimeSync] Memulai sinkronisasi katalog Kuronime (menggunakan Axios HTTP)...');
     try {
         // URL list A-Z yang menampilkan semua anime dalam satu halaman (tidak perlu pagination)
-        fetchRes = await fetchWithCF('https://kuronime.sbs/anime/?list', {
-            timeout: 60000,
-            fetchTimeout: 15000
+        const { data } = await axios.get('https://kuronime.sbs/anime/?list', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 25000
         });
-        slot = fetchRes?.slot;
 
-        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+        if (!data) {
             log('[KuronimeSync] Gagal memuat halaman A-Z Kuronime.');
             return;
         }
 
-        const $ = fetchRes.$;
+        const $ = cheerio.load(data);
         const list = [];
 
         // Selector terverifikasi: menghasilkan ~2378 anime dalam sekali fetch
@@ -137,8 +137,6 @@ export async function syncKuronime() {
         }
     } catch (err) {
         log(`[KuronimeSync] ❌ Error: ${err.message}`);
-    } finally {
-        if (slot) releaseToPool(slot);
     }
 }
 

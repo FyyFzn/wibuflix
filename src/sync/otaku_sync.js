@@ -1,7 +1,7 @@
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { fileURLToPath } from 'url';
 import Anime from '../models/Anime.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { releaseToPool } from '../puppeteer/pool.js';
 import { cleanSeriesTitle, normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 
 const log = (...args) => {
@@ -13,21 +13,21 @@ const log = (...args) => {
 };
 
 export async function syncOtakudesu() {
-    log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu (menggunakan fetchWithCF)...');
-    let fetchRes, slot;
+    log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu (menggunakan Axios HTTP)...');
     try {
-        fetchRes = await fetchWithCF('https://otakudesu.blog/anime-list/', {
-            timeout: 60000,
-            fetchTimeout: 15000
+        const { data } = await axios.get('https://otakudesu.blog/anime-list/', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 25000
         });
-        slot = fetchRes?.slot;
 
-        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+        if (!data) {
             log('[OtakuSync] Gagal memuat halaman A-Z Otakudesu.');
             return;
         }
 
-        const $ = fetchRes.$;
+        const $ = cheerio.load(data);
         const list = [];
         
         $('.penzbar .jdlbar ul li a').each((_, el) => {
@@ -147,8 +147,6 @@ export async function syncOtakudesu() {
 
     } catch (err) {
         console.error('[OtakuSync] Error:', err.message);
-    } finally {
-        if (slot) releaseToPool(slot);
     }
 }
 

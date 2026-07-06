@@ -1,3 +1,4 @@
+import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
@@ -121,20 +122,23 @@ async function scrapeSamehadakuLatest() {
 
 async function scrapeOtakudesuLatest() {
     const url = `https://otakudesu.blog/`;
-    log(`[Latest Sync] Mengakses Beranda Otakudesu...`);
+    log(`[Latest Sync] Mengakses Beranda Otakudesu (menggunakan Axios HTTP)...`);
 
-    let fetchRes, slot;
     const updates = [];
     try {
-        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
-        slot = fetchRes?.slot;
+        const { data } = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 20000
+        });
         
-        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+        if (!data) {
             log(`[Latest Sync] Gagal mendapatkan HTML Otakudesu.`);
             return;
         }
 
-        const $ = fetchRes.$;
+        const $ = cheerio.load(data);
 
         $('.venz ul li').each((_, el) => {
             const rawTitle = $(el).find('.jdlflm').text().trim();
@@ -151,8 +155,6 @@ async function scrapeOtakudesuLatest() {
     } catch (e) {
         console.error(`[Latest Sync] Gagal memuat Otakudesu:`, e.message);
         return;
-    } finally {
-        if (slot) releaseToPool(slot);
     }
 
     if (updates.length > 0) {
@@ -187,20 +189,23 @@ async function scrapeOtakudesuLatest() {
 
 async function scrapeKuronimeLatest() {
     const url = `https://kuronime.sbs/`;
-    log(`[Latest Sync] Mengakses Beranda Kuronime...`);
+    log(`[Latest Sync] Mengakses Beranda Kuronime (menggunakan Axios HTTP)...`);
 
-    let fetchRes, slot;
     const updates = [];
     try {
-        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
-        slot = fetchRes?.slot;
+        const { data } = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 20000
+        });
         
-        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+        if (!data) {
             log(`[Latest Sync] Gagal mendapatkan HTML Kuronime.`);
             return;
         }
 
-        const $ = fetchRes.$;
+        const $ = cheerio.load(data);
         const seenUrls = new Set();
 
         // Hanya ambil section "New Episodes" pertama, bukan "Top Episodes Of The Week"
@@ -220,8 +225,6 @@ async function scrapeKuronimeLatest() {
     } catch (e) {
         console.error(`[Latest Sync] Gagal memuat Kuronime:`, e.message);
         return;
-    } finally {
-        if (slot) releaseToPool(slot);
     }
 
     if (updates.length > 0) {
