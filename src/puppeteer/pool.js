@@ -53,14 +53,9 @@ export async function getBrowser() {
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
         browserInstance = await puppeteer.launch({
-            headless: 'new', // New Headless Mode (Full Chrome tanpa Xvfb/X11, cocok untuk Azure CI/CD & kebal Cloudflare)
+            headless: 'new', // Chrome New Headless Mode (bekerja mulus tanpa Xvfb di Azure CI/CD)
             protocolTimeout: 120000,
-            env: {
-                ...process.env,
-                DBUS_SESSION_BUS_ADDRESS: 'disabled:'
-            },
             args: [
-                '--headless=new',
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
@@ -70,8 +65,6 @@ export async function getBrowser() {
                 '--no-default-browser-check',
                 '--no-first-run',
                 '--disable-background-networking',
-                '--disable-seccomp-filter-sandbox',
-                '--disable-namespace-sandbox',
                 '--disable-site-isolation-trials',
                 '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess',
                 '--renderer-process-limit=1',
