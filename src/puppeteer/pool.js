@@ -52,36 +52,48 @@ export async function getBrowser() {
     }
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
+        const launchOptions = {
+            protocolTimeout: 300000,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-dbus',
+                '--disable-software-rasterizer',
+                '--disable-extensions',
+                '--disable-default-apps',
+                '--disable-sync',
+                '--disable-translate',
+                '--hide-scrollbars',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--no-first-run',
+                '--no-zygote',
+                '--safebrowsing-disable-auto-update',
+                '--ignore-certificate-errors',
+                '--ignore-ssl-errors',
+                '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess'
+            ]
+        };
+
         try {
             browserInstance = await puppeteer.launch({
-                headless: true,
-                protocolTimeout: 300000,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-dbus',
-                    '--disable-software-rasterizer',
-                    '--disable-extensions',
-                    '--disable-default-apps',
-                    '--disable-sync',
-                    '--disable-translate',
-                    '--hide-scrollbars',
-                    '--metrics-recording-only',
-                    '--mute-audio',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--safebrowsing-disable-auto-update',
-                    '--ignore-certificate-errors',
-                    '--ignore-ssl-errors',
-                    '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess'
-                ]
+                ...launchOptions,
+                headless: 'shell'
             });
-        } catch (err) {
-            console.error('[Browser] Gagal membuka browser instance:', err.message);
-            browserInstance = null;
-            throw err;
+        } catch (shellErr) {
+            console.warn(`[Browser] Gagal membuka dengan headless: 'shell' (${shellErr.message}). Mencoba fallback ke headless: true...`);
+            try {
+                browserInstance = await puppeteer.launch({
+                    ...launchOptions,
+                    headless: true
+                });
+            } catch (err) {
+                console.error('[Browser] Gagal membuka browser instance:', err.message);
+                browserInstance = null;
+                throw err;
+            }
         }
     }
     return browserInstance;
