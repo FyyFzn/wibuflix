@@ -40,30 +40,55 @@ export function setCfCookie(domain, cookieString, cookiesArray) {
     }
 }
 
+let browserLaunchPromise = null;
+
 export async function getBrowser() {
     if (browserInstance) {
         try {
             await browserInstance.version();
+            return browserInstance;
         } catch {
             console.log('[Browser] Instance lama mati, membuka yang baru...');
             try { browserInstance.close().catch(() => {}); } catch(e){}
             browserInstance = null;
         }
     }
-    if (!browserInstance) {
-        console.log('[Browser] Membuka instance baru...');
-        browserInstance = await puppeteer.launch({
-            headless: true,
-            protocolTimeout: 120000,
-            args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        });
+
+    // Mutex Lock: Jika browser sedang dalam proses dibuka (launching), tunggu promise yang sama!
+    if (browserLaunchPromise) {
+        console.log('[Browser] Menunggu instance browser yang sedang dibuka...');
+        return await browserLaunchPromise;
     }
-    return browserInstance;
+
+    console.log('[Browser] Membuka instance baru...');
+    browserLaunchPromise = (async () => {
+        try {
+            const cleanEnv = { 
+                ...process.env,
+                DBUS_SESSION_BUS_ADDRESS: 'unix:path=/dev/null',
+                DBUS_SYSTEM_BUS_ADDRESS: 'unix:path=/dev/null',
+                DBUS_STARTER_ADDRESS: 'unix:path=/dev/null'
+            };
+
+            const browser = await puppeteer.launch({
+                headless: true,
+                protocolTimeout: 180000,
+                env: cleanEnv,
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu'
+                ]
+            });
+            browserInstance = browser;
+            return browser;
+        } finally {
+            browserLaunchPromise = null;
+        }
+    })();
+
+    return await browserLaunchPromise;
 }
 
 export async function createPage(targetContextOrBrowser) {
