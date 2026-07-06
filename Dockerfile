@@ -45,9 +45,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Puppeteer to use system Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+# Biarkan Puppeteer mendownload & memakai official Chrome for Testing (CfT)
+# (Tidak memakai /usr/bin/chromium bawaan Debian yang tidak kompatibel di Azure App Service)
 
 WORKDIR /app
 
