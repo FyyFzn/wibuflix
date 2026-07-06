@@ -52,19 +52,24 @@ export async function getBrowser() {
     }
     if (!browserInstance) {
         console.log('[Browser] Membuka instance baru...');
-        const cleanEnv = { ...process.env };
-        delete cleanEnv.DBUS_SESSION_BUS_ADDRESS;
-        delete cleanEnv.DBUS_SYSTEM_BUS_ADDRESS;
+        const cleanEnv = { 
+            ...process.env,
+            DBUS_SESSION_BUS_ADDRESS: 'unix:path=/dev/null',
+            DBUS_SYSTEM_BUS_ADDRESS: 'unix:path=/dev/null',
+            DBUS_STARTER_ADDRESS: 'unix:path=/dev/null'
+        };
 
         browserInstance = await puppeteer.launch({
             headless: true,
-            protocolTimeout: 120000,
+            protocolTimeout: 180000,
             env: cleanEnv,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--no-zygote',
+                '--single-process'
             ]
         });
     }
