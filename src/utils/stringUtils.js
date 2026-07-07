@@ -182,7 +182,7 @@ export function extractEpNumStrict(title) {
     if (stdMatch) return parseFloat(stdMatch[1]);
 
     // 4. Pola pemisah ganda khas Otakudesu / Fansub (misal: "Otakudesu_Baki--01_", "Baki - 01 -", "[01]", "-10-")
-    const sepMatch = clean.match(/(?:--|__|-\s*|\s+-\s*|\[|\()[\s-_]*0*(\d+(?:\.\d+)?)\s*(?:--|__|-\s*|\s+-\s*|\]|\)|_|\.|$)/);
+    const sepMatch = clean.match(/(?:--|__|-\s*|\s+-\s*|\[|\()[\s-_]*0*(\d+(?:\.\d+)?)(?:\b|\s|[-_\]\)\.]|$)/);
     if (sepMatch) {
         const num = parseFloat(sepMatch[1]);
         // Pastikan angka masuk akal sebagai nomor episode (bukan tahun rilis misal 2024)
@@ -201,8 +201,8 @@ export function extractEpNumStrict(title) {
 
 export function extractEpNum(title) {
     if (!title) return title;
-    const epMatch = title.match(/(?:episode|ep|eps)[\s-_]*0*(\d+(?:\.\d+)?)/i);
-    if (epMatch) return parseFloat(epMatch[1]);
+    const strictNum = extractEpNumStrict(title);
+    if (strictNum !== null) return strictNum;
     const pureNumMatch = title.match(/^\s*0*(\d+(?:\.\d+)?)\s*$/);
     if (pureNumMatch) return parseFloat(pureNumMatch[1]);
     return title;

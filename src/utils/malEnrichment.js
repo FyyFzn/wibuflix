@@ -1,5 +1,6 @@
 import { searchAnime, getAnimeEpisodes } from '../services/metadata/jikan.js';
 import { searchTokusatsu } from '../services/metadata/tmdb.js';
+import { extractEpNumStrict } from './stringUtils.js';
 
 /**
  * Memperkaya daftar episode dengan metadata dari MyAnimeList atau TMDB.
@@ -52,9 +53,9 @@ export async function enrichWithMAL(title, episodes = [], defaultCover = '') {
     const enrichedEpisodes = episodes.map(ep => {
         const newEp = { ...ep };
         if (Object.keys(malEpisodeMap).length > 0) {
-            const match = ep.judul.match(/(?:episode|eps|ep)\s*(\d+(\.\d+)?)/i) || ep.judul.match(/(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i) || ep.judul.match(/(\d+)$/);
-            if (match) {
-                const num = String(parseInt(match[1], 10));
+            const epNum = extractEpNumStrict(ep.judul);
+            if (epNum !== null) {
+                const num = String(parseInt(epNum, 10));
                 const malTitle = malEpisodeMap[num];
                 if (malTitle) newEp.malJudul = malTitle;
             }

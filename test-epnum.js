@@ -16,15 +16,19 @@ const testCases = [
     { input: "Episode 10 - Sub Indo", expected: 10 },
     { input: "nonton-anime-episode-10-sub-indo", expected: 10 },
     { input: "86 (Eighty Six) Episode 11", expected: 11 },
-    { input: "Mob Psycho 100 Episode 12", expected: 12 }
+    { input: "Mob Psycho 100 Episode 12", expected: 12 },
+    { input: "Mairimashita! Iruma-kun Season 3 - 10 Sub Indo", expected: 10 },
+    { input: "Mairimashita! Iruma-kun S3 - 10", expected: 10 },
+    { input: "mairimashita-iruma-kun-s3-10-sub-indo", expected: 10 }
 ];
 
 let passed = 0;
 for (const tc of testCases) {
-    const result = extractEpNumStrict(tc.input);
-    const success = result === tc.expected;
+    const resultStrict = extractEpNumStrict(tc.input);
+    const resultNormal = extractEpNum(tc.input);
+    const success = resultStrict === tc.expected && resultNormal === tc.expected;
     if (success) passed++;
-    console.log(`[${success ? 'PASS' : 'FAIL'}] Input: "${tc.input}" | Expected: ${tc.expected} | Got: ${result}`);
+    console.log(`[${success ? 'PASS' : 'FAIL'}] Input: "${tc.input}" | Expected: ${tc.expected} | Got Strict: ${resultStrict} | Got Normal: ${resultNormal}`);
 }
 
 console.log(`\nResult: ${passed}/${testCases.length} passed.`);
