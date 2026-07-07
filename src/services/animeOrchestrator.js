@@ -100,7 +100,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
     // 3. Panggil pipeline penggabungan multi-sumber dari episodeService
     // Backend secara otomatis membaca dbAnime.sources dan mengikis Samehadaku, Otakudesu, Kuronime, Nanime ID!
     console.log(`[Orchestrator] Memproses dan menggabungkan episode multi-sumber untuk: ${queryUrl}`);
-    const rawResult = await getEpisodeServiceData({ targetUrl: queryUrl });
+    const rawResult = await getEpisodeServiceData({ targetUrl: queryUrl, forceRefresh });
 
     if (!rawResult || rawResult.status === 'error') {
         throw new Error(rawResult?.message || "Gagal mengambil daftar episode dari sumber.");

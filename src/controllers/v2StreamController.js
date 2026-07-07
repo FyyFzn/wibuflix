@@ -1,5 +1,8 @@
-import { extractSlugs, prefetchOneEpisode, resolveCanonicalUniqueId } from '../routes/extract.js';
-import { checkUploadStatusWithFallback, getBlobPath, getBlobUrl, getUploadProgress, invalidateAndDeleteBlob } from '../utils/azureUploader.js';
+import { resolveCanonicalUniqueId } from '../services/canonicalService.js';
+import { extractSlugs } from '../services/slugService.js';
+import { prefetchOneEpisode } from '../services/prefetchService.js';
+import { checkUploadStatusWithFallback, getBlobPath, getBlobUrl } from '../services/stream/blobStorageService.js';
+import { getUploadProgress, invalidateAndDeleteBlob } from '../services/stream/uploadProgressService.js';
 import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
 

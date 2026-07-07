@@ -1,4 +1,4 @@
-import { extractSlugs } from './src/routes/extract.js';
+import { extractSlugs } from './src/services/slugService.js';
 
 const episodeUrl = "https://samehadaku.email/naruto-episode-1";
 const seriesUrl = "https://samehadaku.email/anime/naruto";

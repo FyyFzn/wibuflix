@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import QueueTask from '../models/QueueTask.js';
-import { getActiveUploadCount, cancelUpload } from './azureUploader.js';
+import { getActiveUploadCount, cancelUpload } from '../services/stream/uploadProgressService.js';
 
 class QueueManager extends EventEmitter {
     constructor() {

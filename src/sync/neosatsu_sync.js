@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { getNeosatsuCatalog } from '../controllers/neosatsuController.js';
+import { getNeosatsuCatalog } from '../services/scrapers/neosatsuScraperService.js';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
@@ -17,7 +17,7 @@ export async function syncNeosatsu() {
         // Panggil getNeosatsuCatalog() dengan parameter pencarian kosong untuk memicu build static catalog di dalam cache
         await getNeosatsuCatalog(1, '', '');
         
-        const { cache } = await import('../controllers/neosatsuController.js');
+        const { cache } = await import('../services/scrapers/neosatsuScraperService.js');
         const cacheData = cache.get('neosatsu_static_catalog');
         
         if (!cacheData || cacheData.length === 0) {

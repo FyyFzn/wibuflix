@@ -1,6 +1,6 @@
 import express from 'express';
 import { scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
-import { getNeosatsuServers } from '../controllers/neosatsuController.js';
+import { getNeosatsuServers } from '../services/scrapers/neosatsuScraperService.js';
 import * as otakudesu from '../controllers/otakudesuController.js';
 import { getKuronimeServers } from '../controllers/kuronimeController.js';
 

@@ -1,5 +1,5 @@
 import { getSamehadakuEpisodes } from '../controllers/samehadakuController.js';
-import { getNeosatsuEpisodes } from '../controllers/neosatsuController.js';
+import { getNeosatsuEpisodes } from './scrapers/neosatsuScraperService.js';
 import * as otakudesu from '../controllers/otakudesuController.js';
 import { getKuronimeEpisodes } from '../controllers/kuronimeController.js';
 import { getNanimeEpisodes } from '../controllers/nanimeController.js';
@@ -333,12 +333,20 @@ async function finalizeScrapedData(data, dbAnime) {
  * Logika utama dari Service:
  * Mengambil episode dari database (jika ada & masih relevan) atau menjalankan scraping real-time.
  */
-export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime }) {
+export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, forceRefresh = false }) {
     const dbAnime = await findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime });
-    let isCached = false;
 
-    if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0) {
-        isCached = true;
+    if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0 && !forceRefresh) {
+        const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
+        
+        // Jika cache sudah >1 jam, kita tunggu hasil scrape terbaru (sinkron) agar data selalu up-to-date
+        if (cacheAge > 3600000) {
+            console.log(`[Cache] Cache sudah tua (${Math.floor(cacheAge / 60000)} menit). Melakukan scraping pembaruan langsung untuk: ${dbAnime.title}`);
+            const freshData = await scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime });
+            return { status: 'success', data: freshData, source: 'scraper' };
+        }
+
+        console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
         const data = {
             judul_seri: dbAnime.title,
             daftar_episode: dbAnime.episodesList,
@@ -355,30 +363,10 @@ export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtaku
             }
         };
 
-        const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
-        if (cacheAge > 86400000) {
-            console.log(`[Cache] Cache sudah >24 jam. Melakukan scraping pembaruan untuk: ${dbAnime.title}`);
-            scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime }).catch(err => {
-                console.error('[Background Scrape Error >24h]', err.message);
-            });
-        } else if (cacheAge > 3600000) {
-            const lockKey = targetUrl || dbAnime._id.toString();
-            if (!activeScrapeLocks.has(lockKey)) {
-                console.log(`[Cache] Memperbarui episode di latar belakang untuk: ${dbAnime.title}`);
-                const scrapePromise = scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime })
-                    .finally(() => activeScrapeLocks.delete(lockKey));
-                activeScrapeLocks.set(lockKey, scrapePromise);
-            } else {
-                console.log(`[Cache] Scrape latar belakang untuk ${dbAnime.title} sudah berjalan, melewati...`);
-            }
-        } else {
-            console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
-        }
-
         return { status: 'success', data, source: 'database' };
     }
 
-    // Jika belum ada di cache, jalankan scraping langsung
+    // Jika belum ada di cache atau forceRefresh = true, jalankan scraping langsung
     const data = await scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime });
     return { status: 'success', data, source: 'scraper' };
 }

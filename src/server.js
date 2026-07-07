@@ -8,7 +8,7 @@ import connectDB from './config/db.js';
 import mongoose from 'mongoose';
 import fs from 'fs';
 import os from 'os';
-import { cancelAllUploads } from './utils/azureUploader.js';
+import { cancelAllUploads } from './services/stream/uploadProgressService.js';
 
 import { initScheduler } from './jobs/scheduler.js';
 import { errorHandler } from './middlewares/errorHandler.js';
