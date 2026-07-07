@@ -199,143 +199,110 @@ async function executeScraperStrategy(targetUrl) {
  * Scrape dari beberapa sumber sekaligus, hitung offset, dan merge episode.
  */
 async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime }) {
-    let data;
-    let cleanSamehadaku = urlSamehadaku;
-    let cleanOtakudesu = urlOtakudesu;
-    let cleanKuronime = urlKuronime;
-    let cleanNanime = urlNanime;
+    // TAHAP 1: Source Resolution (Ambil URL seri resmi dari database atau parameter input)
+    let cleanSamehadaku = urlSamehadaku || dbAnime?.sources?.samehadaku?.url;
+    let cleanOtakudesu = urlOtakudesu || dbAnime?.sources?.otakudesu?.url || (dbAnime?.sources?.otakudesu?.id ? `/anime/${dbAnime.sources.otakudesu.id.replace(/^otakudesu:/, '')}` : null);
+    let cleanKuronime = urlKuronime || dbAnime?.sources?.kuronime?.url || (dbAnime?.sources?.kuronime?.id ? `https://kuronime.sbs/anime/${dbAnime.sources.kuronime.id.replace(/^kuronime:/, '')}/` : null);
+    let cleanNanime = urlNanime || dbAnime?.sources?.nanime?.url || (dbAnime?.sources?.nanime?.id ? `https://nanimeid.net/anime/${dbAnime.sources.nanime.id}` : null);
 
-    if (dbAnime && dbAnime.sources) {
-        if (dbAnime.sources.samehadaku?.url) cleanSamehadaku = dbAnime.sources.samehadaku.url;
-        if (dbAnime.sources.otakudesu?.id) cleanOtakudesu = `/anime/${dbAnime.sources.otakudesu.id}`;
-        else if (dbAnime.sources.otakudesu?.url) cleanOtakudesu = dbAnime.sources.otakudesu.url;
-        if (dbAnime.sources.kuronime?.url) cleanKuronime = dbAnime.sources.kuronime.url;
-        if (dbAnime.sources.nanime?.url) cleanNanime = dbAnime.sources.nanime.url;
+    if (targetUrl) {
+        if ((targetUrl.includes('samehadaku') || targetUrl.includes('v2.samehadaku')) && !cleanSamehadaku) cleanSamehadaku = targetUrl;
+        else if ((targetUrl.includes('otakudesu') || targetUrl.startsWith('/anime/')) && !cleanOtakudesu) cleanOtakudesu = targetUrl;
+        else if (targetUrl.includes('kuronime') && !cleanKuronime) cleanKuronime = targetUrl;
+        else if (targetUrl.includes('nanime') && !cleanNanime) cleanNanime = targetUrl;
+        else if (targetUrl.includes('neosatsu') && !cleanSamehadaku && !cleanOtakudesu && !cleanKuronime && !cleanNanime) {
+            const neosatsuRes = await executeScraperStrategy(targetUrl).catch(() => null);
+            if (neosatsuRes && neosatsuRes.daftar_episode?.length > 0) {
+                return finalizeScrapedData(neosatsuRes, dbAnime);
+            }
+        }
     }
 
-    if (cleanSamehadaku || cleanOtakudesu || cleanKuronime || cleanNanime) {
-        const slug = extractOtakuSlug(cleanOtakudesu);
-        
-        const [sameRes, otakuRes, kuroRes, nanimeRes] = await Promise.all([
-            cleanSamehadaku ? getSamehadakuEpisodes(cleanSamehadaku).catch(() => null) : Promise.resolve(null),
-            slug ? otakudesu.getOtakuEpisodesFormatted(slug).catch(() => null) : Promise.resolve(null),
-            cleanKuronime ? getKuronimeEpisodes(cleanKuronime).catch(() => null) : Promise.resolve(null),
-            cleanNanime ? getNanimeEpisodes(cleanNanime).catch(() => null) : Promise.resolve(null),
-        ]);
-        
-        data = {
-            judul_seri: cleanSeriesTitle((sameRes && sameRes.judul_seri) || (otakuRes && otakuRes.judul_seri) || (kuroRes && kuroRes.judul_seri) || (nanimeRes && nanimeRes.judul_seri) || 'Unknown'),
-            daftar_episode: []
-        };
+    // TAHAP 2: Independent Scraping secara Paralel menggunakan executeScraperStrategy
+    const [sameRes, otakuRes, kuroRes, nanimeRes] = await Promise.all([
+        cleanSamehadaku ? executeScraperStrategy(cleanSamehadaku).catch(() => null) : Promise.resolve(null),
+        cleanOtakudesu ? executeScraperStrategy(cleanOtakudesu).catch(() => null) : Promise.resolve(null),
+        cleanKuronime ? executeScraperStrategy(cleanKuronime).catch(() => null) : Promise.resolve(null),
+        cleanNanime ? executeScraperStrategy(cleanNanime).catch(() => null) : Promise.resolve(null),
+    ]);
 
-        const { offsetSame, offsetOtaku, offsetKuro, offsetNanime } = calculateOffsets(sameRes, otakuRes, kuroRes, nanimeRes);
-        const epMap = new Map();
+    const allResults = [sameRes, otakuRes, kuroRes, nanimeRes].filter(r => r && r.daftar_episode && r.daftar_episode.length > 0);
 
-        // Masukkan data Samehadaku
-        if (sameRes && sameRes.daftar_episode) {
-            sameRes.daftar_episode.forEach(ep => {
-                if (ep.judul.toLowerCase().includes('batch')) return;
-                const rawNum = extractEpNum(ep.judul);
-                const num = typeof rawNum === 'number' ? rawNum + offsetSame : rawNum;
-                const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetSame) : ep.judul;
-                
-                epMap.set(num, {
-                    judul: formatEpisodeTitle(adjustedJudul),
-                    urls: { samehadaku: ep.url },
-                    num: typeof num === 'number' && !isNaN(num) ? num : null
-                });
-            });
+    // ZERO DATA LOSS FALLBACK: Jika hasil gabungan kosong tapi targetUrl ada, ambil langsung
+    if (allResults.length === 0 && targetUrl) {
+        console.log(`[Scraper Fallback] Multi-source merge mengembalikan 0 episode. Mengambil langsung dari targetUrl: ${targetUrl}`);
+        const fallbackRes = await executeScraperStrategy(targetUrl).catch(() => null);
+        if (fallbackRes && fallbackRes.daftar_episode && fallbackRes.daftar_episode.length > 0) {
+            allResults.push(fallbackRes);
         }
-        
-        // Gabungkan/Tambahkan data Otakudesu
-        if (otakuRes && otakuRes.daftar_episode) {
-            otakuRes.daftar_episode.forEach(ep => {
-                if (ep.judul.toLowerCase().includes('batch')) return;
-                const rawNum = extractEpNum(ep.judul);
-                const num = typeof rawNum === 'number' ? rawNum + offsetOtaku : rawNum;
-                
-                if (epMap.has(num)) {
-                    const existing = epMap.get(num);
-                    existing.urls.otakudesu = ep.url;
-                } else {
-                    const adjustedJudul = typeof rawNum === 'number' ? adjustTitleEpisodeNumber(ep.judul, offsetOtaku) : ep.judul;
-                    epMap.set(num, {
-                        judul: formatEpisodeTitle(adjustedJudul),
-                        urls: { otakudesu: ep.url },
-                        num: typeof num === 'number' && !isNaN(num) ? num : null
-                    });
-                }
-            });
-        }
-
-        // Gabungkan/Tambahkan data Kuronime
-        if (kuroRes && kuroRes.daftar_episode) {
-            kuroRes.daftar_episode.forEach(ep => {
-                if (ep.judul.toLowerCase().includes('batch')) return;
-                const rawNum = extractEpNum(ep.judul);
-                const num = typeof rawNum === 'number' ? rawNum + offsetKuro : rawNum;
-                const adjustedJudul = typeof rawNum === 'number'
-                    ? adjustTitleEpisodeNumber(ep.judul, offsetKuro)
-                    : ep.judul;
-
-                if (epMap.has(num)) {
-                    const existing = epMap.get(num);
-                    existing.urls.kuronime = ep.url;
-                } else {
-                    epMap.set(num, {
-                        judul: formatEpisodeTitle(adjustedJudul),
-                        urls: { kuronime: ep.url },
-                        num: typeof num === 'number' && !isNaN(num) ? num : null
-                    });
-                }
-            });
-        }
-
-        // Gabungkan/Tambahkan data Nanime
-        if (nanimeRes && nanimeRes.daftar_episode) {
-            nanimeRes.daftar_episode.forEach(ep => {
-                if (ep.judul.toLowerCase().includes('batch')) return;
-                const rawNum = extractEpNum(ep.judul);
-                const num = typeof rawNum === 'number' ? rawNum + offsetNanime : rawNum;
-                const adjustedJudul = typeof rawNum === 'number'
-                    ? adjustTitleEpisodeNumber(ep.judul, offsetNanime)
-                    : ep.judul;
-
-                if (epMap.has(num)) {
-                    const existing = epMap.get(num);
-                    existing.urls.nanime = ep.url;
-                } else {
-                    epMap.set(num, {
-                        judul: formatEpisodeTitle(adjustedJudul),
-                        urls: { nanime: ep.url },
-                        num: typeof num === 'number' && !isNaN(num) ? num : null
-                    });
-                }
-            });
-        }
-        
-        const mergedEps = Array.from(epMap.values());
-        mergedEps.sort((a, b) => {
-            const numA = extractEpNum(a.judul);
-            const numB = extractEpNum(b.judul);
-            const aIsNum = typeof numA === 'number';
-            const bIsNum = typeof numB === 'number';
-            if (aIsNum && bIsNum) return numB - numA;
-            if (aIsNum) return -1;
-            if (bIsNum) return 1;
-            return String(numA).localeCompare(String(numB));
-        });
-        
-        data.daftar_episode = mergedEps;
-    } else if (targetUrl) {
-        data = await executeScraperStrategy(targetUrl);
     }
 
-    if (data && data.daftar_episode && data.daftar_episode.length > 0) {
-        data.daftar_episode = deduplicateEpisodes(data.daftar_episode);
+    // TAHAP 3: Deterministic Merging oleh Nomor Episode (num)
+    const epMap = new Map();
+    const noNumEps = [];
+
+    for (const res of allResults) {
+        for (const ep of res.daftar_episode) {
+            if (ep.num != null && typeof ep.num === 'number' && !isNaN(ep.num)) {
+                if (epMap.has(ep.num)) {
+                    const existing = epMap.get(ep.num);
+                    existing.urls = { ...existing.urls, ...ep.urls };
+                    if (!existing.judul || existing.judul === 'Episode ?') {
+                        existing.judul = ep.judul;
+                    }
+                } else {
+                    epMap.set(ep.num, {
+                        judul: ep.judul || `Episode ${ep.num}`,
+                        urls: { ...ep.urls },
+                        num: ep.num
+                    });
+                }
+            } else {
+                // Untuk Movie / Batch / OVA / Special yang tidak memiliki nomor (num === null)
+                const titleLower = (ep.judul || '').toLowerCase().trim();
+                const existingNoNum = noNumEps.find(item => (item.judul || '').toLowerCase().trim() === titleLower);
+                if (existingNoNum) {
+                    existingNoNum.urls = { ...existingNoNum.urls, ...ep.urls };
+                } else {
+                    noNumEps.push({
+                        judul: ep.judul || 'Special / Movie',
+                        urls: { ...ep.urls },
+                        num: null
+                    });
+                }
+            }
+        }
     }
 
-    // Simpan ke database jika dbAnime ada
+    const mergedEps = Array.from(epMap.values());
+    mergedEps.sort((a, b) => b.num - a.num); // Urutkan dari episode terbaru (terbesar) ke terlama (terkecil)
+
+    let finalDaftarEpisode = [...mergedEps, ...noNumEps];
+    if (finalDaftarEpisode.length > 0) {
+        finalDaftarEpisode = deduplicateEpisodes(finalDaftarEpisode);
+    }
+
+    const judulSeri = cleanSeriesTitle(
+        (sameRes?.judul_seri) ||
+        (otakuRes?.judul_seri) ||
+        (kuroRes?.judul_seri) ||
+        (nanimeRes?.judul_seri) ||
+        dbAnime?.title ||
+        'Unknown'
+    );
+
+    const data = {
+        judul_seri: judulSeri,
+        daftar_episode: finalDaftarEpisode
+    };
+
+    return finalizeScrapedData(data, dbAnime);
+}
+
+/**
+ * Helper untuk memvalidasi dan menyimpan hasil scraping ke database serta melengkapi metadata MAL.
+ */
+async function finalizeScrapedData(data, dbAnime) {
     if (dbAnime && data && data.daftar_episode && data.daftar_episode.length > 0) {
         const oldEpsCount = dbAnime.episodesList ? dbAnime.episodesList.length : 0;
         const newEpsCount = data.daftar_episode.length;

@@ -247,8 +247,13 @@ export function adjustTitleEpisodeNumber(title, offset) {
  */
 export function extractOtakuSlug(val) {
     if (!val) return null;
-    if (val.includes(':')) return val.split(':').pop();
-    return val.replace(/^\/anime\//, '').replace(/^\//, '');
+    let s = String(val).trim();
+    if (s.includes('/anime/')) {
+        s = s.split('/anime/').pop();
+    } else if (s.includes(':')) {
+        s = s.split(':').pop();
+    }
+    return s.replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
 /**
