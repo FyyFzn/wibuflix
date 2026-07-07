@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { normalizeTitleForMatch } from './stringUtils.js';
+import { normalizeTitleForMatch, diceCoefficient } from './stringUtils.js';
 
 function extractSequelMetadata(str) {
     if (!str) return { season: 1, part: 1 };
@@ -65,31 +65,43 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
         for (const item of dbItems) {
             if (!item.sources || !item.sources[providerKey] || !item.sources[providerKey].url) continue;
 
-            const itemTitle = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
             const itemUrl = (item.sources[providerKey].url || '').toLowerCase();
+            const titlesToTest = [item.title, ...(item.aliases || [])];
 
-            // Mencegah anime salah masuk ke Live Action / Movie
-            if (!isLiveActionQuery && (itemTitle.includes('live action') || itemUrl.includes('live-action'))) continue;
-            if (!isMovieQuery && (itemTitle.includes('movie') || itemUrl.includes('-movie'))) continue;
+            for (const candTitle of titlesToTest) {
+                if (!candTitle) continue;
+                const normCandidate = normalizeTitleForMatch(candTitle);
+                if (!normCandidate) continue;
 
-            // HARD REJECT: Absolute Versioning Weight (Jika Season atau Part/Cour berbeda, langsung tolak!)
-            const itemSeq = extractSequelMetadata(`${item.title} ${itemUrl}`);
-            if (qSeq.season !== itemSeq.season || qSeq.part !== itemSeq.part) {
-                continue;
-            }
+                // Mencegah anime salah masuk ke Live Action / Movie
+                if (!isLiveActionQuery && (normCandidate.includes('live action') || itemUrl.includes('live-action'))) continue;
+                if (!isMovieQuery && (normCandidate.includes('movie') || itemUrl.includes('-movie'))) continue;
 
-            let matches = 0;
-            for (const w of queryWords) {
-                if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(itemTitle)) matches++;
-            }
+                // HARD REJECT: Absolute Versioning Weight (Jika Season atau Part/Cour berbeda, langsung tolak!)
+                const itemSeq = extractSequelMetadata(`${candTitle} ${itemUrl}`);
+                if (qSeq.season !== itemSeq.season || qSeq.part !== itemSeq.part) {
+                    continue;
+                }
 
-            if (matches >= queryWords.length / 2 && matches > 0) {
-                // Skoring dengan penalti selisih panjang string agar judul yang lebih tepat menang
-                const lengthPenalty = Math.abs(itemTitle.length - query.length);
-                const score = (matches * 1000) - lengthPenalty;
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMatch = item;
+                const dice = diceCoefficient(query, normCandidate);
+                // HARD REJECT: Jika kemiripan string di bawah 50%, pasti bukan anime yang sama!
+                if (dice < 0.50) continue;
+
+                let matches = 0;
+                for (const w of queryWords) {
+                    if (new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(normCandidate)) matches++;
+                }
+
+                // Untuk judul pendek (<= 2 kata kunci), wajib 100% kata cocok! Untuk judul panjang, minimal 75% kata cocok!
+                const requiredMatches = queryWords.length <= 2 ? queryWords.length : Math.ceil(queryWords.length * 0.75);
+
+                if (matches >= requiredMatches && matches > 0) {
+                    const lengthPenalty = Math.abs(normCandidate.length - query.length);
+                    const score = (matches * 1000) + (dice * 500) - lengthPenalty;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = item;
+                    }
                 }
             }
         }
