@@ -8,3 +8,6 @@ wibuflix-app/.android
 wibuflix-app/.ios
 scratch
 debug
+.env
+.env.*
+*.env

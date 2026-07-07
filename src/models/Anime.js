@@ -24,6 +24,11 @@ const animeSchema = new mongoose.Schema({
         type: String,
         default: 'TV'
     },
+    isToku: {
+        type: Boolean,
+        default: false,
+        index: true
+    },
     score: {
         type: String,
         default: '-'
@@ -53,6 +58,11 @@ const animeSchema = new mongoose.Schema({
             offset: { type: Number, default: 0 }
         },
         kuronime: {
+            url: { type: String, default: null, index: true },
+            id: { type: String, default: null, index: true },
+            offset: { type: Number, default: 0 }
+        },
+        nanime: {
             url: { type: String, default: null, index: true },
             id: { type: String, default: null, index: true },
             offset: { type: Number, default: 0 }

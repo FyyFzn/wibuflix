@@ -4,7 +4,6 @@ import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronimeDecryptor.js';
 import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { resolveCatalogSource } from '../utils/animeMatcher.js';
 import Anime from '../models/Anime.js';
 
 const cache = getCache('kuronime', 3600);
@@ -127,42 +126,6 @@ export async function getKuronimeServers(episodeUrl) {
     } finally {
         // Selalu release slot
         if (slot) releaseToPool(slot);
-    }
-}
-
-/**
- * Mengambil server Kuronime sebagai alternatif fallback untuk source lain.
- */
-export async function getAlternativeServers(seriesTitle, episodeTitle) {
-    if (!seriesTitle || !episodeTitle) return [];
-
-    try {
-        const bestMatch = await resolveCatalogSource(seriesTitle, 'kuronime');
-        if (!bestMatch || !bestMatch.url) return [];
-
-        const targetEpNumRaw = extractEpNumStrict(episodeTitle);
-        if (targetEpNumRaw === null) return [];
-
-        const details = await getKuronimeEpisodes(bestMatch.url);
-        if (!details || !details.daftar_episode) return [];
-
-        let targetEpUrl = null;
-        for (const ep of details.daftar_episode) {
-            if (ep.judul.toLowerCase().includes('batch')) continue;
-            const epNum = extractEpNumStrict(ep.judul);
-            if (epNum === targetEpNumRaw) {
-                targetEpUrl = ep.url;
-                break;
-            }
-        }
-
-        if (!targetEpUrl) return [];
-
-        const serverData = await getKuronimeServers(targetEpUrl);
-        return serverData.servers || [];
-    } catch (e) {
-        console.error("[Kuronime Alternative Error]", e.message);
-        return [];
     }
 }
 

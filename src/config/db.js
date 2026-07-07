@@ -5,12 +5,13 @@ dotenv.config();
 
 const connectDB = async () => {
     try {
-        if (!process.env.MONGODB_URI) {
-            console.warn("⚠️ [MongoDB] MONGODB_URI belum diatur di .env. Menggunakan memori sementara atau database lokal jika tersedia.");
+        const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+        if (!uri) {
+            console.warn("⚠️ [MongoDB] MONGODB_URI/MONGO_URI belum diatur di .env. Menggunakan memori sementara atau database lokal jika tersedia.");
             return;
         }
 
-        const conn = await mongoose.connect(process.env.MONGODB_URI, {
+        const conn = await mongoose.connect(uri, {
             maxPoolSize: 10,           // Batasi pool untuk RAM kecil
             minPoolSize: 2,
             serverSelectionTimeoutMS: 5000, 

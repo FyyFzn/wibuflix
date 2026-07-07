@@ -1,7 +1,9 @@
 import * as cheerio from 'cheerio';
+import axios from 'axios';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import Anime from '../models/Anime.js';
+import { fetchNanimeInertia } from '../controllers/nanimeController.js';
 
 let isLatestSyncing = false;
 
@@ -36,6 +38,7 @@ export async function runLatestSync() {
         await scrapeSamehadakuLatest();
         await scrapeOtakudesuLatest();
         await scrapeKuronimeLatest();
+        await scrapeNanimeLatest();
     } catch (e) {
         console.error(`[Latest Sync] Error fatal:`, e.message);
     } finally {
@@ -226,4 +229,95 @@ async function scrapeKuronimeLatest() {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Kuronime.`);
     }
 }
+
+async function scrapeNanimeLatest() {
+    const url = `https://nanimeid.net/`;
+    log(`[Latest Sync] Mengakses Beranda Nanime ID (Inertia JSON)...`);
+
+    const updates = [];
+    try {
+        const data = await fetchNanimeInertia(url);
+        const props = data?.props || {};
+        // PENTING: HANYA baca properti yang secara spesifik menampung UPDATE TERBARU (Latest/Recent Updates).
+        // JANGAN PERNAH memasukkan properti seperti popular, popularAnimes, popular_ongoing, trending, top, atau ongoing!
+        const latestList = props.latestUpdates || props.latest_episodes || props.recent_episodes || props.latest_series || props.latest || props.updates || props.recent || props.new_episodes || [];
+
+        for (const item of latestList) {
+            // PROTEKSI ANTI-POPULAR & ANTI-LAMPAU:
+            // 1. Pastikan item ini adalah update episode baru, bukan kartu anime populer statis!
+            const epNumRaw = item.number || item.episode || item.episode_number || item.ep || (item.latest_episode ? item.latest_episode.number : null);
+            const isEpisodeUpdate = (epNumRaw !== undefined && epNumRaw !== null && epNumRaw !== '') || item.anime !== undefined || item.series !== undefined || (item.title && typeof item.title === 'string' && item.title.toLowerCase().includes('episode'));
+            
+            if (!isEpisodeUpdate) {
+                continue;
+            }
+
+            // 2. Proteksi Waktu (Stale Update Protection):
+            // Kartu di section Anime Populer sering memiliki label seperti "12 hari lalu", "24 hari lalu", atau "3 minggu lalu".
+            // Jika update sudah lebih dari 3 hari lalu atau berminggu-minggu/berbulan-bulan lalu, LEWATI!
+            // Jangan biarkan anime lama menimpa lastUpdated menjadi hari ini dan merusak urutan beranda WibuFlix.
+            const timeStr = (item.time_ago || item.diff_for_humans || item.date || item.time || item.created_at || item.updated_at || '').toString().toLowerCase();
+            if (timeStr.includes('minggu') || timeStr.includes('bulan') || timeStr.includes('tahun')) {
+                continue;
+            }
+            if (timeStr.includes('hari')) {
+                const matchDays = timeStr.match(/(\d+)\s*hari/);
+                if (matchDays && parseInt(matchDays[1], 10) >= 3) {
+                    continue;
+                }
+            }
+
+            const animeObj = item.anime || item.series || item.show || item;
+            
+            // 3-Layer Structural Protection (Anti-Comic)
+            const rawType = (animeObj.type || item.type || '').toString().toUpperCase();
+            const comicTypes = ['MANGA', 'MANHWA', 'MANHUA', 'COMIC', 'NOVEL', 'DOUJIN', 'ONE-SHOT'];
+            if (comicTypes.includes(rawType) || animeObj.chapters !== undefined || item.chapters !== undefined) {
+                continue;
+            }
+
+            const title = animeObj.title || animeObj.name || item.title || item.name;
+            const slug = animeObj.slug || item.slug || item.url || '';
+            if (!title) continue;
+            if (slug && (slug.includes('/manga/') || slug.includes('/read/'))) continue;
+
+            let statusText = typeof epNumRaw === 'number' || /^\d+$/.test(epNumRaw) ? `Eps ${epNumRaw}` : (item.status || item.title || `Eps ${epNumRaw}`);
+            if (!statusText.toLowerCase().includes('eps')) {
+                statusText = `Eps ${epNumRaw || '-'}`;
+            }
+
+            updates.push({ title: title.trim(), status: statusText });
+        }
+    } catch (e) {
+        console.error(`[Latest Sync] Gagal memuat Nanime ID:`, e.message);
+        return;
+    }
+
+    if (updates.length > 0) {
+        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Nanime ID. Melakukan sinkronisasi ke MongoDB...`);
+
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+        const now = Date.now();
+        const bulkOps = updates.map((anime, index) => {
+            const normTitle = normalizeTitleForMatch(anime.title);
+            return {
+                updateOne: {
+                    filter: { normalizedTitle: normTitle },
+                    update: {
+                        $set: {
+                            status: anime.status,
+                            lastUpdated: new Date(now - index * 1000)
+                        }
+                    }
+                }
+            };
+        });
+
+        const result = await Anime.bulkWrite(bulkOps);
+        log(`[Latest Sync] ✅ Nanime ID: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+    } else {
+        log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Nanime ID.`);
+    }
+}
+
 

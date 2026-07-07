@@ -35,6 +35,9 @@ export async function syncNeosatsu() {
             let baseTitle = toku.title.replace(/Episode\s*\d+.*$/i, '').trim();
             const normTitle = normalizeTitleForMatch(baseTitle);
 
+            const isMovie = /movie|gekijouban|film/i.test(baseTitle);
+            const mediaType = isMovie ? 'Movie' : 'TV';
+
             bulkOps.push({
                 updateOne: {
                     filter: { normalizedTitle: normTitle },
@@ -42,7 +45,8 @@ export async function syncNeosatsu() {
                         $set: {
                             title: baseTitle,
                             normalizedTitle: normTitle,
-                            type: 'Toku',
+                            type: mediaType,
+                            isToku: true,
                             malId: null,
                             image: toku.thumb,
                             status: toku.status,

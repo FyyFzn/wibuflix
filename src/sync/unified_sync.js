@@ -78,6 +78,9 @@ export async function syncUnified() {
                                     if (anime.sources.neosatsu?.url && !existingDuplicate.sources.neosatsu?.url) {
                                         existingDuplicate.sources.neosatsu = anime.sources.neosatsu;
                                     }
+                                    if (anime.sources.nanime?.url && !existingDuplicate.sources.nanime?.url) {
+                                        existingDuplicate.sources.nanime = anime.sources.nanime;
+                                    }
                                 }
 
                                 // Gabungkan aliases agar pencarian Atlas Search makin pintar
@@ -112,7 +115,7 @@ export async function syncUnified() {
                     anime.score = tmdbData.score && tmdbData.score !== '-' ? tmdbData.score : anime.score;
 
                     // PENTING: Jangan timpa tipe jika itu adalah Tokusatsu
-                    if (anime.type !== 'Toku') {
+                    if (!anime.isToku && anime.type !== 'Toku') {
                         anime.type = tmdbData.type || anime.type;
                         anime.malId = tmdbData.malId || anime.malId;
                     } else {
@@ -130,7 +133,7 @@ export async function syncUnified() {
                     }
                     anime.episodesCount = tmdbData.episodesCount || anime.episodesCount;
                     anime.year = tmdbData.year || anime.year;
-                    if (anime.type !== 'Toku') {
+                    if (!anime.isToku && anime.type !== 'Toku') {
                         anime.malId = tmdbData.malId || anime.malId;
                     } else {
                         anime.malId = null;

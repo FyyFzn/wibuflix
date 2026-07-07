@@ -4,8 +4,6 @@ import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import Anime from '../models/Anime.js';
 import { extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { resolveCatalogSource } from '../utils/animeMatcher.js';
-import { scrapeVideoServers } from '../services/extractors/videoExtractor.js';
 
 const cache = getCache('episodes', 3600);
 
@@ -125,49 +123,5 @@ export async function getSamehadakuEpisodes(targetUrl) {
         if (slot) releaseToPool(slot);
     }
 }
-
-export async function getAlternativeServers(seriesTitle, episodeTitle) {
-    if (!seriesTitle || !episodeTitle) return [];
-
-    try {
-        const source = await resolveCatalogSource(seriesTitle, 'samehadaku');
-        if (!source || !source.url) {
-            console.log(`[Samehadaku Alt] Tidak menemukan kecocokan seri untuk: "${seriesTitle}"`);
-            return [];
-        }
-
-        const samehadakuUrl = source.url;
-        console.log(`[Samehadaku Alt] Menemukan kecocokan seri Samehadaku: "${samehadakuUrl}"`);
-
-        const targetEpNum = extractEpNumStrict(episodeTitle);
-        if (targetEpNum === null) return [];
-
-        const details = await getSamehadakuEpisodes(samehadakuUrl);
-        if (!details || !details.daftar_episode) return [];
-
-        let targetEpUrl = null;
-        for (const ep of details.daftar_episode) {
-            if (ep.judul.toLowerCase().includes('batch')) continue;
-            const epNum = extractEpNumStrict(ep.judul);
-            if (epNum === targetEpNum) {
-                targetEpUrl = ep.url;
-                break;
-            }
-        }
-
-        if (!targetEpUrl) {
-            console.log(`[Samehadaku Alt] Tidak menemukan episode ${targetEpNum} di Samehadaku`);
-            return [];
-        }
-
-        console.log(`[Samehadaku Alt] Menemukan episode URL alternatif: "${targetEpUrl}"`);
-        const scrapeResult = await scrapeVideoServers(targetEpUrl);
-        return scrapeResult.servers || [];
-    } catch (e) {
-        console.error("[Samehadaku Alternative Error]", e.message);
-        return [];
-    }
-}
-
 
 export { cache };

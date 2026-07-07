@@ -1,0 +1,44 @@
+import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
+
+/**
+ * Controller V2: Mengambil detail dan urutan episode anime
+ * Rute: GET /api/v2/episodes atau GET /api/v2/anime/:slug/episodes
+ */
+export async function getV2Episodes(req, res) {
+    const slug = req.params.slug || req.query.slug;
+    const targetUrl = req.query.url;
+    const id = req.query.id;
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+
+    if (!slug && !targetUrl && !id) {
+        return res.status(400).json({
+            status: 'error',
+            message: "Parameter 'slug', 'id', atau 'url' wajib diisi untuk mengambil episode!"
+        });
+    }
+
+    try {
+        const result = await getUnifiedAnimeEpisodes({
+            targetUrl,
+            slug,
+            id,
+            forceRefresh
+        });
+
+        if (!res.headersSent) {
+            return res.json({
+                status: 'success',
+                data: result
+            });
+        }
+    } catch (err) {
+        console.error('[API v2 Episodes Error]', err.message);
+        if (!res.headersSent) {
+            const statusCode = err.message && err.message.includes("tidak ditemukan") ? 404 : 500;
+            return res.status(statusCode).json({
+                status: 'error',
+                message: err.message
+            });
+        }
+    }
+}

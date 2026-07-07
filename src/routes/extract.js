@@ -1,11 +1,11 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
-import { getAlternativeServers as getAlternativeServersSamehadaku } from '../controllers/samehadakuController.js';
 import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted, invalidateAndDeleteBlob } from '../utils/azureUploader.js';
 import { normalizeTitleForMatch, extractEpNumStrict } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
-import { getServersInternal as getOtakuServers, getAlternativeServers as getOtakuAlternativeServers } from '../controllers/otakudesuController.js';
-import { getKuronimeServers, getAlternativeServers as getKuronimeAlternativeServers } from '../controllers/kuronimeController.js';
+import { getServersInternal as getOtakuServers } from '../controllers/otakudesuController.js';
+import { getKuronimeServers } from '../controllers/kuronimeController.js';
+import { getNanimeServers } from '../controllers/nanimeController.js';
 import { backgroundQueue } from '../utils/queueManager.js';
 import QueueTask from '../models/QueueTask.js';
 import { getCache } from '../utils/cacheManager.js';
@@ -89,7 +89,7 @@ export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitl
         }
         
         if (!dbAnime && seriesTitle) {
-            for (const prov of ['samehadaku', 'otakudesu', 'kuronime', 'neosatsu']) {
+            for (const prov of ['samehadaku', 'otakudesu', 'kuronime', 'nanime', 'neosatsu']) {
                 const res = await resolveCatalogSource(seriesTitle, prov);
                 if (res && res.entry) {
                     dbAnime = res.entry;
@@ -250,6 +250,12 @@ async function getServersBasedOnUrl(episodeUrl) {
             realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
         }
         return await getKuronimeServers(realUrl);
+    } else if (episodeUrl.includes('nanimeid.net') || episodeUrl.includes('/api/nanime/servers')) {
+        let realUrl = episodeUrl;
+        if (episodeUrl.includes('?url=')) {
+            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
+        }
+        return await getNanimeServers(realUrl);
     } else {
         return await scrapeVideoServers(episodeUrl);
     }
@@ -258,6 +264,7 @@ async function getServersBasedOnUrl(episodeUrl) {
 function sourceScore(source) {
     if (source === 'Samehadaku') return 100;
     if (source === 'Otakudesu') return 50;
+    if (source === 'Nanime') return 25;
     if (source === 'Kuronime') return -100; // last resort
     return 0;
 }
@@ -343,23 +350,10 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                 if (!alternativePromise) alternativePromise = p;
                 else secondaryAlternativePromise = p;
             }
-        } else if (seriesTitle && episodeTitle && !episodeUrl.includes('___neosatsu_ep___')) {
-            try {
-                if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-                    console.info(`${logPrefix} Pencarian alternatif di Samehadaku & Kuronime untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                    alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-                    secondaryAlternativePromise = getKuronimeAlternativeServers(seriesTitle, episodeTitle);
-                } else if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) {
-                    console.info(`${logPrefix} Pencarian alternatif di Samehadaku & Otakudesu untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                    alternativePromise = getAlternativeServersSamehadaku(seriesTitle, episodeTitle);
-                    secondaryAlternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
-                } else {
-                    console.info(`${logPrefix} Pencarian alternatif di Otakudesu & Kuronime untuk: "${seriesTitle}" - "${episodeTitle}"`);
-                    alternativePromise = getOtakuAlternativeServers(seriesTitle, episodeTitle, episodeUrl);
-                    secondaryAlternativePromise = getKuronimeAlternativeServers(seriesTitle, episodeTitle);
-                }
-            } catch (err) {
-                console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
+            if (urlsObj.nanime && !episodeUrl.includes('nanime')) {
+                const p = getNanimeServers(urlsObj.nanime).then(res => res?.servers || []).catch(() => []);
+                if (!alternativePromise) alternativePromise = p;
+                else if (!secondaryAlternativePromise) secondaryAlternativePromise = p;
             }
         }
 
@@ -380,11 +374,13 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
         let primarySource = 'Samehadaku';
         if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
         if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
+        if (episodeUrl.includes('nanimeid.net') || episodeUrl.includes('/api/nanime/servers')) primarySource = 'Nanime';
         
         let altSource1 = 'Otakudesu';
         let altSource2 = 'Kuronime';
         if (primarySource === 'Otakudesu') { altSource1 = 'Samehadaku'; altSource2 = 'Kuronime'; }
         if (primarySource === 'Kuronime') { altSource1 = 'Samehadaku'; altSource2 = 'Otakudesu'; }
+        if (primarySource === 'Nanime') { altSource1 = 'Samehadaku'; altSource2 = 'Otakudesu'; }
 
         const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
         const taggedAlternative1 = (alternativeServers || []).map(s => ({ ...s, source: altSource1 }));

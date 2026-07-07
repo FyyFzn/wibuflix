@@ -49,11 +49,25 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
 
     // Filter berdasarkan tab (wajib dieksekusi setelah typeFilter)
     if (tabParam === 'anime') {
-        // Sembunyikan semua yang tipenya Toku
+        // Sembunyikan semua yang merupakan Tokusatsu
+        query.isToku = { $ne: true };
         if (!query.type) query.type = { $ne: 'Toku' };
     } else if (tabParam === 'toku') {
-        // Wajib tipenya Toku
-        query.type = 'Toku';
+        // Wajib Tokusatsu (cek isToku, atau old tag 'Toku', atau punya sumber neosatsu)
+        const tokuCondition = [
+            { isToku: true },
+            { type: 'Toku' },
+            { 'sources.neosatsu.url': { $ne: null } }
+        ];
+        if (query.$or) {
+            query.$and = [
+                { $or: query.$or },
+                { $or: tokuCondition }
+            ];
+            delete query.$or;
+        } else {
+            query.$or = tokuCondition;
+        }
     }
 
     const limit = 9;

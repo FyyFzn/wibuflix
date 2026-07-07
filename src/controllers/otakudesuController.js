@@ -7,7 +7,6 @@ import { getCache } from '../utils/cacheManager.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { resolveCatalogSource } from '../utils/animeMatcher.js';
 
 const cache = getCache('otakudesu', 3600);
 const resolveLimit = pLimit(3); // Maksimal 3 request serentak untuk mencegah Self-DDoS
@@ -229,81 +228,5 @@ export async function getServersInternal(url) {
         return result;
     } finally {
         if (slot) releaseToPool(slot);
-    }
-}
-
-export async function getAlternativeServers(seriesTitle, episodeTitle, seriesUrl = null) {
-    if (!seriesTitle || !episodeTitle) return [];
-
-    try {
-        const source = await resolveCatalogSource(seriesTitle, 'otakudesu');
-        if (!source || !source.url) return [];
-
-        const urlParts = source.url.split('/').filter(Boolean);
-        const slugStr = urlParts[urlParts.length - 1];
-        const bestMatch = { title: source.title, slug: slugStr };
-
-        const targetEpNumRaw = extractEpNumStrict(episodeTitle);
-        if (targetEpNumRaw === null) return [];
-
-        const details = await otaku.getExtraAnime(bestMatch.slug);
-        if (!details || !details.episodes) return [];
-
-        let offsetOtaku = 0;
-        if (seriesUrl) {
-            try {
-                // To avoid circular dependency with episodeController.js, we assume the caller passes the offset, 
-                // but since we don't have it, we'll try to import dynamically and fetch
-                const episodesModule = await import('./samehadakuController.js');
-                const sameRes = await episodesModule.getSamehadakuEpisodes(seriesUrl);
-
-                if (sameRes && sameRes.daftar_episode) {
-                    const sameEps = sameRes.daftar_episode.map(ep => extractEpNumStrict(ep.judul)).filter(n => n !== null);
-                    const otakuEps = details.episodes.map(ep => extractEpNumStrict(ep.title)).filter(n => n !== null);
-
-                    if (sameEps.length > 0 && otakuEps.length > 0) {
-                        const minSame = Math.min(...sameEps);
-                        const minOtaku = Math.min(...otakuEps);
-                        const sameSet = new Set(sameEps);
-                        if (!otakuEps.some(num => sameSet.has(num))) {
-                            if (minOtaku === 1 && minSame > 1) {
-                                offsetOtaku = minSame - 1;
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error("[Otakudesu Alternative Offset Error]", e.message);
-            }
-        }
-
-        const targetEpNum = targetEpNumRaw - offsetOtaku;
-
-        let targetEpUrl = null;
-        for (const ep of details.episodes) {
-            if (ep.title.toLowerCase().includes('batch')) continue;
-            const epNum = extractEpNumStrict(ep.title);
-            if (epNum === targetEpNum) {
-                targetEpUrl = ep.url;
-                break;
-            }
-        }
-
-        if (!targetEpUrl) return [];
-
-        let slot = null;
-        let servers = [];
-        try {
-            const fetchRes = await fetchWithCF(targetEpUrl, { fetchTimeout: 10000 });
-            slot = fetchRes.slot;
-            servers = await resolveOtakuServers(fetchRes.$);
-        } finally {
-            if (slot) releaseToPool(slot);
-        }
-
-        return servers;
-    } catch (e) {
-        console.error("[Otakudesu Alternative Error]", e.message);
-        return [];
     }
 }

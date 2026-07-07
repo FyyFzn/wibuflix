@@ -3,6 +3,9 @@ FYYStreamApp/
 wibuflix/
 wibuflix-app/
 .env
+.env.*
+*.env
+!.env.example
 scratch/
 debug/
 

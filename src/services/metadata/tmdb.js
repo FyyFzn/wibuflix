@@ -40,6 +40,7 @@ async function searchAniList(cleanTitle, retries = 3) {
         query ($search: String) {
           Media(search: $search, type: ANIME) {
             idMal
+            format
             title { romaji english native }
             coverImage { extraLarge large }
             averageScore
@@ -76,13 +77,22 @@ async function searchAniList(cleanTitle, retries = 3) {
                 mappedScore = (item.averageScore / 10).toFixed(2);
             }
 
+            // Mapping Format Type ke Standar WibuFlix (TV, Movie, OVA, ONA, Special)
+            let mappedType = 'TV';
+            if (item.format === 'MOVIE') mappedType = 'Movie';
+            else if (item.format === 'OVA') mappedType = 'OVA';
+            else if (item.format === 'ONA') mappedType = 'ONA';
+            else if (item.format === 'SPECIAL') mappedType = 'Special';
+            else if (item.format === 'TV_SHORT') mappedType = 'TV';
+
             return {
                 title: item.title.english || item.title.romaji, 
                 image: item.coverImage?.extraLarge || item.coverImage?.large || null,
                 score: mappedScore,
                 synopsis: item.description ? item.description.replace(/<[^>]*>?/gm, '') : 'Sinopsis tidak tersedia di AniList.',
                 status: mappedStatus,
-                type: 'Anime',
+                type: mappedType,
+                tipe: mappedType,
                 aliases: [...new Set(aliases.filter(Boolean))],
                 genres: item.genres || [],
                 episodesCount: item.episodes || null,
@@ -276,6 +286,7 @@ export async function searchTMDB(title, isToku = false) {
                     score,
                     synopsis,
                     status: finalStatus,
+                    type: finalType,
                     tipe: finalType,
                     aliases: [...new Set(aliases.filter(Boolean))],
                     genres,
