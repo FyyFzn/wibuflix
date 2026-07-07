@@ -30,7 +30,7 @@ export async function getEpisodes(req, res) {
 export async function getOtakuEpisodesFormatted(slug) {
     const cacheKey = `otaku_eps_${slug}`;
     const cachedData = cache.get(cacheKey);
-    if (cachedData) {
+    if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Otakudesu Cache Hit] ${cacheKey}`);
         return cachedData;
     }
@@ -43,14 +43,11 @@ export async function getOtakuEpisodesFormatted(slug) {
     // Fallback title dari database MongoDB jika parser scraper gagal mendapatkan nama
     const found = await Anime.findOne({ "sources.otakudesu.id": slug }).lean();
     let fallbackTitle = found ? found.title : slug;
+    let finalTitle = details.title ? details.title.replace(/^Nonton\s+/i, '').trim() : fallbackTitle;
 
-    // Bersihkan teks status dari judul database (misal: "Anime Title On-Going")
-    fallbackTitle = fallbackTitle.replace(/\s*on-going\s*$/i, '').replace(/\s*completed\s*$/i, '').replace(/\"/g, '').trim();
-
-    let finalTitle = details.name;
-
-    // Jika library mengembalikan slug, paksa gunakan fallbackTitle
-    if (!finalTitle || finalTitle.toLowerCase() === slug.toLowerCase() || finalTitle.includes('-sub-indo')) {
+    // Bersihkan lagi jika masih ada awalan "Nonton Anime " atau "Nonton " yang tersisa
+    finalTitle = finalTitle.replace(/^Nonton\s+(Anime\s+)?/i, '').trim();
+    if (!finalTitle || finalTitle === '') {
         finalTitle = fallbackTitle;
     }
 
@@ -64,7 +61,7 @@ export async function getOtakuEpisodesFormatted(slug) {
     const result = {
         judul_seri: cleanSeriesTitle(finalTitle),
         cover_scraper: details.thumb || '',
-        daftar_episode: details.episodes.map(ep => {
+        daftar_episode: (details.episodes || []).map(ep => {
             const epParts = ep.url.split('/').filter(Boolean);
             const epSlug = epParts[epParts.length - 1];
             return {
@@ -75,7 +72,11 @@ export async function getOtakuEpisodesFormatted(slug) {
         })
     };
 
-    cache.set(cacheKey, result);
+    if (result.daftar_episode && result.daftar_episode.length > 0) {
+        cache.set(cacheKey, result);
+    } else {
+        console.warn(`[Otakudesu] Peringatan: 0 episode ditemukan untuk ${cacheKey}. Hasil tidak disimpan ke cache.`);
+    }
     return result;
 }
 

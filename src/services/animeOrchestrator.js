@@ -91,7 +91,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
     // 2. Cek In-Memory Cache (jika tidak dipaksa refresh)
     if (!forceRefresh) {
         const cachedData = orchestratorCache.get(cacheKey);
-        if (cachedData) {
+        if (cachedData && cachedData.episodes && cachedData.episodes.length > 0) {
             console.log(`[Orchestrator] Menggunakan LRU Cache untuk: ${queryUrl}`);
             return cachedData;
         }

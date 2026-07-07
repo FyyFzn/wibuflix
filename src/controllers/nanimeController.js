@@ -68,7 +68,7 @@ export async function fetchNanimeInertia(url) {
 export async function getNanimeEpisodes(animeUrl) {
     const cacheKey = `nanime_eps_${animeUrl}`;
     const cachedData = cache.get(cacheKey);
-    if (cachedData) {
+    if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Nanime Cache Hit] ${cacheKey}`);
         return cachedData;
     }

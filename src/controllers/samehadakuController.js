@@ -12,7 +12,7 @@ export async function getSamehadakuEpisodes(targetUrl) {
 
     const cacheKey = `eps_${targetUrl}`;
     const cachedData = cache.get(cacheKey);
-    if (cachedData) {
+    if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Episodes Cache Hit] ${cacheKey}`);
         return cachedData;
     }

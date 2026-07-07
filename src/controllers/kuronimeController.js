@@ -17,7 +17,7 @@ const cache = getCache('kuronime', 3600);
 export async function getKuronimeEpisodes(animeUrl) {
     const cacheKey = `kuro_eps_${animeUrl}`;
     const cachedData = cache.get(cacheKey);
-    if (cachedData) {
+    if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Kuronime Cache Hit] ${cacheKey}`);
         return cachedData;
     }
@@ -35,12 +35,14 @@ export async function getKuronimeEpisodes(animeUrl) {
         const cover = $('img[itemprop="image"]').attr('src') || $('.thumb img').attr('src') || '';
 
         const daftar_episode = [];
-        // Selector daftar episode di halaman anime Kuronime
-        $('div.bixbox.bxcl ul li').each((_, el) => {
-            const a = $(el).find('a');
+        const seenUrls = new Set();
+        // Selector daftar episode di halaman anime Kuronime (diperluas untuk berbagai tema WordPress/eplister)
+        $('div.bixbox.bxcl ul li, .eplister ul li, ul.eplister li, .lstepsiode ul li, #episode_list li, .episodelist ul li, .listeps ul li, .lastep li, div.bxcl ul li, div.epcurlast ul li, div.bixbox ul li, div.bxcl li, div[class*="eplister"] li, ul[class*="eplister"] li, div[class*="list"] ul li, ul[class*="list"] li').each((_, el) => {
+            const a = $(el).find('a').first();
             const href = a.attr('href');
             const epTitle = $(el).find('.lchx').text().trim() || $(el).find('.epl-num').text().trim() || a.text().trim();
-            if (href && epTitle) {
+            if (href && epTitle && !seenUrls.has(href)) {
+                seenUrls.add(href);
                 daftar_episode.push({
                     judul: formatEpisodeTitle(epTitle),
                     // BUG FIX: Kembalikan URL Kuronime mentah (bukan dibungkus /api/...)
@@ -54,7 +56,11 @@ export async function getKuronimeEpisodes(animeUrl) {
         daftar_episode.reverse();
 
         const result = { judul_seri: judul, cover_scraper: cover, daftar_episode };
-        cache.set(cacheKey, result);
+        if (daftar_episode.length > 0) {
+            cache.set(cacheKey, result);
+        } else {
+            console.warn(`[Kuronime] Peringatan: 0 episode ditemukan untuk ${animeUrl}. Hasil tidak disimpan ke cache agar dapat dicoba ulang.`);
+        }
         return result;
     } finally {
         // Selalu release slot, bahkan jika fetchWithCF throw

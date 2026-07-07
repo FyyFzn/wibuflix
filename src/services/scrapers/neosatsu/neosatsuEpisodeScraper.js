@@ -298,7 +298,11 @@ export async function getNeosatsuEpisodes(targetUrl) {
             cover_scraper: cover,
             daftar_episode: daftar_episode
         };
-        cache.set(targetUrl, finalResult);
+        if (daftar_episode.length > 0) {
+            cache.set(targetUrl, finalResult);
+        } else {
+            console.warn(`[Neosatsu] Peringatan: 0 episode ditemukan untuk ${targetUrl}. Hasil tidak disimpan ke cache.`);
+        }
 
         return finalResult;
     } catch (err) {
