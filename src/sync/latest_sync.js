@@ -337,12 +337,16 @@ async function scrapeNimegamiLatest() {
         }
 
         const $ = fetchRes.$;
-        const ignoreWords = ['/category/', '/tag/', '/list', '/jadwal', '/genre', 'wp-content', 'javascript:', 'telegram', 'facebook', 'twitter', 'instagram', 'discord'];
+        const ignoreWords = ['/category/', '/tag/', '/list', '/jadwal', '/genre', 'wp-content', 'javascript:', 'telegram', 'facebook', 'twitter', 'instagram', 'discord', '/page/', '/anime-terbaru', '/live-action', '/drama-jepang', '/dorama', '/jdrama', '/j-drama', '/type', '/seasons', '/streaming', '/ongoing', '/completed', '/movie-list', '/author/', '/about', '/contact', '/privacy', '/disclaimer', '/dmca', '/donasi'];
+        const ignoreTitles = ['anime list', 'live action', 'j-drama', 'jdrama', 'drama jepang', 'anime terbaru', 'jadwal rilis', 'streaming list', 'baca komik', 'type', 'seasons', 'genre', 'home', 'beranda', 'ongoing', 'completed', 'next', 'prev', 'previous', 'dramaid'];
 
-        $('a').each((_, el) => {
+        $('.content, #main, .main, .post, article, .list-anime').find('a').each((_, el) => {
+            if ($(el).closest('nav, header, footer, .sidebar, .menu, .nav, ul.menu, li.menu-item').length > 0) return;
+
             const href = $(el).attr('href');
             let text = $(el).text().replace(/\s+/g, ' ').trim();
             if (!href || !href.startsWith('http') || ignoreWords.some(w => href.toLowerCase().includes(w)) || href === 'https://nimegami.id/') return;
+            if (ignoreTitles.some(t => text.toLowerCase() === t || text.toLowerCase().includes(t))) return;
 
             if (href.includes('nimegami.id/')) {
                 if (!updatesMap.has(href)) {
