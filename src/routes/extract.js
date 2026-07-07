@@ -376,23 +376,22 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
             targetUrlPromise.then(res => (res?.servers || []).map(s => ({ ...s, source: getSourceLabel(episodeUrl) }))).catch(() => [])
         ];
 
-        if (urlsObj) {
-            console.info(`${logPrefix} Mengambil URL alternatif dari semua provider yang tersedia di metadata urls...`);
-            if (urlsObj.samehadaku && !episodeUrl.includes('samehadaku')) {
-                fetchTasks.push(getServersBasedOnUrl(urlsObj.samehadaku).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Samehadaku' }))).catch(() => []));
-            }
-            if (urlsObj.kuronime && !episodeUrl.includes('kuronime')) {
-                fetchTasks.push(getKuronimeServers(urlsObj.kuronime).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Kuronime' }))).catch(() => []));
-            }
-            if (urlsObj.otakudesu && !episodeUrl.includes('otakudesu')) {
-                let otakuUrl = urlsObj.otakudesu;
-                if (otakuUrl.startsWith('/api/otakudesu/servers')) {
-                    otakuUrl = new URL('http://localhost' + otakuUrl).searchParams.get('url') || otakuUrl;
+        if (urlsObj && typeof urlsObj === 'object') {
+            console.info(`${logPrefix} Mengambil URL alternatif dari metadata urls:`, JSON.stringify(urlsObj));
+            for (const [provider, provUrl] of Object.entries(urlsObj)) {
+                if (!provUrl || typeof provUrl !== 'string') continue;
+                if (episodeUrl.includes(provUrl) || (provider === 'otakudesu' && episodeUrl.includes('otakudesu')) || (provider === 'kuronime' && episodeUrl.includes('kuronime')) || (provider === 'samehadaku' && episodeUrl.includes('samehadaku')) || (provider === 'nanime' && episodeUrl.includes('nanime')) || (provider === 'neosatsu' && episodeUrl.includes('neosatsu'))) {
+                    continue;
                 }
-                fetchTasks.push(getOtakuServers(otakuUrl).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Otakudesu' }))).catch(() => []));
-            }
-            if (urlsObj.nanime && !episodeUrl.includes('nanime')) {
-                fetchTasks.push(getNanimeServers(urlsObj.nanime).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Nanime' }))).catch(() => []));
+                const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+                let fetchUrl = provUrl;
+                if (provider === 'otakudesu' && fetchUrl.startsWith('/api/otakudesu/servers')) {
+                    fetchUrl = new URL('http://localhost' + fetchUrl).searchParams.get('url') || fetchUrl;
+                }
+                fetchTasks.push(getServersBasedOnUrl(fetchUrl).then(res => (res?.servers || []).map(s => ({ ...s, source: label }))).catch(err => {
+                    console.warn(`${logPrefix} Gagal fetch provider ${label} (${fetchUrl}):`, err.message);
+                    return [];
+                }));
             }
         }
 
