@@ -28,8 +28,10 @@ export async function getV2Stream(req, res) {
         const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
         const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
 
-        // 1. JIKA SUDAH READY DI AZURE BLOB -> KEMBALIKAN URL BLOB
-        if (status === 'READY') {
+        const forceRefresh = req.query.force === 'true' || req.query.refresh === 'true';
+
+        // 1. JIKA SUDAH READY DI AZURE BLOB -> KEMBALIKAN URL BLOB (Kecuali forceRefresh = true)
+        if (status === 'READY' && !forceRefresh) {
             return res.json({
                 status: 'success',
                 data: {
@@ -37,6 +39,10 @@ export async function getV2Stream(req, res) {
                     url: getBlobUrl(getBlobPath(activeSlug, activeEpSlug))
                 }
             });
+        }
+
+        if (status === 'READY' && forceRefresh) {
+            console.info(`[API v2 Stream] Force Refresh diminta! Mengabaikan cache Azure Blob dan melakukan ekstraksi ulang untuk: ${targetUrl}`);
         }
 
         // 2. JIKA SEDANG UPLOAD -> KEMBALIKAN PROGRESS (Tanpa fallback proxy/webview!)
