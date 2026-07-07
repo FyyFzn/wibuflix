@@ -183,12 +183,19 @@ export function markUploadFailed(seriesSlug, episodeSlug) {
  * Checks if there is any active upload for a specific series.
  */
 export function hasActiveUploadForSeries(seriesSlug) {
-    const cleanSeries = seriesSlug.replace(/^mal-\d+_/, '');
+    const malPrefixMatch = seriesSlug.match(/^(mal-\d+|db-[0-9a-fA-F]{24})/);
+    const prefix = malPrefixMatch ? malPrefixMatch[1] : seriesSlug.replace(/^mal-\d+_/, '');
     const keys = uploadCache.keys();
     for (const key of keys) {
-        const cleanKey = key.replace(/^mal-\d+_/, '');
-        if (cleanKey.startsWith(`${cleanSeries}/`) && uploadCache.get(key) === 'UPLOADING') {
-            return true;
+        if (malPrefixMatch) {
+            if (key.startsWith(prefix) && uploadCache.get(key) === 'UPLOADING') {
+                return true;
+            }
+        } else {
+            const cleanKey = key.replace(/^mal-\d+_/, '');
+            if (cleanKey.startsWith(`${prefix}/`) && uploadCache.get(key) === 'UPLOADING') {
+                return true;
+            }
         }
     }
     return false;
