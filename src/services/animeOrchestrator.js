@@ -57,16 +57,20 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         if (id && id.match(/^[0-9a-fA-F]{24}$/)) {
             dbAnime = await Anime.findById(id);
         } else if (slug) {
-            dbAnime = await Anime.findOne({
-                $or: [
-                    { slug: slug },
-                    { url: { $regex: slug, $options: 'i' } },
-                    { "sources.samehadaku.url": { $regex: slug, $options: 'i' } },
-                    { "sources.otakudesu.id": slug },
-                    { "sources.kuronime.url": { $regex: slug, $options: 'i' } },
-                    { "sources.nanime.url": { $regex: slug, $options: 'i' } }
-                ]
-            });
+            // Cek apakah slug adalah angka murni (MAL ID dari uniqueId mal-XXXXX)
+            const isNumericMalId = /^\d+$/.test(slug.trim());
+            const queryConditions = [
+                { slug: slug },
+                { url: { $regex: slug, $options: 'i' } },
+                { "sources.samehadaku.url": { $regex: slug, $options: 'i' } },
+                { "sources.otakudesu.id": slug },
+                { "sources.kuronime.url": { $regex: slug, $options: 'i' } },
+                { "sources.nanime.url": { $regex: slug, $options: 'i' } }
+            ];
+            if (isNumericMalId) {
+                queryConditions.unshift({ malId: parseInt(slug, 10) });
+            }
+            dbAnime = await Anime.findOne({ $or: queryConditions });
         }
 
         if (dbAnime) {

@@ -575,16 +575,29 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 // BUGFIX: Cari URL semua provider dari Orchestrator jika belum tersedia.
                 // Ini memastikan findBestVideoSource bisa mencoba 1080p dari Samehadaku/Kuronime,
                 // bukan hanya server dari provider utama (Otakudesu) yang mungkin hanya punya 720p.
+                // PENTING: Gunakan uniqueId (mal-XXXXX) atau seriesTitle sebagai kunci query ke orchestrator,
+                // BUKAN episodeUrl (yang merupakan URL episode, bukan URL seri)!
                 let urlsObjForAttempt = preloadedUrlsObj;
                 if (!urlsObjForAttempt && uniqueId && attempt === 1) {
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
                         if (epNum != null) {
-                            const animeData = await getUnifiedAnimeEpisodes({ targetUrl: episodeUrl, forceRefresh: false });
+                            // Query orchestrator dengan slug dari uniqueId (mis: "mal-49784") 
+                            // agar tidak salah scrape episode URL sebagai series URL
+                            const orchSlug = uniqueId.toString().replace(/^(mal-|db-)/, '');
+                            const animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug, forceRefresh: false }).catch(async () => {
+                                // Fallback: coba dengan seriesTitle
+                                if (seriesTitle) {
+                                    return getUnifiedAnimeEpisodes({ slug: seriesTitle, forceRefresh: false }).catch(() => null);
+                                }
+                                return null;
+                            });
                             const targetEp = animeData?.episodes?.find(e => e.num === epNum);
                             if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
                                 urlsObjForAttempt = targetEp.urls;
-                                console.info(`${attemptPrefix} ✓ Orchestrator menyediakan URL ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch.`);
+                                console.info(`${attemptPrefix} ✓ Orchestrator menyediakan URL ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch (ep ${epNum}).`);
+                            } else {
+                                console.warn(`${attemptPrefix} Orchestrator tidak menemukan episode ${epNum} dari uniqueId=${uniqueId}.`);
                             }
                         }
                     } catch (orchErr) {
