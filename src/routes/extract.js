@@ -93,7 +93,7 @@ export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitl
                     dbAnime = await Anime.findById(dbMatch[1]);
                 }
                 if (dbAnime) {
-                    const canonicalTitle = dbAnime.normalizedTitle || (dbAnime.title ? normalizeTitleForMatch(dbAnime.title).replace(/\s+/g, '-') : '');
+                    const canonicalTitle = (dbAnime.normalizedTitle || (dbAnime.title ? normalizeTitleForMatch(dbAnime.title) : '')).replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
                     if (canonicalTitle) canonicalTitleMap.set(rawId, canonicalTitle);
                 }
             } catch (e) {}
@@ -119,7 +119,7 @@ export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitl
         }
         
         if (dbAnime) {
-            const canonicalTitle = dbAnime.normalizedTitle || (dbAnime.title ? normalizeTitleForMatch(dbAnime.title).replace(/\s+/g, '-') : '');
+            const canonicalTitle = (dbAnime.normalizedTitle || (dbAnime.title ? normalizeTitleForMatch(dbAnime.title) : '')).replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
             if (dbAnime.malId) {
                 const malKey = `mal-${dbAnime.malId}`;
                 if (canonicalTitle) canonicalTitleMap.set(malKey, canonicalTitle);
@@ -225,10 +225,10 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
         
         // Cek apakah kita punya judul kanonikal dari database di cache
         if (canonicalTitleMap.has(rawUniqueId)) {
-            titleSlug = canonicalTitleMap.get(rawUniqueId);
+            titleSlug = canonicalTitleMap.get(rawUniqueId).replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
         } else if (seriesTitle && seriesTitle.trim().length > 0) {
             const cleanTitle = normalizeTitleForMatch(seriesTitle);
-            if (cleanTitle) titleSlug = cleanTitle.replace(/\s+/g, '-');
+            if (cleanTitle) titleSlug = cleanTitle.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
         }
 
         if (titleSlug) {
@@ -236,13 +236,21 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
             primarySlug = `${rawUniqueId}_${titleSlug}`;
             slugsToCheck.push(primarySlug);
             
+            // Tambahkan variasi spasi & underscore ke slugsToCheck agar folder lama (seperti mal-49784_mairimashita iruma kun s3) tetap terdeteksi!
+            const spaceSlug = `${rawUniqueId}_${titleSlug.replace(/-/g, ' ')}`;
+            if (!slugsToCheck.includes(spaceSlug)) slugsToCheck.push(spaceSlug);
+            const underSlug = `${rawUniqueId}_${titleSlug.replace(/-/g, '_')}`;
+            if (!slugsToCheck.includes(underSlug)) slugsToCheck.push(underSlug);
+            
             // Tambahkan juga kombinasi dengan seriesTitle lokal jika berbeda (untuk kompatibilitas upload sebelumnya)
             if (seriesTitle && seriesTitle.trim().length > 0) {
                 const cleanLocalTitle = normalizeTitleForMatch(seriesTitle);
                 if (cleanLocalTitle) {
-                    const localTitleSlug = cleanLocalTitle.replace(/\s+/g, '-');
+                    const localTitleSlug = cleanLocalTitle.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
                     const localPrimary = `${rawUniqueId}_${localTitleSlug}`;
                     if (!slugsToCheck.includes(localPrimary)) slugsToCheck.push(localPrimary);
+                    const localSpace = `${rawUniqueId}_${cleanLocalTitle}`;
+                    if (!slugsToCheck.includes(localSpace)) slugsToCheck.push(localSpace);
                     if (!slugsToCheck.includes(localTitleSlug)) slugsToCheck.push(localTitleSlug);
                 }
             }
