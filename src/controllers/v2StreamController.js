@@ -1,6 +1,6 @@
 import { resolveCanonicalUniqueId } from '../services/canonicalService.js';
 import { extractSlugs } from '../services/slugService.js';
-import { prefetchOneEpisode } from '../services/prefetchService.js';
+import { prefetchOneEpisode, triggerPrefetchWindow } from '../services/prefetchService.js';
 import { checkUploadStatusWithFallback, getBlobPath, getBlobUrl } from '../services/stream/blobStorageService.js';
 import { getUploadProgress, invalidateAndDeleteBlob } from '../services/stream/uploadProgressService.js';
 import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
@@ -35,6 +35,9 @@ export async function getV2Stream(req, res) {
 
         // 1. JIKA SUDAH READY DI AZURE BLOB -> KEMBALIKAN URL BLOB (Kecuali forceRefresh = true)
         if (status === 'READY' && !forceRefresh) {
+            if (nextEpisodeUrl) {
+                triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
+            }
             return res.json({
                 status: 'success',
                 data: {
@@ -50,6 +53,9 @@ export async function getV2Stream(req, res) {
 
         // 2. JIKA SEDANG UPLOAD -> KEMBALIKAN PROGRESS (Tanpa fallback proxy/webview!)
         if (status === 'UPLOADING') {
+            if (nextEpisodeUrl) {
+                triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
+            }
             const progress = getUploadProgress(activeSlug, activeEpSlug) || 0;
             return res.json({
                 status: 'success',
@@ -68,6 +74,12 @@ export async function getV2Stream(req, res) {
             try { urlsObj = typeof urls === 'string' ? JSON.parse(urls) : urls; } catch (e) {}
         }
         prefetchOneEpisode(seriesSlug, targetUrl, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId, null, urlsObj)
+            .then(res => {
+                if (res && res.success && nextEpisodeUrl) {
+                    console.info(`[API v2 Stream] Upload episode selesai. Memulai prefetch episode berikutnya: ${nextEpisodeUrl}`);
+                    triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
+                }
+            })
             .catch(err => console.error('[API v2 Stream Extraction Error]', err.message));
 
         return res.json({
@@ -149,6 +161,12 @@ export async function reportBrokenV2(req, res) {
         const nextUrlToExtract = fallbackUrl || targetUrl;
         console.info(`[API v2 Failover] Memulai ekstraksi ulang dari provider alternatif: ${nextUrlToExtract}`);
         prefetchOneEpisode(seriesSlug, nextUrlToExtract, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId)
+            .then(res => {
+                const nextEpUrl = req.body?.nextEpisodeUrl || req.query?.nextEpisodeUrl;
+                if (res && res.success && nextEpUrl) {
+                    triggerPrefetchWindow(seriesSlug, [nextEpUrl], seriesTitle, slugsToCheck, uniqueId);
+                }
+            })
             .catch(err => console.error('[API v2 Failover Extraction Error]', err.message));
 
         return res.json({

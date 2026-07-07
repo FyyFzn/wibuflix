@@ -132,7 +132,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
     const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
     
-    const logPrefix = source === 'queue' ? '[Queue]' : '[Prefetch]';
+    const logPrefix = source === 'queue' ? '[Queue]' : (source === 'player' ? '[Player Stream]' : '[Prefetch]');
     const activeSignal = customSignal || (source === 'prefetch' ? prefetchAbortController.signal : null);
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
