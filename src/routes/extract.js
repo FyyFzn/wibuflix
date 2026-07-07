@@ -393,8 +393,10 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                 }
                 const label = provider.charAt(0).toUpperCase() + provider.slice(1);
                 let fetchUrl = provUrl;
-                if (provider === 'otakudesu' && fetchUrl.startsWith('/api/otakudesu/servers')) {
-                    fetchUrl = new URL('http://localhost' + fetchUrl).searchParams.get('url') || fetchUrl;
+                if (fetchUrl.startsWith('/api/')) {
+                    try {
+                        fetchUrl = new URL('http://localhost' + fetchUrl).searchParams.get('url') || fetchUrl;
+                    } catch (e) {}
                 }
                 fetchTasks.push(getServersBasedOnUrl(fetchUrl).then(res => (res?.servers || []).map(s => ({ ...s, source: label }))).catch(err => {
                     console.warn(`${logPrefix} Gagal fetch provider ${label} (${fetchUrl}):`, err.message);
@@ -586,14 +588,14 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
 
-                // BUGFIX: Cari URL semua provider dari Orchestrator jika belum tersedia.
-                // Ini memastikan findBestVideoSource bisa mencoba 1080p dari Samehadaku/Kuronime,
-                // bukan hanya server dari provider utama (Otakudesu) yang mungkin hanya punya 720p.
-                if (!urlsObjForAttempt && uniqueId) {
+                // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator jika jumlah provider kurang dari 3.
+                // Ini memastikan findBestVideoSource selalu mencoba 1080p dari Samehadaku/Kuronime,
+                // meskipun frontend hanya mengirimkan 1 atau 2 provider di query params.
+                if ((!urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3) && (uniqueId || seriesTitle)) {
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
                         if (epNum != null) {
-                            const orchSlug = uniqueId.toString().replace(/^(mal-|db-)/, '');
+                            const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
                             const animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug, forceRefresh: false }).catch(async () => {
                                 if (seriesTitle) {
                                     return getUnifiedAnimeEpisodes({ slug: seriesTitle, forceRefresh: false }).catch(() => null);
@@ -602,8 +604,8 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             });
                             const targetEp = animeData?.episodes?.find(e => e.num === epNum);
                             if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
-                                urlsObjForAttempt = targetEp.urls;
-                                console.info(`${attemptPrefix} ✓ Orchestrator menyediakan URL ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch (ep ${epNum}).`);
+                                urlsObjForAttempt = { ...(urlsObjForAttempt || {}), ...targetEp.urls };
+                                console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch (ep ${epNum}).`);
                             }
                         }
                     } catch (orchErr) {}
