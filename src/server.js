@@ -22,6 +22,7 @@ import extractRouter from './routes/extract.js';
 import proxyRouter from './routes/proxy.js';
 import otakudesuRouter from './routes/otakudesu.js';
 import kuronimeRouter from './routes/kuronime.js';
+import nimegamiRouter from './routes/nimegami.js';
 import adminRouter from './routes/admin.js';
 import v2Router from './routes/v2.js';
 
@@ -94,6 +95,7 @@ app.use(extractRouter);
 app.use(proxyRouter);
 app.use(otakudesuRouter);
 app.use(kuronimeRouter);
+app.use(nimegamiRouter);
 app.use(adminRouter);
 
 

@@ -1,0 +1,255 @@
+import { releaseToPool } from '../puppeteer/pool.js';
+import { fetchWithCF } from '../utils/scrapeHelper.js';
+import * as cheerio from 'cheerio';
+import { getCache } from '../utils/cacheManager.js';
+import Anime from '../models/Anime.js';
+import { cleanSeriesTitle } from '../utils/stringUtils.js';
+
+const cache = getCache('nimegami', 3600);
+
+/**
+ * Mengikis daftar episode dari halaman utama anime Nimegami
+ * Menerapkan Virtual Episode Routing (?ep=X) dan 3-Layer Smart Episode vs Batch Filtering.
+ */
+export async function getNimegamiEpisodes(targetUrl) {
+    if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
+
+    // Hilangkan parameter query jika ada saat cek cache episodes
+    const cleanUrl = targetUrl.split('?')[0];
+    const cacheKey = `nimegami_eps_${cleanUrl}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
+        console.log(`[Nimegami Episodes Cache Hit] ${cacheKey}`);
+        return cachedData;
+    }
+
+    console.log(`\n[Nimegami Fast Fetch] ${cleanUrl}`);
+
+    let slot;
+    try {
+        const fetchRes = await fetchWithCF(cleanUrl, { fetchTimeout: 10000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
+
+        if (html === '404_NOT_FOUND') {
+            throw new Error("Target URL returned 404");
+        }
+
+        let rawTitle = cleanSeriesTitle($('title').text() || '');
+        rawTitle = rawTitle.replace(/\s*:\s*Episode\s*\d+.*$/i, '').replace(/\s*-\s*Nimegami.*$/i, '').trim();
+
+        const coverImg = 
+            $('meta[property="og:image"]').attr('content') ||
+            $('.thumbnail img, .cover img, .entry-content img').first().attr('src') || '';
+
+        const daftar_episode = [];
+        const seenEpNums = new Set();
+
+        // 3-Layer Smart Filtering: Lapis 1 (Label & Heading RegEx Filter)
+        $('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, tr').each((_, el) => {
+            const labelText = $(el).text().trim();
+
+            // Lapis 1 Reject: Abaikan blok Batch / Paket / Complete / Rentang Episode (misal 01-12) / Zip / Rar
+            if (/batch|complete|paket|all\s*eps|01\s*-\s*\d+|1\s*-\s*\d+|zip|rar/i.test(labelText)) {
+                return;
+            }
+
+            // Lapis 1 Accept: Cari pola angka episode tunggal (misal "Episode 1", "Ep 02", "Eps 15")
+            const epMatch = labelText.match(/(?:episode|ep|eps)\s*(\d+)/i);
+            if (epMatch) {
+                const epNum = parseInt(epMatch[1], 10);
+                if (!seenEpNums.has(epNum)) {
+                    seenEpNums.add(epNum);
+                    daftar_episode.push({
+                        judul: `Episode ${epNum}`,
+                        url: `${cleanUrl}?ep=${epNum}`
+                    });
+                }
+            }
+        });
+
+        // Urutkan episode dari yang awal hingga akhir atau sebaliknya (biasanya descending atau ascending)
+        daftar_episode.sort((a, b) => {
+            const numA = parseInt(a.judul.replace(/\D/g, ''), 10) || 0;
+            const numB = parseInt(b.judul.replace(/\D/g, ''), 10) || 0;
+            return numA - numB;
+        });
+
+        const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
+
+        // Lapis 3: Zero-Data & Strict-Caching Guard
+        if (daftar_episode.length > 0) {
+            cache.set(cacheKey, result);
+        } else {
+            console.warn(`[Nimegami] Peringatan: 0 episode tunggal ditemukan di ${cleanUrl}. Hasil tidak disimpan ke cache agar dapat di-retry/fallback.`);
+        }
+
+        return result;
+    } catch (err) {
+        throw err;
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+}
+
+/**
+ * Mengikis server streaming/download untuk episode tertentu berdasarkan Virtual Routing (?ep=X)
+ */
+export async function getNimegamiServers(episodeUrl) {
+    if (!episodeUrl) throw new Error("Parameter 'url' wajib diisi!");
+
+    const cacheKey = `nimegami_srv_${episodeUrl}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+        return cachedData;
+    }
+
+    const urlObj = new URL(episodeUrl);
+    const targetEpNum = urlObj.searchParams.get('ep');
+    const baseUrl = episodeUrl.split('?')[0];
+
+    console.log(`[Nimegami] Fetching servers for Ep ${targetEpNum} from: ${baseUrl}`);
+
+    let slot;
+    try {
+        const fetchRes = await fetchWithCF(baseUrl, { fetchTimeout: 10000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+
+        let judul = cleanSeriesTitle($('title').text() || '');
+        if (targetEpNum) {
+            judul = `${judul} - Episode ${targetEpNum}`;
+        }
+
+        const servers = [];
+        const seenServers = new Set();
+
+        // Cari elemen heading untuk episode yang dituju
+        let isCollecting = false;
+        let currentRes = '720p';
+
+        // Lapis 2: File Extension & Host Guard
+        const allowedHosts = [
+            { key: 'krakenfiles', label: 'Krakenfiles' },
+            { key: 'berkasdrive', label: 'Berkasdrive' },
+            { key: 'pixeldrain',  label: 'Pixeldrain' },
+            { key: 'mp4upload',   label: 'Mp4Upload' },
+            { key: 'filelions',   label: 'FileLions' },
+            { key: 'doodstream',  label: 'Doodstream' },
+            { key: 'gofile',      label: 'Gofile' }
+        ];
+
+        const blockedKeywords = /batch|zip|rar|7z|gdrive|mega\.nz|zippyshare|mediafire|google/i;
+
+        $('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, li, tr').each((_, el) => {
+            const text = $(el).text().trim();
+
+            // Jika menemukan heading episode baru
+            const epMatch = text.match(/(?:episode|ep|eps)\s*(\d+)/i);
+            if (epMatch && !text.includes('Download Per Episode')) {
+                const foundEp = parseInt(epMatch[1], 10);
+                if (targetEpNum && foundEp === parseInt(targetEpNum, 10)) {
+                    isCollecting = true;
+                } else if (isCollecting && foundEp !== parseInt(targetEpNum, 10)) {
+                    // Sudah masuk ke episode berikutnya, hentikan pengumpulan
+                    isCollecting = false;
+                }
+            }
+
+            // Deteksi resolusi (misal 360p, 480p, 720p, 1080p)
+            const resMatch = text.match(/(360p|480p|720p|1080p)/i);
+            if (resMatch) {
+                currentRes = resMatch[1].toUpperCase();
+            }
+
+            // Jika sedang berada di dalam blok episode yang tepat, ambil link-linknya
+            if (isCollecting || !targetEpNum) {
+                $(el).find('a').each((__, aEl) => {
+                    const href = $(aEl).attr('href');
+                    const linkText = $(aEl).text().trim();
+
+                    if (!href || href.startsWith('#') || blockedKeywords.test(href) || blockedKeywords.test(linkText)) {
+                        return;
+                    }
+
+                    for (const host of allowedHosts) {
+                        if (href.toLowerCase().includes(host.key) || linkText.toLowerCase().includes(host.key)) {
+                            const srvKey = `${currentRes}-${host.label}`;
+                            if (!seenServers.has(srvKey)) {
+                                seenServers.add(srvKey);
+                                servers.push({
+                                    nama: `${currentRes} MP4`,
+                                    namaHost: host.label,
+                                    iframeUrl: href,
+                                    type: 'direct',
+                                    aktif: servers.length === 0
+                                });
+                            }
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+
+        // Cari navigasi Prev dan Next berdasarkan daftar episode
+        const allEps = await getNimegamiEpisodes(baseUrl).catch(() => ({ daftar_episode: [] }));
+        let nav_prev = null;
+        let nav_next = null;
+        const epsList = allEps.daftar_episode || [];
+        if (epsList.length > 0 && targetEpNum) {
+            const idx = epsList.findIndex(e => e.url.includes(`?ep=${targetEpNum}`));
+            if (idx !== -1) {
+                if (idx > 0) nav_prev = epsList[idx - 1].url;
+                if (idx < epsList.length - 1) nav_next = epsList[idx + 1].url;
+            }
+        }
+
+        const result = { judul, servers, nav_prev, nav_next };
+        if (servers.length > 0) {
+            cache.set(cacheKey, result);
+        }
+        return result;
+    } catch (err) {
+        throw err;
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+}
+
+/**
+ * Handler Express untuk daftar episode Nimegami
+ */
+export async function getEpisodes(req, res) {
+    const targetUrl = req.query.url;
+    if (!targetUrl) {
+        return res.status(400).json({ status: 'error', message: "Parameter 'url' wajib diisi!" });
+    }
+    try {
+        const data = await getNimegamiEpisodes(targetUrl);
+        res.json({ status: 'success', data });
+    } catch (err) {
+        console.error('[Nimegami Episodes Error]', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+}
+
+/**
+ * Handler Express untuk server streaming Nimegami
+ */
+export async function getServers(req, res) {
+    const episodeUrl = req.query.url;
+    if (!episodeUrl) {
+        return res.status(400).json({ status: 'error', message: "Parameter 'url' wajib diisi!" });
+    }
+    try {
+        const data = await getNimegamiServers(episodeUrl);
+        res.json({ status: 'success', data });
+    } catch (err) {
+        console.error('[Nimegami Servers Error]', err.message);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+}
+
+export { cache };

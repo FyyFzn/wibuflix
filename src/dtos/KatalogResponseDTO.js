@@ -20,6 +20,9 @@ export class KatalogResponseDTO {
         } else if (item.sources?.kuronime?.url) {
             finalUrl = item.sources.kuronime.url;
             finalId = item.sources.kuronime.id || '';
+        } else if (item.sources?.nimegami?.url) {
+            finalUrl = item.sources.nimegami.url;
+            finalId = item.sources.nimegami.id || '';
         }
 
         let displayType = item.type || '';

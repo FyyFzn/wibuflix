@@ -39,6 +39,7 @@ export async function runLatestSync() {
         await scrapeOtakudesuLatest();
         await scrapeKuronimeLatest();
         await scrapeNanimeLatest();
+        await scrapeNimegamiLatest();
     } catch (e) {
         console.error(`[Latest Sync] Error fatal:`, e.message);
     } finally {
@@ -319,5 +320,89 @@ async function scrapeNanimeLatest() {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Nanime ID.`);
     }
 }
+
+async function scrapeNimegamiLatest() {
+    const url = `https://nimegami.id/anime-terbaru-sub-indo/`;
+    log(`[Latest Sync] Mengakses Beranda Nimegami...`);
+
+    let fetchRes, slot;
+    const updatesMap = new Map();
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
+            log(`[Latest Sync] Gagal mendapatkan HTML Nimegami.`);
+            return;
+        }
+
+        const $ = fetchRes.$;
+        const ignoreWords = ['/category/', '/tag/', '/list', '/jadwal', '/genre', 'wp-content', 'javascript:', 'telegram', 'facebook', 'twitter', 'instagram', 'discord'];
+
+        $('a').each((_, el) => {
+            const href = $(el).attr('href');
+            let text = $(el).text().replace(/\s+/g, ' ').trim();
+            if (!href || !href.startsWith('http') || ignoreWords.some(w => href.toLowerCase().includes(w)) || href === 'https://nimegami.id/') return;
+
+            if (href.includes('nimegami.id/')) {
+                if (!updatesMap.has(href)) {
+                    updatesMap.set(href, { title: null, status: null });
+                }
+                const entry = updatesMap.get(href);
+                if (/eps?\.?\s*\d+/i.test(text)) {
+                    const match = text.match(/eps?\.?\s*(\d+)/i);
+                    if (match) entry.status = `Eps ${match[1]}`;
+                } else if (text.length > 2 && !text.toLowerCase().includes('belum update')) {
+                    entry.title = text
+                        .replace(/\s*\(Complete\)\s*/i, '')
+                        .replace(/\s*\(On-?going\)\s*/i, '')
+                        .replace(/\s*Subtitle\s*Indonesia\s*/i, '')
+                        .replace(/\s*Sub\s*Indo\s*/i, '')
+                        .trim();
+                }
+            }
+        });
+    } catch (e) {
+        console.error(`[Latest Sync] Gagal memuat Nimegami:`, e.message);
+        return;
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+
+    const updates = [];
+    for (const [url, data] of updatesMap.entries()) {
+        if (data.title && data.status) {
+            updates.push({ title: data.title, status: data.status, url });
+        }
+    }
+
+    if (updates.length > 0) {
+        log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Nimegami. Melakukan sinkronisasi ke MongoDB...`);
+
+        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+        const now = Date.now();
+        const bulkOps = updates.map((anime, index) => {
+            const normTitle = normalizeTitleForMatch(anime.title);
+            return {
+                updateOne: {
+                    filter: { $or: [{ normalizedTitle: normTitle }, { 'sources.nimegami.url': anime.url }] },
+                    update: {
+                        $set: {
+                            status: anime.status,
+                            'sources.nimegami.url': anime.url,
+                            lastUpdated: new Date(now - index * 1000)
+                        }
+                    }
+                }
+            };
+        });
+
+        const result = await Anime.bulkWrite(bulkOps);
+        log(`[Latest Sync] ✅ Nimegami: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+    } else {
+        log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Nimegami.`);
+    }
+}
+
 
 

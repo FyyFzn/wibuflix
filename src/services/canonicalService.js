@@ -41,7 +41,7 @@ export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitl
         }
         
         if (!dbAnime && seriesTitle) {
-            for (const prov of ['samehadaku', 'otakudesu', 'kuronime', 'nanime', 'neosatsu']) {
+            for (const prov of ['samehadaku', 'otakudesu', 'kuronime', 'nanime', 'nimegami', 'neosatsu']) {
                 const res = await resolveCatalogSource(seriesTitle, prov);
                 if (res && res.entry) {
                     dbAnime = res.entry;
