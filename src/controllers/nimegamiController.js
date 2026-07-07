@@ -45,17 +45,59 @@ export async function getNimegamiEpisodes(targetUrl) {
 
         const daftar_episode = [];
         const seenEpNums = new Set();
+        const baseSlugUrl = cleanUrl.replace(/\/$/, '');
+        const visitedPages = new Set([baseSlugUrl]);
+        const pagesQueue = [];
+
+        const checkAndQueuePagination = ($cheerio) => {
+            $cheerio('a').each((_, el) => {
+                let link = $cheerio(el).attr('href');
+                if (!link || link.startsWith('#') || link.startsWith('javascript:')) return;
+
+                if (link.includes('dl=')) {
+                    const match = link.match(/dl=(\d+)/i);
+                    if (match) {
+                        const pageNum = parseInt(match[1], 10);
+                        if (pageNum >= 2 && pageNum <= 50) {
+                            const dlUrl = `${cleanUrl}?dl=${pageNum}`;
+                            if (!visitedPages.has(dlUrl)) {
+                                pagesQueue.push(dlUrl);
+                                visitedPages.add(dlUrl);
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                if (link.startsWith('/')) {
+                    link = `https://nimegami.id${link}`;
+                } else if (!link.startsWith('http')) {
+                    link = `${baseSlugUrl}/${link}`;
+                }
+                const cleanLink = link.split('?')[0].replace(/\/$/, '');
+                if (cleanLink.startsWith(baseSlugUrl) && cleanLink !== baseSlugUrl && !visitedPages.has(cleanLink)) {
+                    if (/\/(?:page\/)?(\d+)$/i.test(cleanLink)) {
+                        const match = cleanLink.match(/\/(?:page\/)?(\d+)$/i);
+                        const pageNum = parseInt(match[1], 10);
+                        if (pageNum >= 2 && pageNum <= 50) {
+                            pagesQueue.push(`${cleanLink}/`);
+                            visitedPages.add(cleanLink);
+                        }
+                    }
+                }
+            });
+        };
+
+        checkAndQueuePagination($);
 
         // 3-Layer Smart Filtering: Lapis 1 (Label & Heading RegEx Filter)
         $('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, tr').each((_, el) => {
             const labelText = $(el).text().trim();
 
-            // Lapis 1 Reject: Abaikan blok Batch / Paket / Complete / Rentang Episode (misal 01-12) / Zip / Rar
             if (/batch|complete|paket|all\s*eps|01\s*-\s*\d+|1\s*-\s*\d+|zip|rar/i.test(labelText)) {
                 return;
             }
 
-            // Lapis 1 Accept: Cari pola angka episode tunggal (misal "Episode 1", "Ep 02", "Eps 15")
             const epMatch = labelText.match(/(?:episode|ep|eps)\s*(\d+)/i);
             if (epMatch) {
                 const epNum = parseInt(epMatch[1], 10);
@@ -68,6 +110,44 @@ export async function getNimegamiEpisodes(targetUrl) {
                 }
             }
         });
+
+        // Looping untuk mengambil episode dari halaman lanjutan jika anime memiliki banyak episode (misal Inazuma Eleven)
+        let maxPages = 20;
+        while (pagesQueue.length > 0 && maxPages > 0) {
+            maxPages--;
+            const nextPageUrl = pagesQueue.shift();
+            console.log(`[Nimegami Episodes Pagination] Mengambil halaman lanjutan: ${nextPageUrl}`);
+            let nextSlot;
+            try {
+                const nextRes = await fetchWithCF(nextPageUrl, { fetchTimeout: 10000 });
+                nextSlot = nextRes.slot;
+                const next$ = nextRes.$;
+
+                checkAndQueuePagination(next$);
+
+                next$('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, tr').each((_, el) => {
+                    const labelText = next$(el).text().trim();
+                    if (/batch|complete|paket|all\s*eps|01\s*-\s*\d+|1\s*-\s*\d+|zip|rar/i.test(labelText)) {
+                        return;
+                    }
+                    const epMatch = labelText.match(/(?:episode|ep|eps)\s*(\d+)/i);
+                    if (epMatch) {
+                        const epNum = parseInt(epMatch[1], 10);
+                        if (!seenEpNums.has(epNum)) {
+                            seenEpNums.add(epNum);
+                            daftar_episode.push({
+                                judul: `Episode ${epNum}`,
+                                url: `${cleanUrl}?ep=${epNum}`
+                            });
+                        }
+                    }
+                });
+            } catch (err) {
+                console.warn(`[Nimegami Episodes Pagination] Gagal memuat ${nextPageUrl}:`, err.message);
+            } finally {
+                if (nextSlot) releaseToPool(nextSlot);
+            }
+        }
 
         // Urutkan episode dari yang awal hingga akhir atau sebaliknya (biasanya descending atau ascending)
         daftar_episode.sort((a, b) => {

@@ -18,51 +18,77 @@ const log = (...args) => {
 export async function syncNimegami() {
     log('[NimegamiSync] Memulai sinkronisasi katalog A-Z Nimegami...');
     const list = [];
-    let slot;
-
     try {
-        const { $, slot: fetchSlot } = await fetchWithCF('https://nimegami.id/anime-list/', { fetchTimeout: 30000 });
-        slot = fetchSlot;
-
         const seenUrls = new Set();
-        const ignoreWords = ['/category/', '/tag/', '/list', '/jadwal', '/genre', 'wp-content', 'javascript:', 'telegram', 'facebook', 'twitter', 'instagram', 'discord'];
+        const ignoreWords = ['/category/', '/tag/', '/list', '/jadwal', '/genre', 'wp-content', 'javascript:', 'telegram', 'facebook', 'twitter', 'instagram', 'discord', '/page/'];
 
-        $('a').each((_, el) => {
-            let title = $(el).text().trim();
-            const url = $(el).attr('href');
-            if (!title || !url || !url.startsWith('http')) return;
+        let page = 1;
+        let hasNextPage = true;
 
-            // Abaikan link non-anime atau navigasi situs
-            if (ignoreWords.some(w => url.toLowerCase().includes(w)) || url === 'https://nimegami.id/' || url.endsWith('.id')) {
-                return;
+        while (hasNextPage && page <= 20) {
+            const url = page === 1 ? 'https://nimegami.id/anime-list/' : `https://nimegami.id/anime-list/page/${page}/`;
+            log(`[NimegamiSync] Mengambil halaman ${page}: ${url}...`);
+
+            let fetchRes, currentSlot;
+            try {
+                fetchRes = await fetchWithCF(url, { fetchTimeout: 30000 });
+                currentSlot = fetchRes?.slot;
+            } catch (err) {
+                log(`[NimegamiSync] Gagal memuat halaman ${page}:`, err.message);
+                break;
             }
 
-            // Hanya ambil link yang menuju domain nimegami dan memiliki judul bermakna
-            if (url.includes('nimegami.id/') && title.length > 2 && !seenUrls.has(url)) {
-                seenUrls.add(url);
-
-                // Bersihkan embel-embel judul
-                title = title
-                    .replace(/\s*\(Complete\)\s*/i, '')
-                    .replace(/\s*\(On-?going\)\s*/i, '')
-                    .replace(/\s*Subtitle\s*Indonesia\s*/i, '')
-                    .replace(/\s*Sub\s*Indo\s*/i, '')
-                    .replace(/\s*Batch\s*/i, '')
-                    .trim();
-
-                const parts = url.replace(/\/$/, '').split('/');
-                const slug = parts[parts.length - 1];
-
-                list.push({ title, url, slug, id: `nimegami:${slug}` });
+            if (!fetchRes || !fetchRes.$ || fetchRes.html === '404_NOT_FOUND') {
+                if (currentSlot) releaseToPool(currentSlot);
+                break;
             }
-        });
+
+            const $ = fetchRes.$;
+            let addedCount = 0;
+
+            $('a').each((_, el) => {
+                let title = $(el).text().trim();
+                const link = $(el).attr('href');
+                if (!title || !link || !link.startsWith('http')) return;
+
+                if (ignoreWords.some(w => link.toLowerCase().includes(w)) || link === 'https://nimegami.id/' || link.endsWith('.id')) {
+                    return;
+                }
+
+                if (link.includes('nimegami.id/') && title.length > 2 && !seenUrls.has(link)) {
+                    seenUrls.add(link);
+                    addedCount++;
+
+                    title = title
+                        .replace(/\s*\(Complete\)\s*/i, '')
+                        .replace(/\s*\(On-?going\)\s*/i, '')
+                        .replace(/\s*Subtitle\s*Indonesia\s*/i, '')
+                        .replace(/\s*Sub\s*Indo\s*/i, '')
+                        .replace(/\s*Batch\s*/i, '')
+                        .trim();
+
+                    const parts = link.replace(/\/$/, '').split('/');
+                    const slug = parts[parts.length - 1];
+
+                    list.push({ title, url: link, slug, id: `nimegami:${slug}` });
+                }
+            });
+
+            if (currentSlot) releaseToPool(currentSlot);
+
+            if (addedCount === 0 || page >= 15) {
+                hasNextPage = false;
+            } else {
+                page++;
+            }
+        }
 
         if (list.length === 0) {
             log('[NimegamiSync] Tidak ada anime ditemukan. Cek struktur halaman.');
             return;
         }
 
-        log(`[NimegamiSync] ${list.length} anime ditemukan dari A-Z list Nimegami. Memulai pemetaan ke database...`);
+        log(`[NimegamiSync] ${list.length} anime ditemukan dari seluruh halaman A-Z Nimegami. Memulai pemetaan ke database...`);
 
         // Pre-fetch database (skip Toku agar tidak tercampur)
         const existingAnimes = await Anime.find(
@@ -146,8 +172,6 @@ export async function syncNimegami() {
         }
     } catch (err) {
         log(`[NimegamiSync] ❌ Error: ${err.message}`);
-    } finally {
-        if (slot) releaseToPool(slot);
     }
 }
 

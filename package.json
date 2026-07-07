@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "start:prod": "node server-prod.js",
-    "test": "node --test src/tests/*.test.js"
+    "sync:nimegami": "node src/scripts/init-nimegami-sync.js",
+    "test": "node --test src/tests/*.test.js",
+    "test:nimegami": "node scratch/test-nimegami-ep.js"
   },
   "keywords": [],
   "author": "",
