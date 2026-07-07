@@ -1,7 +1,7 @@
 import express from 'express';
 import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
 import { checkUploadStatus, checkUploadStatusWithFallback, uploadStream, getBlobPath, getBlobUrl, markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount, getUploadProgress, cancelUpload, cancelAllUploads, checkRangeSupport, isMegaBlacklisted, invalidateAndDeleteBlob } from '../utils/azureUploader.js';
-import { normalizeTitleForMatch, extractEpNumStrict } from '../utils/stringUtils.js';
+import { normalizeTitleForMatch, extractEpNumStrict, extractEpNum } from '../utils/stringUtils.js';
 import { getNeosatsuServers } from '../controllers/neosatsuController.js';
 import { getServersInternal as getOtakuServers } from '../controllers/otakudesuController.js';
 import { getKuronimeServers } from '../controllers/kuronimeController.js';
@@ -11,6 +11,8 @@ import QueueTask from '../models/QueueTask.js';
 import { getCache } from '../utils/cacheManager.js';
 import { findAnimeInDatabase } from '../services/episodeService.js';
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
+import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
+
 
 const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 
@@ -53,8 +55,8 @@ backgroundQueue.setProcessor(async (item) => {
         return;
     }
     
-    // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck serta episodeTitle
-    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle);
+    // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck, episodeTitle, dan uniqueId yang sudah resolved
+    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle, item.uniqueId);
     if (!result.success) {
         // Jika gagal karena error beneran, lemparkan error untuk trigger retry
         if (result.reason === 'Already processing or failed' || result.reason === 'Already extracting') {
@@ -309,7 +311,7 @@ function getResolutionGroup(serverName) {
     return null;
 }
 
-async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null) {
+async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null) {
     let matchedSource = null;
     try {
         let primaryPromise = getServersBasedOnUrl(episodeUrl);
@@ -326,8 +328,8 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
             primaryPromise = Promise.resolve(primaryData);
         }
 
-        let urlsObj = null;
-        if (req?.query?.urls) {
+        let urlsObj = preloadedUrlsObj || null;
+        if (!urlsObj && req?.query?.urls) {
             try { urlsObj = JSON.parse(req.query.urls); } catch (e) {}
         }
 
@@ -520,12 +522,20 @@ function removeActiveExtractions(checkSlugs, episodeSlugs) {
  * Prefetch satu episode tertentu ke Azure Blob.
  * Return true jika berhasil memulai upload, false jika sudah ada/skip.
  */
-export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null, customSignal = null) {
+export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, source = 'player', oldSeriesSlug = null, slugsToCheck = null, episodeTitle = '', uniqueId = null, customSignal = null, preloadedUrlsObj = null) {
     uniqueId = await resolveCanonicalUniqueId(null, episodeUrl, seriesTitle, uniqueId);
     // Global Slug Normalization: selalu teruskan seriesTitle & uniqueId agar slugsToCheck dan episodeSlugsToCheck konsisten 100% di seluruh pipeline
     const { seriesSlug: extractedSeriesSlug, episodeSlug, oldSeriesSlug: extractedOldSlug, slugsToCheck: extractedSlugs, episodeSlugsToCheck } = extractSlugs(episodeUrl, null, seriesTitle, uniqueId, episodeTitle); 
     
-    const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : (extractedSlugs && extractedSlugs.length > 0 ? extractedSlugs : [seriesSlug, oldSeriesSlug, extractedSeriesSlug, extractedOldSlug].filter(Boolean));
+    // BUGFIX: Selalu gunakan extractedSlugs (yang mengandung mal-XXXXX) dari uniqueId yang sudah resolved.
+    // Jangan gunakan slugsToCheck dari caller karena mungkin belum mengandung uniqueId yang resolved.
+    const checkSlugs = extractedSlugs && extractedSlugs.length > 0 ? extractedSlugs : [seriesSlug, oldSeriesSlug, extractedSeriesSlug, extractedOldSlug].filter(Boolean);
+    // Tambahkan slugsToCheck dari caller (jika ada) sebagai fallback tambahan tanpa menggantikan yang utama
+    if (slugsToCheck && slugsToCheck.length > 0) {
+        for (const s of slugsToCheck) {
+            if (s && !checkSlugs.includes(s)) checkSlugs.push(s);
+        }
+    }
     const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
     const status = checkInfo.status;
     const activeSlug = checkInfo.activeSeriesSlug || seriesSlug;
@@ -561,7 +571,28 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 }
 
                 const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
-                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix);
+
+                // BUGFIX: Cari URL semua provider dari Orchestrator jika belum tersedia.
+                // Ini memastikan findBestVideoSource bisa mencoba 1080p dari Samehadaku/Kuronime,
+                // bukan hanya server dari provider utama (Otakudesu) yang mungkin hanya punya 720p.
+                let urlsObjForAttempt = preloadedUrlsObj;
+                if (!urlsObjForAttempt && uniqueId && attempt === 1) {
+                    try {
+                        const epNum = extractEpNum(episodeTitle || episodeUrl);
+                        if (epNum != null) {
+                            const animeData = await getUnifiedAnimeEpisodes({ targetUrl: episodeUrl, forceRefresh: false });
+                            const targetEp = animeData?.episodes?.find(e => e.num === epNum);
+                            if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
+                                urlsObjForAttempt = targetEp.urls;
+                                console.info(`${attemptPrefix} ✓ Orchestrator menyediakan URL ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch.`);
+                            }
+                        }
+                    } catch (orchErr) {
+                        console.warn(`${attemptPrefix} Gagal query orchestrator untuk multi-provider URLs:`, orchErr.message);
+                    }
+                }
+
+                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt);
                 matchedSource = result.matchedSource;
                 
                 if (activeSignal && activeSignal.aborted) {
@@ -639,7 +670,14 @@ async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitle, slug
         try {
             // Global Slug Normalization: teruskan seriesTitle & uniqueId untuk pencocokan kunci yang konsisten
             const { slugsToCheck: extractedSlugs, episodeSlug, episodeSlugsToCheck } = extractSlugs(epUrl, null, seriesTitle, uniqueId, null);
-            const checkSlugs = slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : (extractedSlugs && extractedSlugs.length > 0 ? extractedSlugs : [seriesSlug]);
+            // BUGFIX: Selalu prioritaskan extractedSlugs (mengandung mal-XXXXX) dari uniqueId yang sudah resolved.
+            // slugsToCheck dari parameter hanya sebagai fallback tambahan.
+            const checkSlugs = extractedSlugs && extractedSlugs.length > 0 ? extractedSlugs : (slugsToCheck && slugsToCheck.length > 0 ? slugsToCheck : [seriesSlug]);
+            if (slugsToCheck && slugsToCheck.length > 0) {
+                for (const s of slugsToCheck) {
+                    if (s && !checkSlugs.includes(s)) checkSlugs.push(s);
+                }
+            }
             const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
             const status = checkInfo.status;
 
