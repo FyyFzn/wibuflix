@@ -9,7 +9,7 @@ import { extractEpNum } from '../utils/stringUtils.js';
  * Rute: GET /api/v2/stream
  */
 export async function getV2Stream(req, res) {
-    let { episodeUrl, url, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle, uniqueId } = req.query;
+    let { episodeUrl, url, seriesUrl, nextEpisodeUrl, seriesTitle, episodeTitle, uniqueId, urls } = req.query;
     const targetUrl = episodeUrl || url;
 
     if (!targetUrl) {
@@ -54,7 +54,11 @@ export async function getV2Stream(req, res) {
 
         // 3. JIKA BELUM ADA ATAU FAILED -> MULAI EKSTRAKSI KE AZURE BLOB DI BACKGROUND
         console.info(`[API v2 Stream] Memulai ekstraksi video ke Azure Blob untuk: ${targetUrl}`);
-        prefetchOneEpisode(seriesSlug, targetUrl, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId)
+        let urlsObj = null;
+        if (urls) {
+            try { urlsObj = typeof urls === 'string' ? JSON.parse(urls) : urls; } catch (e) {}
+        }
+        prefetchOneEpisode(seriesSlug, targetUrl, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId, null, urlsObj)
             .catch(err => console.error('[API v2 Stream Extraction Error]', err.message));
 
         return res.json({

@@ -12,8 +12,9 @@ import { getCache } from '../utils/cacheManager.js';
 import { findAnimeInDatabase } from '../services/episodeService.js';
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
 import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
+import Anime from '../models/Anime.js';
 
-
+const canonicalTitleMap = new Map();
 const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 
 async function waitForUploadCompletion(slugsToCheck, episodeSlugsToCheck, item) {
@@ -80,7 +81,24 @@ let prefetchAbortController = new AbortController();
  */
 export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, currentUniqueId) {
     if (currentUniqueId && currentUniqueId.toString().trim() !== '') {
-        return currentUniqueId.toString().trim();
+        const rawId = currentUniqueId.toString().trim();
+        if (!canonicalTitleMap.has(rawId)) {
+            try {
+                const malMatch = rawId.match(/^mal-(\d+)/);
+                const dbMatch = rawId.match(/^db-([0-9a-fA-F]{24})/);
+                let dbAnime = null;
+                if (malMatch) {
+                    dbAnime = await Anime.findOne({ malId: parseInt(malMatch[1], 10) });
+                } else if (dbMatch) {
+                    dbAnime = await Anime.findById(dbMatch[1]);
+                }
+                if (dbAnime) {
+                    const canonicalTitle = dbAnime.normalizedTitle || (dbAnime.title ? normalizeTitleForMatch(dbAnime.title).replace(/\s+/g, '-') : '');
+                    if (canonicalTitle) canonicalTitleMap.set(rawId, canonicalTitle);
+                }
+            } catch (e) {}
+        }
+        return rawId;
     }
     
     try {
@@ -101,12 +119,17 @@ export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitl
         }
         
         if (dbAnime) {
+            const canonicalTitle = dbAnime.normalizedTitle || (dbAnime.title ? normalizeTitleForMatch(dbAnime.title).replace(/\s+/g, '-') : '');
             if (dbAnime.malId) {
+                const malKey = `mal-${dbAnime.malId}`;
+                if (canonicalTitle) canonicalTitleMap.set(malKey, canonicalTitle);
                 console.info(`[CanonicalLookup] ✓ Mengaitkan "${seriesTitle || seriesUrl}" dengan mal-${dbAnime.malId} dari database.`);
-                return `mal-${dbAnime.malId}`;
+                return malKey;
             } else if (dbAnime._id) {
+                const dbKey = `db-${dbAnime._id}`;
+                if (canonicalTitle) canonicalTitleMap.set(dbKey, canonicalTitle);
                 console.info(`[CanonicalLookup] ✓ Mengaitkan "${seriesTitle || seriesUrl}" dengan db-${dbAnime._id} dari database.`);
-                return `db-${dbAnime._id}`;
+                return dbKey;
             }
         }
     } catch (err) {
@@ -200,7 +223,10 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
         const rawUniqueId = uniqueId.toString().trim();
         let titleSlug = '';
         
-        if (seriesTitle && seriesTitle.trim().length > 0) {
+        // Cek apakah kita punya judul kanonikal dari database di cache
+        if (canonicalTitleMap.has(rawUniqueId)) {
+            titleSlug = canonicalTitleMap.get(rawUniqueId);
+        } else if (seriesTitle && seriesTitle.trim().length > 0) {
             const cleanTitle = normalizeTitleForMatch(seriesTitle);
             if (cleanTitle) titleSlug = cleanTitle.replace(/\s+/g, '-');
         }
@@ -209,6 +235,18 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
             // Gabungkan ID unik dengan judul agar nama folder di Azure Storage mudah dibaca
             primarySlug = `${rawUniqueId}_${titleSlug}`;
             slugsToCheck.push(primarySlug);
+            
+            // Tambahkan juga kombinasi dengan seriesTitle lokal jika berbeda (untuk kompatibilitas upload sebelumnya)
+            if (seriesTitle && seriesTitle.trim().length > 0) {
+                const cleanLocalTitle = normalizeTitleForMatch(seriesTitle);
+                if (cleanLocalTitle) {
+                    const localTitleSlug = cleanLocalTitle.replace(/\s+/g, '-');
+                    const localPrimary = `${rawUniqueId}_${localTitleSlug}`;
+                    if (!slugsToCheck.includes(localPrimary)) slugsToCheck.push(localPrimary);
+                    if (!slugsToCheck.includes(localTitleSlug)) slugsToCheck.push(localTitleSlug);
+                }
+            }
+            
             slugsToCheck.push(rawUniqueId); // Fallback ke mal id murni untuk kompatibilitas data lama
             if (!slugsToCheck.includes(titleSlug)) slugsToCheck.push(titleSlug);
         } else {
@@ -263,14 +301,6 @@ async function getServersBasedOnUrl(episodeUrl) {
     }
 }
 
-function sourceScore(source) {
-    if (source === 'Samehadaku') return 100;
-    if (source === 'Otakudesu') return 50;
-    if (source === 'Nanime') return 25;
-    if (source === 'Kuronime') return -100; // last resort
-    return 0;
-}
-
 function serverScore(host) {
     if (!host) return 0;
     const h = host.toLowerCase();
@@ -314,81 +344,60 @@ function getResolutionGroup(serverName) {
 async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null) {
     let matchedSource = null;
     try {
-        let primaryPromise = getServersBasedOnUrl(episodeUrl);
-        let alternativePromise = null;
-        let secondaryAlternativePromise = null;
+        let targetUrlPromise = getServersBasedOnUrl(episodeUrl);
 
-        let primaryData = null;
+        let targetData = null;
         if (!episodeTitle || !seriesTitle) {
-            primaryData = await primaryPromise;
-            if (!episodeTitle) episodeTitle = primaryData?.judul || '';
-            if (!seriesTitle && primaryData?.judul) {
-                seriesTitle = primaryData.judul.replace(/\s+Episode\s+\d+.*$/i, '').replace(/\s+Sub(title)?\s+Indo(nesia)?.*$/i, '').trim();
+            targetData = await targetUrlPromise;
+            if (!episodeTitle) episodeTitle = targetData?.judul || '';
+            if (!seriesTitle && targetData?.judul) {
+                seriesTitle = targetData.judul.replace(/\s+Episode\s+\d+.*$/i, '').replace(/\s+Sub(title)?\s+Indo(nesia)?.*$/i, '').trim();
             }
-            primaryPromise = Promise.resolve(primaryData);
+            targetUrlPromise = Promise.resolve(targetData);
         }
 
         let urlsObj = preloadedUrlsObj || null;
         if (!urlsObj && req?.query?.urls) {
             try { urlsObj = JSON.parse(req.query.urls); } catch (e) {}
         }
+        if (typeof urlsObj === 'string') {
+            try { urlsObj = JSON.parse(urlsObj); } catch (e) {}
+        }
 
-        if (urlsObj && (urlsObj.otakudesu || urlsObj.kuronime || urlsObj.samehadaku)) {
-            console.info(`${logPrefix} Menggunakan URL alternatif langsung dari metadata urls`);
-            if (urlsObj.samehadaku && !episodeUrl.includes(urlsObj.samehadaku)) {
-                alternativePromise = getServersBasedOnUrl(urlsObj.samehadaku).then(res => res?.servers || []).catch(() => []);
+        const getSourceLabel = (url) => {
+            if (!url) return 'Web';
+            if (url.includes('otakudesu') || url.includes('/api/otakudesu/servers')) return 'Otakudesu';
+            if (url.includes('kuronime.sbs') || url.includes('/api/kuronime/servers')) return 'Kuronime';
+            if (url.includes('nanimeid.net') || url.includes('/api/nanime/servers')) return 'Nanime';
+            return 'Samehadaku';
+        };
+
+        const fetchTasks = [
+            targetUrlPromise.then(res => (res?.servers || []).map(s => ({ ...s, source: getSourceLabel(episodeUrl) }))).catch(() => [])
+        ];
+
+        if (urlsObj) {
+            console.info(`${logPrefix} Mengambil URL alternatif dari semua provider yang tersedia di metadata urls...`);
+            if (urlsObj.samehadaku && !episodeUrl.includes('samehadaku')) {
+                fetchTasks.push(getServersBasedOnUrl(urlsObj.samehadaku).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Samehadaku' }))).catch(() => []));
+            }
+            if (urlsObj.kuronime && !episodeUrl.includes('kuronime')) {
+                fetchTasks.push(getKuronimeServers(urlsObj.kuronime).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Kuronime' }))).catch(() => []));
             }
             if (urlsObj.otakudesu && !episodeUrl.includes('otakudesu')) {
                 let otakuUrl = urlsObj.otakudesu;
                 if (otakuUrl.startsWith('/api/otakudesu/servers')) {
                     otakuUrl = new URL('http://localhost' + otakuUrl).searchParams.get('url') || otakuUrl;
                 }
-                const p = getOtakuServers(otakuUrl).then(res => res?.servers || []).catch(() => []);
-                if (!alternativePromise) alternativePromise = p;
-                else secondaryAlternativePromise = p;
-            }
-            if (urlsObj.kuronime && !episodeUrl.includes('kuronime')) {
-                const p = getKuronimeServers(urlsObj.kuronime).then(res => res?.servers || []).catch(() => []);
-                if (!alternativePromise) alternativePromise = p;
-                else secondaryAlternativePromise = p;
+                fetchTasks.push(getOtakuServers(otakuUrl).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Otakudesu' }))).catch(() => []));
             }
             if (urlsObj.nanime && !episodeUrl.includes('nanime')) {
-                const p = getNanimeServers(urlsObj.nanime).then(res => res?.servers || []).catch(() => []);
-                if (!alternativePromise) alternativePromise = p;
-                else if (!secondaryAlternativePromise) secondaryAlternativePromise = p;
+                fetchTasks.push(getNanimeServers(urlsObj.nanime).then(res => (res?.servers || []).map(s => ({ ...s, source: 'Nanime' }))).catch(() => []));
             }
         }
 
-        const [resolvedPrimary, alternativeServers, secondaryAlternativeServers] = await Promise.all([
-            primaryPromise,
-            (alternativePromise || Promise.resolve([])).catch(err => {
-                console.error(`${logPrefix} Alternative Fetch Error:`, err.message);
-                return [];
-            }),
-            (secondaryAlternativePromise || Promise.resolve([])).catch(err => {
-                console.error(`${logPrefix} Secondary Alternative Fetch Error:`, err.message);
-                return [];
-            })
-        ]);
-
-        const primaryServers = resolvedPrimary.servers || [];
-
-        let primarySource = 'Samehadaku';
-        if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) primarySource = 'Otakudesu';
-        if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) primarySource = 'Kuronime';
-        if (episodeUrl.includes('nanimeid.net') || episodeUrl.includes('/api/nanime/servers')) primarySource = 'Nanime';
-        
-        let altSource1 = 'Otakudesu';
-        let altSource2 = 'Kuronime';
-        if (primarySource === 'Otakudesu') { altSource1 = 'Samehadaku'; altSource2 = 'Kuronime'; }
-        if (primarySource === 'Kuronime') { altSource1 = 'Samehadaku'; altSource2 = 'Otakudesu'; }
-        if (primarySource === 'Nanime') { altSource1 = 'Samehadaku'; altSource2 = 'Otakudesu'; }
-
-        const taggedPrimary = primaryServers.map(s => ({ ...s, source: primarySource }));
-        const taggedAlternative1 = (alternativeServers || []).map(s => ({ ...s, source: altSource1 }));
-        const taggedAlternative2 = (secondaryAlternativeServers || []).map(s => ({ ...s, source: altSource2 }));
-
-        const servers = [...taggedPrimary, ...taggedAlternative1, ...taggedAlternative2];
+        const resultsArray = await Promise.all(fetchTasks);
+        const servers = resultsArray.flat();
 
         if (servers.length === 0) {
             return { matchedSource: null, error: 'Tidak ada server download/streaming yang ditemukan di halaman episode.' };
@@ -414,9 +423,6 @@ async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPre
                     if (aIsNegative !== bIsNegative) return aIsNegative - bIsNegative;
 
                     if (scoreB !== scoreA) return scoreB - scoreA;
-
-                    const sScoreDiff = sourceScore(b.source) - sourceScore(a.source);
-                    if (sScoreDiff !== 0) return sScoreDiff;
 
                     const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
                     const bIsM3u8 = b.type === 'direct' && b.iframeUrl && b.iframeUrl.includes('.m3u8') ? 1 : 0;
@@ -561,6 +567,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     try {
         const maxAttempts = 5;
         let lastError = null;
+        let urlsObjForAttempt = preloadedUrlsObj;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -575,18 +582,12 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 // BUGFIX: Cari URL semua provider dari Orchestrator jika belum tersedia.
                 // Ini memastikan findBestVideoSource bisa mencoba 1080p dari Samehadaku/Kuronime,
                 // bukan hanya server dari provider utama (Otakudesu) yang mungkin hanya punya 720p.
-                // PENTING: Gunakan uniqueId (mal-XXXXX) atau seriesTitle sebagai kunci query ke orchestrator,
-                // BUKAN episodeUrl (yang merupakan URL episode, bukan URL seri)!
-                let urlsObjForAttempt = preloadedUrlsObj;
-                if (!urlsObjForAttempt && uniqueId && attempt === 1) {
+                if (!urlsObjForAttempt && uniqueId) {
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
                         if (epNum != null) {
-                            // Query orchestrator dengan slug dari uniqueId (mis: "mal-49784") 
-                            // agar tidak salah scrape episode URL sebagai series URL
                             const orchSlug = uniqueId.toString().replace(/^(mal-|db-)/, '');
                             const animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug, forceRefresh: false }).catch(async () => {
-                                // Fallback: coba dengan seriesTitle
                                 if (seriesTitle) {
                                     return getUnifiedAnimeEpisodes({ slug: seriesTitle, forceRefresh: false }).catch(() => null);
                                 }
@@ -596,13 +597,9 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
                                 urlsObjForAttempt = targetEp.urls;
                                 console.info(`${attemptPrefix} ✓ Orchestrator menyediakan URL ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch (ep ${epNum}).`);
-                            } else {
-                                console.warn(`${attemptPrefix} Orchestrator tidak menemukan episode ${epNum} dari uniqueId=${uniqueId}.`);
                             }
                         }
-                    } catch (orchErr) {
-                        console.warn(`${attemptPrefix} Gagal query orchestrator untuk multi-provider URLs:`, orchErr.message);
-                    }
+                    } catch (orchErr) {}
                 }
 
                 const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt);
