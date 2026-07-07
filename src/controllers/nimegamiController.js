@@ -135,9 +135,10 @@ export async function getNimegamiEpisodes(targetUrl) {
                         const epNum = parseInt(epMatch[1], 10);
                         if (!seenEpNums.has(epNum)) {
                             seenEpNums.add(epNum);
+                            const separator = nextPageUrl.includes('?') ? '&' : '?';
                             daftar_episode.push({
                                 judul: `Episode ${epNum}`,
-                                url: `${cleanUrl}?ep=${epNum}`
+                                url: `${nextPageUrl}${separator}ep=${epNum}`
                             });
                         }
                     }

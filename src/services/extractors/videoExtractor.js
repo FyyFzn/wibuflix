@@ -82,7 +82,14 @@ export async function scrapeVideoServers(targetUrl) {
             throw new Error("Target URL returned 404");
         }
 
-        const judul = ($('h1[itemprop="name"]').text() || $('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
+        let judul = ($('h1[itemprop="name"]').text() || $('h1.entry-title').text() || $('title').text().replace(/[-–|].*$/, '')).trim();
+        if (targetUrl.includes('nimegami.id')) {
+            const epMatch = targetUrl.match(/[?&]ep=(\d+)/i);
+            if (epMatch) {
+                const targetEp = parseInt(epMatch[1], 10);
+                judul = judul.replace(/\s*:?\s*Episode\s*\d+/i, '').trim() + ' : Episode ' + targetEp;
+            }
+        }
 
         let nav_prev = null, nav_next = null;
         $('a[data-wpel-link="internal"]').each((_, el) => {
@@ -92,6 +99,65 @@ export async function scrapeVideoServers(targetUrl) {
         });
 
         const servers = [];
+        
+        // --- NIMEGAMI SPECIAL LOGIC: Ekstrak link download per-episode dari halaman detail ---
+        if (targetUrl.includes('nimegami.id')) {
+            const epMatch = targetUrl.match(/[?&]ep=(\d+)/i);
+            const targetEp = epMatch ? parseInt(epMatch[1], 10) : null;
+            
+            if (targetEp !== null) {
+                $('.download, .sorasdd, .list-download, .entry-content, .box-download, #LinkDownload, .list_dl').find('h2, h3, h4, h5, strong, b, p, tr, li, div').each((_, el) => {
+                    const text = $(el).text().trim();
+                    if (/batch|01\s*-\s*\d+/i.test(text)) return;
+                    
+                    const match = text.match(/(?:episode|ep|eps)\s*(\d+)/i);
+                    if (match && parseInt(match[1], 10) === targetEp) {
+                        let linkElements = $(el).find('a');
+                        if (linkElements.length === 0) {
+                            linkElements = $(el).nextUntil('h1, h2, h3, h4, h5, hr, tr').find('a');
+                        }
+                        if (linkElements.length === 0 && $(el).parent().length > 0) {
+                            linkElements = $(el).parent().find('a');
+                        }
+                        
+                        linkElements.each((_, a) => {
+                            const hostNameRaw = $(a).text().trim() || 'Link';
+                            const hostNameLower = hostNameRaw.toLowerCase();
+                            if (hostNameLower.includes('batch')) return;
+                            
+                            const href = $(a).attr('href');
+                            const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
+                            const isAllowed = allowedHosts.some(h => hostNameLower.includes(h));
+                            
+                            if (href && href.startsWith('http') && !href.includes('nimegami.id') && isAllowed) {
+                                let resText = 'MP4';
+                                const parentText = $(a).parent().text() || '';
+                                if (parentText.includes('1080p')) resText = '1080p';
+                                else if (parentText.includes('720p')) resText = '720p';
+                                else if (parentText.includes('480p')) resText = '480p';
+                                else if (parentText.includes('360p')) resText = '360p';
+                                
+                                let normalizedHref = href;
+                                const isEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostNameLower.includes(h));
+                                if (isEmbedHost && normalizedHref.match(/\/f\/[^/]+\/?$/)) {
+                                    normalizedHref = normalizedHref.replace(/\/f\//, '/e/');
+                                }
+                                
+                                servers.push({
+                                    nama: `${resText} ${hostNameRaw}`.trim(),
+                                    post: "",
+                                    nume: "",
+                                    type: "direct",
+                                    aktif: servers.length === 0,
+                                    iframeUrl: normalizedHref,
+                                    namaHost: hostNameRaw
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+        }
         
         // --- NEW LOGIC: Ekstrak link download untuk Resolusi Eksplisit ---
         $('*[class*="download"]').each((_, el) => {
