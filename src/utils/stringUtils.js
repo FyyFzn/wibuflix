@@ -157,9 +157,9 @@ export function isSafeToMergeById(title1, title2) {
 export function formatEpisodeTitle(title) {
     if (!title) return 'Episode ?';
     if (title.toLowerCase().includes('batch')) return 'Batch';
-    const typeMatch = title.match(/(OVA|OAD|Special|SP)\s*(\d+(\.\d+)?)/i);
+    const typeMatch = title.match(/(OVA|OAD|Special|SP)[\s-_]*(\d+(\.\d+)?)/i);
     if (typeMatch) return `${typeMatch[1].toUpperCase()} ${typeMatch[2]}`;
-    const epMatch = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i);
+    const epMatch = title.match(/(?:episode|ep|eps)[\s-_]*(\d+(?:\.\d+)?)/i);
     if (epMatch) return `Episode ${epMatch[1]}`;
     const fallback = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
     if (fallback) return `Episode ${fallback[1]}`;
@@ -177,12 +177,12 @@ export function extractEpNumStrict(title) {
     let clean = str.replace(/\b(1080p|720p|480p|360p|240p|x264|x265|mkv|mp4|avi|bd|bluray|web-dl|aac|h264)\b/gi, ' ');
     clean = clean.replace(/\b(mal-\d+|db-[a-f0-9]+)\b/gi, ' ');
 
-    // 3. Pola standar: Episode / Ep / Eps / E / OVA / Special / SP
-    const stdMatch = clean.match(/(?:episode|eps|ep|ova|special|sp)\s*0*(\d+(?:\.\d+)?)/i);
+    // 3. Pola standar: Episode / Ep / Eps / E / OVA / Special / SP dengan fleksibel pemisah [\s-_]*
+    const stdMatch = clean.match(/(?:episode|eps|ep|ova|special|sp)[\s-_]*0*(\d+(?:\.\d+)?)/i);
     if (stdMatch) return parseFloat(stdMatch[1]);
 
-    // 4. Pola pemisah ganda khas Otakudesu / Fansub (misal: "Otakudesu_Baki--01_", "Baki - 01 -", "[01]")
-    const sepMatch = clean.match(/(?:--|__|-\s*|\s+-\s*|\[|\()\s*0*(\d+(?:\.\d+)?)\s*(?:--|__|-\s*|\s+-\s*|\]|\)|_|\.|$)/);
+    // 4. Pola pemisah ganda khas Otakudesu / Fansub (misal: "Otakudesu_Baki--01_", "Baki - 01 -", "[01]", "-10-")
+    const sepMatch = clean.match(/(?:--|__|-\s*|\s+-\s*|\[|\()[\s-_]*0*(\d+(?:\.\d+)?)\s*(?:--|__|-\s*|\s+-\s*|\]|\)|_|\.|$)/);
     if (sepMatch) {
         const num = parseFloat(sepMatch[1]);
         // Pastikan angka masuk akal sebagai nomor episode (bukan tahun rilis misal 2024)
@@ -201,7 +201,7 @@ export function extractEpNumStrict(title) {
 
 export function extractEpNum(title) {
     if (!title) return title;
-    const epMatch = title.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/i);
+    const epMatch = title.match(/(?:episode|ep|eps)[\s-_]*0*(\d+(?:\.\d+)?)/i);
     if (epMatch) return parseFloat(epMatch[1]);
     const pureNumMatch = title.match(/^\s*0*(\d+(?:\.\d+)?)\s*$/);
     if (pureNumMatch) return parseFloat(pureNumMatch[1]);
@@ -210,9 +210,20 @@ export function extractEpNum(title) {
 
 export function adjustTitleEpisodeNumber(title, offset) {
     if (!offset) return title;
-    const match = title.match(/(?:episode|ep|eps)\s*(\d+(?:\.\d+)?)/i) || title.match(/(\d+(?:\.\d+)?)/);
-    if (match) {
-        const originalNumStr = match[1];
+    let match = title.match(/(?:episode|ep|eps)[\s-_]*(\d+(?:\.\d+)?)/i);
+    let originalNumStr = match ? match[1] : null;
+
+    if (!originalNumStr) {
+        const epNum = extractEpNumStrict(title);
+        if (epNum !== null) {
+            const numRegex = new RegExp(`(?:^|\\s|-|_|\\[|\\()0*${epNum}(?:\\s|-|_|\\]|\\)|\\.|$)`, 'i');
+            if (numRegex.test(title)) {
+                originalNumStr = String(epNum);
+            }
+        }
+    }
+
+    if (originalNumStr) {
         const originalNum = parseFloat(originalNumStr);
         const newNum = originalNum + offset;
         const zeroPaddingLength = originalNumStr.startsWith('0') && originalNumStr.length > 1 ? originalNumStr.length : 0;
@@ -220,9 +231,13 @@ export function adjustTitleEpisodeNumber(title, offset) {
         if (zeroPaddingLength > 0) {
             newNumStr = newNumStr.padStart(zeroPaddingLength, '0');
         }
-        const fullMatch = match[0];
-        const updatedFullMatch = fullMatch.replace(originalNumStr, newNumStr);
-        return title.replace(fullMatch, updatedFullMatch);
+        const regexReplace = new RegExp(`((?:episode|ep|eps)[\\s-_]*0*)${originalNumStr}\\b`, 'i');
+        if (regexReplace.test(title)) {
+            return title.replace(regexReplace, `$1${newNumStr}`);
+        } else {
+            const fallbackReplace = new RegExp(`(\\b|[-_\\[\\(\\s])0*${originalNumStr}(\\b|[-_\\]\\)\\.\\s]|$)`);
+            return title.replace(fallbackReplace, `$1${newNumStr}$2`);
+        }
     }
     return title;
 }

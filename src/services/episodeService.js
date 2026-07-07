@@ -15,8 +15,8 @@ export function deduplicateEpisodes(episodes) {
     const dedupeMap = new Map();
     for (const ep of episodes) {
         const titleLower = (ep.judul || '').toLowerCase().trim();
-        const epNumMatch = titleLower.match(/(?:episode|ep|eps)\s*0*(\d+(?:\.\d+)?)/);
-        const key = epNumMatch ? `ep_${parseFloat(epNumMatch[1])}` : titleLower;
+        const epNum = extractEpNum(ep.judul);
+        const key = typeof epNum === 'number' && !isNaN(epNum) ? `ep_${epNum}` : titleLower;
         
         if (!dedupeMap.has(key)) {
             dedupeMap.set(key, { ...ep });

@@ -14,6 +14,26 @@ import { resolveCatalogSource } from '../utils/animeMatcher.js';
 
 const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 
+async function waitForUploadCompletion(slugsToCheck, episodeSlugsToCheck, item) {
+    let attempts = 0;
+    while (attempts < 120) { // Max wait 10 minutes (120 * 5s)
+        await new Promise(res => setTimeout(res, 5000));
+        attempts++;
+        const currentCheck = await checkUploadStatusWithFallback(slugsToCheck, episodeSlugsToCheck);
+        if (currentCheck.status === 'READY') {
+            console.info(`[Queue] ${item.episodeTitle} selesai diunggah oleh proses lain.`);
+            return;
+        }
+        if (currentCheck.status === 'FAILED') {
+            throw new Error('Proses upload oleh proses lain mengalami kegagalan.');
+        }
+        if (currentCheck.status !== 'UPLOADING') {
+            throw new Error('Proses upload terputus atau dibatalkan.');
+        }
+    }
+    throw new Error('Waktu tunggu upload oleh proses lain habis (timeout).');
+}
+
 // Setup background queue processor
 backgroundQueue.setProcessor(async (item) => {
     // Canonical Database Identity Lookup
@@ -28,17 +48,21 @@ backgroundQueue.setProcessor(async (item) => {
         return; // Otomatis menjadi COMPLETED
     }
     if (checkInfo.status === 'UPLOADING') {
-        console.info(`[Queue] ${item.episodeTitle} sedang diunggah oleh proses lain. Melepas dari antrean.`);
-        return; // Otomatis menjadi COMPLETED di antrean (player akan handle progressnya)
+        console.info(`[Queue] ${item.episodeTitle} sedang diunggah oleh proses lain. Menunggu hingga selesai...`);
+        await waitForUploadCompletion(slugsToCheck, episodeSlugsToCheck, item);
+        return;
     }
     
     // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck serta episodeTitle
     const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle);
     if (!result.success) {
         // Jika gagal karena error beneran, lemparkan error untuk trigger retry
-        if (result.reason !== 'Already processing or failed' && result.reason !== 'Already extracting') {
-             throw new Error(result.reason || 'Prefetch failed');
+        if (result.reason === 'Already processing or failed' || result.reason === 'Already extracting') {
+            console.info(`[Queue] ${item.episodeTitle} sedang diproses di background. Menunggu hingga selesai...`);
+            await waitForUploadCompletion(slugsToCheck, episodeSlugsToCheck, item);
+            return;
         }
+        throw new Error(result.reason || 'Prefetch failed');
     }
 });
 
