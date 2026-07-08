@@ -2,6 +2,7 @@ import { extractVideoUrl } from '../services/extractors/videoExtractor.js';
 import { getBlobPath, getBlobUrl, checkUploadStatusWithFallback } from '../services/stream/blobStorageService.js';
 import { cancelAllUploads, cancelUpload, markUploadFailed, invalidateAndDeleteBlob, getUploadProgress } from '../services/stream/uploadProgressService.js';
 import { uploadStream } from '../services/stream/ffmpegStreamService.js';
+import { globalBlacklistCache } from '../services/stream/streamStateStore.js';
 import { resolveCanonicalUniqueId } from '../services/canonicalService.js';
 import { extractSlugs } from '../services/slugService.js';
 import { findBestVideoSource } from '../services/streamRankingService.js';
@@ -152,11 +153,12 @@ export async function smartPlayHandler(req, res) {
             const runBackgroundUpload = async () => {
                 const maxAttempts = 5;
                 let currentSource = matchedSource;
+                const excludedServers = new Set();
                 for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                     try {
                         if (attempt > 1) {
                             console.info(`[Smart-Play] Mencoba ulang upload latar belakang (${attempt}/${maxAttempts})...`);
-                            const res = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, `[Smart-Play Retry ${attempt}/${maxAttempts}]`, req);
+                            const res = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, `[Smart-Play Retry ${attempt}/${maxAttempts}]`, req, null, excludedServers);
                             currentSource = res.matchedSource;
                             if (!currentSource) {
                                 throw new Error(res.error || 'Tidak ada server cadangan lain.');
@@ -170,6 +172,16 @@ export async function smartPlayHandler(req, res) {
                         }
                         return;
                     } catch (err) {
+                        if (currentSource) {
+                            if (currentSource.server) {
+                                excludedServers.add(currentSource.server.toString().toLowerCase());
+                                globalBlacklistCache.set(`broken_srv_${currentSource.server.toString().toLowerCase()}`, true, 900);
+                            }
+                            if (currentSource.host) {
+                                excludedServers.add(currentSource.host.toString().toLowerCase());
+                                globalBlacklistCache.set(`broken_host_${currentSource.host.toString().toLowerCase()}`, true, 900);
+                            }
+                        }
                         const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || (prefetchAbortController && prefetchAbortController.signal && prefetchAbortController.signal.aborted);
                         if (isCanceled) {
                             console.info(`[Smart-Play] Upload dibatalkan oleh pengguna (cancel/exit app). Menghentikan proses retry.`);

@@ -4,6 +4,7 @@ import { findBestVideoSource } from './streamRankingService.js';
 import { checkUploadStatusWithFallback, getBlobPath } from './stream/blobStorageService.js';
 import { markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount } from './stream/uploadProgressService.js';
 import { uploadStream } from './stream/ffmpegStreamService.js';
+import { globalBlacklistCache } from './stream/streamStateStore.js';
 import { getCache } from '../utils/cacheManager.js';
 import { getUnifiedAnimeEpisodes } from './animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
@@ -153,6 +154,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
         const maxAttempts = 5;
         let lastError = null;
         let urlsObjForAttempt = preloadedUrlsObj;
+        const excludedServers = new Set();
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -187,7 +189,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                     } catch (orchErr) {}
                 }
 
-                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt);
+                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt, excludedServers);
                 matchedSource = result.matchedSource;
                 
                 if (activeSignal && activeSignal.aborted) {
@@ -215,6 +217,16 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 return { success: true };
             } catch (err) {
                 proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
+                if (matchedSource) {
+                    if (matchedSource.server) {
+                        excludedServers.add(matchedSource.server.toString().toLowerCase());
+                        globalBlacklistCache.set(`broken_srv_${matchedSource.server.toString().toLowerCase()}`, true, 900);
+                    }
+                    if (matchedSource.host) {
+                        excludedServers.add(matchedSource.host.toString().toLowerCase());
+                        globalBlacklistCache.set(`broken_host_${matchedSource.host.toString().toLowerCase()}`, true, 900);
+                    }
+                }
                 const isCanceled = err.message === 'UPLOAD_CANCELLED' || err.message?.toLowerCase().includes('cancel') || err.code === 'ERR_CANCELED' || err.name === 'AbortError' || (activeSignal && activeSignal.aborted);
                 if (isCanceled) {
                     console.info(`${logPrefix} Upload dibatalkan oleh pengguna (cancel/exit app). Menghentikan proses retry.`);

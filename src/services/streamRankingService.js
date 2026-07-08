@@ -1,5 +1,6 @@
 import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from './extractors/videoExtractor.js';
 import { isMegaBlacklisted } from './stream/uploadProgressService.js';
+import { globalBlacklistCache } from './stream/streamStateStore.js';
 import { checkRangeSupport } from './stream/ffmpegStreamService.js';
 import { getNeosatsuServers } from './scrapers/neosatsuScraperService.js';
 import { getServersInternal as getOtakuServers } from '../controllers/otakudesuController.js';
@@ -79,9 +80,21 @@ export function getResolutionGroup(serverName) {
     return null;
 }
 
-export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null) {
+export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set()) {
     let matchedSource = null;
     try {
+        const isServerExcluded = (nameOrHost) => {
+            if (!nameOrHost) return false;
+            const clean = nameOrHost.toString().toLowerCase().trim();
+            if (excludedServers && (excludedServers.has(clean) || Array.from(excludedServers).some(ex => ex && clean.includes(ex.toString().toLowerCase())))) {
+                return true;
+            }
+            if (globalBlacklistCache.get(`broken_srv_${clean}`) || globalBlacklistCache.get(`broken_host_${clean}`)) {
+                return true;
+            }
+            return false;
+        };
+
         let targetUrlPromise = getServersBasedOnUrl(episodeUrl);
 
         let targetData = null;
@@ -181,6 +194,10 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                         console.warn(`${logPrefix} Melewati ${srv.namaHost} karena sedang di-blacklist.`);
                         continue;
                     }
+                    if (isServerExcluded(srv.namaHost) || isServerExcluded(srv.nama)) {
+                        console.warn(`${logPrefix} Melewati server ${srv.namaHost || srv.nama} karena sebelumnya gagal/putus koneksi.`);
+                        continue;
+                    }
                     
                     let iframeUrlToExtract = srv.iframeUrl;
                     if (!iframeUrlToExtract && srv.nume) {
@@ -192,6 +209,10 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                             }
                             if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
                                 console.warn(`${logPrefix} Melewati ${srv.namaHost} (setelah resolve) karena sedang di-blacklist.`);
+                                continue;
+                            }
+                            if (isServerExcluded(srv.namaHost) || isServerExcluded(srv.nama)) {
+                                console.warn(`${logPrefix} Melewati ${srv.namaHost || srv.nama} (setelah resolve) karena sebelumnya gagal/putus koneksi.`);
                                 continue;
                             }
                         } catch (resolveErr) {
@@ -206,10 +227,22 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                             console.warn(`${logPrefix} Melewati extracted url Mega karena sedang di-blacklist.`);
                             continue;
                         }
+                        let extractedHost = '';
+                        try { extractedHost = new URL(extracted.url).hostname.toLowerCase(); } catch(e){}
+                        if (isServerExcluded(extractedHost)) {
+                            console.warn(`${logPrefix} Melewati extracted URL ${extractedHost} karena sebelumnya gagal/putus koneksi.`);
+                            continue;
+                        }
                         const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
                         try {
                             await checkRangeSupport(extracted.url, finalHeaders);
-                            matchedSource = { url: extracted.url, headers: finalHeaders };
+                            matchedSource = { 
+                                url: extracted.url, 
+                                headers: finalHeaders,
+                                server: srv.namaHost || srv.nama || 'unknown',
+                                source: srv.source || 'Unknown',
+                                host: extractedHost || ''
+                            };
                             console.info(`${logPrefix} ✓ Menemukan source video (${resVal}p) dari ${srv.source} [${srv.namaHost}]`);
                             break;
                         } catch (pingErr) {

@@ -287,15 +287,17 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 
                 let numThreads = 1;
                 const hostLow = videoUrl.toLowerCase();
-                if (hostLow.includes('kraken')) numThreads = 16;
-                if (
+                if (hostLow.includes('kraken')) {
+                    numThreads = 16;
+                } else if (
                     hostLow.includes('googleapis') ||
                     hostLow.includes('drive.google') ||
                     hostLow.includes('mediafire') ||
                     hostLow.includes('pixeldrain') ||
-                    hostLow.includes('wibufile')
+                    hostLow.includes('wibufile') ||
+                    (rangeCheck.supported && rangeCheck.totalSize > 0)
                 ) {
-                    numThreads = 2; // Turunkan dari 4 ke 2 agar bandwidth VPS tidak habis oleh download, sisakan untuk Puppeteer/scraper
+                    numThreads = 2; // Gunakan 2 jalur untuk semua server direct video yang mendukung Range / resume agar stabil dan tidak mudah putus di tengah jalan
                 }
                 
                 if (rangeCheck.supported && numThreads > 1) {
