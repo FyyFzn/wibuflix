@@ -14,8 +14,15 @@ const cache = getCache('nimegami', 3600);
 export async function getNimegamiEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
 
-    // Hilangkan parameter query jika ada saat cek cache episodes
-    const cleanUrl = targetUrl.split('?')[0];
+    // Hilangkan parameter ep jika ada, tapi pertahankan dl=X untuk pagination
+    let cleanUrl = targetUrl;
+    try {
+        const u = new URL(targetUrl);
+        u.searchParams.delete('ep');
+        cleanUrl = u.toString();
+    } catch {
+        cleanUrl = targetUrl.split('?')[0];
+    }
     const cacheKey = `nimegami_eps_${cleanUrl}`;
     const cachedData = cache.get(cacheKey);
     if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
@@ -103,9 +110,10 @@ export async function getNimegamiEpisodes(targetUrl) {
                 const epNum = parseInt(epMatch[1], 10);
                 if (!seenEpNums.has(epNum)) {
                     seenEpNums.add(epNum);
+                    const separator = cleanUrl.includes('?') ? '&' : '?';
                     daftar_episode.push({
                         judul: `Episode ${epNum}`,
-                        url: `${cleanUrl}?ep=${epNum}`
+                        url: `${cleanUrl}${separator}ep=${epNum}`
                     });
                 }
             }
@@ -207,38 +215,24 @@ export async function getNimegamiServers(episodeUrl) {
         const servers = [];
         const seenServers = new Set();
 
-        // Cari elemen heading untuk episode yang dituju
-        let isCollecting = false;
-        let currentRes = '720p';
-
-        // Lapis 2: File Extension & Host Guard
         const allowedHostKeywords = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
         const blockedKeywords = /batch|zip|rar|7z|gdrive|mega\.nz|zippyshare|mediafire|google/i;
 
-        $('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, li, tr').each((_, el) => {
+        $('.download, .sorasdd, .list-download, .entry-content, .box-download, #LinkDownload, .list_dl').find('h2, h3, h4, h5, strong, b, p, tr, li, div').each((_, el) => {
             const text = $(el).text().trim();
+            if (/batch|01\s*-\s*\d+/i.test(text)) return;
 
-            // Jika menemukan heading episode baru
             const epMatch = text.match(/(?:episode|ep|eps)\s*(\d+)/i);
-            if (epMatch && !text.includes('Download Per Episode')) {
-                const foundEp = parseInt(epMatch[1], 10);
-                if (targetEpNum && foundEp === parseInt(targetEpNum, 10)) {
-                    isCollecting = true;
-                } else if (isCollecting && foundEp !== parseInt(targetEpNum, 10)) {
-                    // Sudah masuk ke episode berikutnya, hentikan pengumpulan
-                    isCollecting = false;
+            if (epMatch && (!targetEpNum || parseInt(epMatch[1], 10) === parseInt(targetEpNum, 10))) {
+                let linkElements = $(el).find('a');
+                if (linkElements.length === 0) {
+                    linkElements = $(el).nextUntil('h1, h2, h3, h4, h5, hr, tr').find('a');
                 }
-            }
+                if (linkElements.length === 0 && $(el).parent().length > 0) {
+                    linkElements = $(el).parent().find('a');
+                }
 
-            // Deteksi resolusi (misal 360p, 480p, 720p, 1080p)
-            const resMatch = text.match(/(360p|480p|720p|1080p)/i);
-            if (resMatch) {
-                currentRes = resMatch[1].toUpperCase();
-            }
-
-            // Jika sedang berada di dalam blok episode yang tepat, ambil link-linknya
-            if (isCollecting || !targetEpNum) {
-                $(el).find('a').each((__, aEl) => {
+                linkElements.each((__, aEl) => {
                     const href = $(aEl).attr('href');
                     const linkText = $(aEl).text().trim();
 
@@ -248,17 +242,24 @@ export async function getNimegamiServers(episodeUrl) {
 
                     const hostMatch = allowedHostKeywords.find(h => href.toLowerCase().includes(h) || linkText.toLowerCase().includes(h));
                     if (hostMatch) {
+                        let resText = 'MP4';
+                        const parentText = $(aEl).parent().text() || '';
+                        if (parentText.includes('1080p') || linkText.includes('1080p')) resText = '1080p';
+                        else if (parentText.includes('720p') || linkText.includes('720p')) resText = '720p';
+                        else if (parentText.includes('480p') || linkText.includes('480p')) resText = '480p';
+                        else if (parentText.includes('360p') || linkText.includes('360p')) resText = '360p';
+
                         let normalizedHref = href;
                         const isEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostMatch.includes(h) || linkText.toLowerCase().includes(h));
                         if (isEmbedHost && normalizedHref.match(/\/f\/[^/]+\/?$/)) {
                             normalizedHref = normalizedHref.replace(/\/f\//, '/e/');
                         }
                         const label = linkText.length > 2 && !/^\d+p$/i.test(linkText) ? linkText : hostMatch.charAt(0).toUpperCase() + hostMatch.slice(1);
-                        const srvKey = `${currentRes}-${label}`;
+                        const srvKey = `${resText}-${label}-${normalizedHref}`;
                         if (!seenServers.has(srvKey)) {
                             seenServers.add(srvKey);
                             servers.push({
-                                nama: `${currentRes} MP4`,
+                                nama: `${resText} MP4`,
                                 namaHost: label,
                                 iframeUrl: normalizedHref,
                                 type: 'direct',
@@ -270,19 +271,18 @@ export async function getNimegamiServers(episodeUrl) {
             }
         });
 
-        // Cari navigasi Prev dan Next berdasarkan daftar episode
-        const allEps = await getNimegamiEpisodes(baseUrl).catch(() => ({ daftar_episode: [] }));
         let nav_prev = null;
         let nav_next = null;
-        const epsList = allEps.daftar_episode || [];
-        if (epsList.length > 0 && targetEpNum) {
-            const idx = epsList.findIndex(e => {
-                try { return new URL(e.url).searchParams.get('ep') === String(targetEpNum); } catch { return false; }
-            });
-            if (idx !== -1) {
-                if (idx > 0) nav_prev = epsList[idx - 1].url;
-                if (idx < epsList.length - 1) nav_next = epsList[idx + 1].url;
+        if (targetEpNum && !isNaN(targetEpNum)) {
+            const epNum = parseInt(targetEpNum, 10);
+            if (epNum > 1) {
+                const uPrev = new URL(baseUrl);
+                uPrev.searchParams.set('ep', epNum - 1);
+                nav_prev = uPrev.toString();
             }
+            const uNext = new URL(baseUrl);
+            uNext.searchParams.set('ep', epNum + 1);
+            nav_next = uNext.toString();
         }
 
         const result = { judul, servers, nav_prev, nav_next };
