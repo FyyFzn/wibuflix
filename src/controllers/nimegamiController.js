@@ -188,7 +188,8 @@ export async function getNimegamiServers(episodeUrl) {
 
     const urlObj = new URL(episodeUrl);
     const targetEpNum = urlObj.searchParams.get('ep');
-    const baseUrl = episodeUrl.split('?')[0];
+    urlObj.searchParams.delete('ep');
+    const baseUrl = urlObj.toString();
 
     console.log(`[Nimegami] Fetching servers for Ep ${targetEpNum} from: ${baseUrl}`);
 
@@ -211,16 +212,7 @@ export async function getNimegamiServers(episodeUrl) {
         let currentRes = '720p';
 
         // Lapis 2: File Extension & Host Guard
-        const allowedHosts = [
-            { key: 'krakenfiles', label: 'Krakenfiles' },
-            { key: 'berkasdrive', label: 'Berkasdrive' },
-            { key: 'pixeldrain',  label: 'Pixeldrain' },
-            { key: 'mp4upload',   label: 'Mp4Upload' },
-            { key: 'filelions',   label: 'FileLions' },
-            { key: 'doodstream',  label: 'Doodstream' },
-            { key: 'gofile',      label: 'Gofile' }
-        ];
-
+        const allowedHostKeywords = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
         const blockedKeywords = /batch|zip|rar|7z|gdrive|mega\.nz|zippyshare|mediafire|google/i;
 
         $('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, li, tr').each((_, el) => {
@@ -254,20 +246,24 @@ export async function getNimegamiServers(episodeUrl) {
                         return;
                     }
 
-                    for (const host of allowedHosts) {
-                        if (href.toLowerCase().includes(host.key) || linkText.toLowerCase().includes(host.key)) {
-                            const srvKey = `${currentRes}-${host.label}`;
-                            if (!seenServers.has(srvKey)) {
-                                seenServers.add(srvKey);
-                                servers.push({
-                                    nama: `${currentRes} MP4`,
-                                    namaHost: host.label,
-                                    iframeUrl: href,
-                                    type: 'direct',
-                                    aktif: servers.length === 0
-                                });
-                            }
-                            break;
+                    const hostMatch = allowedHostKeywords.find(h => href.toLowerCase().includes(h) || linkText.toLowerCase().includes(h));
+                    if (hostMatch) {
+                        let normalizedHref = href;
+                        const isEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostMatch.includes(h) || linkText.toLowerCase().includes(h));
+                        if (isEmbedHost && normalizedHref.match(/\/f\/[^/]+\/?$/)) {
+                            normalizedHref = normalizedHref.replace(/\/f\//, '/e/');
+                        }
+                        const label = linkText.length > 2 && !/^\d+p$/i.test(linkText) ? linkText : hostMatch.charAt(0).toUpperCase() + hostMatch.slice(1);
+                        const srvKey = `${currentRes}-${label}`;
+                        if (!seenServers.has(srvKey)) {
+                            seenServers.add(srvKey);
+                            servers.push({
+                                nama: `${currentRes} MP4`,
+                                namaHost: label,
+                                iframeUrl: normalizedHref,
+                                type: 'direct',
+                                aktif: servers.length === 0
+                            });
                         }
                     }
                 });
@@ -280,7 +276,9 @@ export async function getNimegamiServers(episodeUrl) {
         let nav_next = null;
         const epsList = allEps.daftar_episode || [];
         if (epsList.length > 0 && targetEpNum) {
-            const idx = epsList.findIndex(e => e.url.includes(`?ep=${targetEpNum}`));
+            const idx = epsList.findIndex(e => {
+                try { return new URL(e.url).searchParams.get('ep') === String(targetEpNum); } catch { return false; }
+            });
             if (idx !== -1) {
                 if (idx > 0) nav_prev = epsList[idx - 1].url;
                 if (idx < epsList.length - 1) nav_next = epsList[idx + 1].url;

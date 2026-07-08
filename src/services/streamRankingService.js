@@ -5,6 +5,7 @@ import { getNeosatsuServers } from './scrapers/neosatsuScraperService.js';
 import { getServersInternal as getOtakuServers } from '../controllers/otakudesuController.js';
 import { getKuronimeServers } from '../controllers/kuronimeController.js';
 import { getNanimeServers } from '../controllers/nanimeController.js';
+import { getNimegamiServers } from '../controllers/nimegamiController.js';
 
 export async function getServersBasedOnUrl(episodeUrl) {
     if (episodeUrl.includes('___neosatsu_ep___')) {
@@ -27,6 +28,12 @@ export async function getServersBasedOnUrl(episodeUrl) {
             realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
         }
         return await getNanimeServers(realUrl);
+    } else if (episodeUrl.includes('nimegami.id') || episodeUrl.includes('/api/nimegami/servers')) {
+        let realUrl = episodeUrl;
+        if (episodeUrl.includes('?url=')) {
+            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
+        }
+        return await getNimegamiServers(realUrl);
     } else {
         return await scrapeVideoServers(episodeUrl);
     }
@@ -100,6 +107,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             if (url.includes('otakudesu') || url.includes('/api/otakudesu/servers')) return 'Otakudesu';
             if (url.includes('kuronime.sbs') || url.includes('/api/kuronime/servers')) return 'Kuronime';
             if (url.includes('nanimeid.net') || url.includes('/api/nanime/servers')) return 'Nanime';
+            if (url.includes('nimegami.id') || url.includes('/api/nimegami/servers')) return 'Nimegami';
             return 'Samehadaku';
         };
 
@@ -111,7 +119,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             console.info(`${logPrefix} Mengambil URL alternatif dari metadata urls:`, JSON.stringify(urlsObj));
             for (const [provider, provUrl] of Object.entries(urlsObj)) {
                 if (!provUrl || typeof provUrl !== 'string') continue;
-                if (episodeUrl.includes(provUrl) || (provider === 'otakudesu' && episodeUrl.includes('otakudesu')) || (provider === 'kuronime' && episodeUrl.includes('kuronime')) || (provider === 'samehadaku' && episodeUrl.includes('samehadaku')) || (provider === 'nanime' && episodeUrl.includes('nanime')) || (provider === 'neosatsu' && episodeUrl.includes('neosatsu'))) {
+                if (episodeUrl.includes(provUrl) || (provider === 'otakudesu' && episodeUrl.includes('otakudesu')) || (provider === 'kuronime' && episodeUrl.includes('kuronime')) || (provider === 'samehadaku' && episodeUrl.includes('samehadaku')) || (provider === 'nanime' && episodeUrl.includes('nanime')) || (provider === 'neosatsu' && episodeUrl.includes('neosatsu')) || (provider === 'nimegami' && episodeUrl.includes('nimegami'))) {
                     continue;
                 }
                 const label = provider.charAt(0).toUpperCase() + provider.slice(1);
@@ -137,7 +145,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
         const groups = { 1080: [], 720: [], 480: [], 360: [] };
         for (const srv of servers) {
-            if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
+            if (srv.namaHost && srv.namaHost.toLowerCase().includes('ma') && isMegaBlacklisted()) {
                 continue;
             }
             const resGroup = getResolutionGroup(srv.nama);
@@ -209,7 +217,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                                 console.warn(`${logPrefix} ${srv.namaHost} terkena limit kuota (429), lompat ke server berikutnya...`);
                                 continue;
                             }
-                            throw pingErr;
+                            console.warn(`${logPrefix} Server ${srv.namaHost} gagal uji koneksi (${pingErr.message}), lompat ke server berikutnya...`);
+                            continue;
                         }
                     }
                 } catch (e) {
