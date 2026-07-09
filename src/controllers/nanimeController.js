@@ -117,7 +117,7 @@ export async function getNanimeEpisodes(animeUrl) {
                 if (ep.slug) {
                     epUrl = `https://nanimeid.net/anime/${anime.slug || ''}/${ep.slug}`;
                 } else if (epNum !== undefined) {
-                    epUrl = `https://nanimeid.net/anime/${anime.slug || ''}/episode-${epNum}`;
+                    epUrl = `https://nanimeid.net/anime/${anime.slug || ''}/episode/${epNum}`;
                 }
             }
 
