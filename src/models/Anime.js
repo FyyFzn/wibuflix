@@ -71,6 +71,11 @@ const animeSchema = new mongoose.Schema({
             url: { type: String, default: null, index: true },
             id: { type: String, default: null, index: true },
             offset: { type: Number, default: 0 }
+        },
+        oploverz: {
+            url: { type: String, default: null, index: true },
+            id: { type: String, default: null, index: true },
+            offset: { type: Number, default: 0 }
         }
     },
     // Metadata Lanjutan dari MAL / TMDB

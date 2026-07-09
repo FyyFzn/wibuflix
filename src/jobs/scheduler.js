@@ -6,6 +6,7 @@ import { syncNeosatsu } from '../sync/neosatsu_sync.js';
 import { startBackgroundKuronimeSync } from '../sync/kuronime_sync.js';
 import { startBackgroundNanimeSync } from '../sync/nanime_sync.js';
 import { startBackgroundNimegamiSync } from '../sync/nimegami_sync.js';
+import { startBackgroundOploverzSync } from '../sync/oploverz_sync.js';
 
 export function initScheduler() {
     const log = global.forceLog || console.log;
@@ -18,6 +19,7 @@ export function initScheduler() {
     startBackgroundKuronimeSync();
     startBackgroundNanimeSync();
     startBackgroundNimegamiSync();
+    startBackgroundOploverzSync();
 
     // 2. Memulai proses unified sync (dijadwalkan setelah 10 detik agar server stabil)
     setTimeout(() => {

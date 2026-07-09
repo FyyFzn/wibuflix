@@ -6,8 +6,10 @@ export async function getEpisodesMerged(req, res) {
     const urlOtakudesu = req.query.urlOtakudesu;
     const urlKuronime = req.query.urlKuronime;
     const urlNanime = req.query.urlNanime;
+    const urlNimegami = req.query.urlNimegami;
+    const urlOploverz = req.query.urlOploverz;
     
-    if (!targetUrl && !urlSamehadaku && !urlOtakudesu && !urlKuronime && !urlNanime) {
+    if (!targetUrl && !urlSamehadaku && !urlOtakudesu && !urlKuronime && !urlNanime && !urlNimegami && !urlOploverz) {
         return res.status(400).json({ error: "Parameter 'url' wajib diisi!" });
     }
 
@@ -17,7 +19,9 @@ export async function getEpisodesMerged(req, res) {
             urlSamehadaku,
             urlOtakudesu,
             urlKuronime,
-            urlNanime
+            urlNanime,
+            urlNimegami,
+            urlOploverz
         });
 
         if (!res.headersSent) {

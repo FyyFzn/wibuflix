@@ -66,7 +66,8 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
                 { "sources.otakudesu.id": slug },
                 { "sources.kuronime.url": { $regex: slug, $options: 'i' } },
                 { "sources.nanime.url": { $regex: slug, $options: 'i' } },
-                { "sources.nimegami.url": { $regex: slug, $options: 'i' } }
+                { "sources.nimegami.url": { $regex: slug, $options: 'i' } },
+                { "sources.oploverz.url": { $regex: slug, $options: 'i' } }
             ];
             if (isNumericMalId) {
                 queryConditions.unshift({ malId: parseInt(slug, 10) });
@@ -80,6 +81,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
                        dbAnime.sources?.kuronime?.url || 
                        dbAnime.sources?.nanime?.url || 
                        dbAnime.sources?.nimegami?.url || 
+                       dbAnime.sources?.oploverz?.url || 
                        (dbAnime.sources?.otakudesu?.id ? `/anime/${dbAnime.sources.otakudesu.id}` : null);
         }
     }
@@ -124,6 +126,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         if (ep.urls?.nanime) availableSources.push('nanime');
         if (ep.urls?.neosatsu) availableSources.push('neosatsu');
         if (ep.urls?.nimegami) availableSources.push('nimegami');
+        if (ep.urls?.oploverz) availableSources.push('oploverz');
 
         // Pilih URL representatif (prioritas: Kuronime -> Samehadaku -> Otakudesu -> Nanime)
         const representativeUrl = ep.url || 
@@ -132,6 +135,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
                                   ep.urls?.otakudesu || 
                                   ep.urls?.nanime || 
                                   ep.urls?.nimegami || 
+                                  ep.urls?.oploverz || 
                                   ep.urls?.neosatsu || '';
 
         return {
