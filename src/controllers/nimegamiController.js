@@ -233,11 +233,26 @@ export async function getNimegamiServers(episodeUrl) {
                 }
 
                 linkElements.each((__, aEl) => {
-                    const href = $(aEl).attr('href');
+                    let href = $(aEl).attr('href');
                     const linkText = $(aEl).text().trim();
 
                     if (!href || href.startsWith('#') || blockedKeywords.test(href) || blockedKeywords.test(linkText)) {
                         return;
+                    }
+
+                    // Decode base64 shortlink if nimegami uses ?url=
+                    if (href.includes('url=')) {
+                        try {
+                            const urlParam = new URL(href.startsWith('http') ? href : `https://nimegami.id${href}`).searchParams.get('url');
+                            if (urlParam) {
+                                const decoded = Buffer.from(urlParam, 'base64').toString('utf8');
+                                if (decoded.startsWith('http')) {
+                                    href = decoded;
+                                } else if (urlParam.startsWith('http')) {
+                                    href = urlParam;
+                                }
+                            }
+                        } catch (e) {}
                     }
 
                     const hostMatch = allowedHostKeywords.find(h => href.toLowerCase().includes(h) || linkText.toLowerCase().includes(h));

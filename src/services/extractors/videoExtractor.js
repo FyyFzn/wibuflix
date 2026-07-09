@@ -125,10 +125,27 @@ export async function scrapeVideoServers(targetUrl) {
                             const hostNameLower = hostNameRaw.toLowerCase();
                             if (hostNameLower.includes('batch')) return;
                             
+                            let href = $(a).attr('href');
+                            
+                            // Nimegami Shortlink Bypass
+                            if (href && href.includes('url=')) {
+                                try {
+                                    const urlParam = new URL(href.startsWith('http') ? href : `https://nimegami.id${href}`).searchParams.get('url');
+                                    if (urlParam) {
+                                        const decoded = Buffer.from(urlParam, 'base64').toString('utf8');
+                                        if (decoded.startsWith('http')) {
+                                            href = decoded;
+                                        } else if (urlParam.startsWith('http')) {
+                                            href = urlParam;
+                                        }
+                                    }
+                                } catch (e) {}
+                            }
+                            
                             const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
                             const isAllowed = allowedHosts.some(h => hostNameLower.includes(h) || (href && href.toLowerCase().includes(h)));
                             
-                            if (href && href.startsWith('http') && !href.includes('nimegami.id') && isAllowed) {
+                            if (href && href.startsWith('http') && (!href.includes('nimegami.id') || href.includes('url=')) && isAllowed) {
                                 let resText = 'MP4';
                                 const parentText = $(a).parent().text() || '';
                                 if (parentText.includes('1080p')) resText = '1080p';
@@ -176,7 +193,22 @@ export async function scrapeVideoServers(targetUrl) {
                     const hostNameLower = hostNameRaw.toLowerCase();
                     if (hostNameLower.includes('batch')) return; // Skip batch host name
 
-                    const href = $(a).attr('href');
+                    let href = $(a).attr('href');
+                    
+                    // Nimegami Shortlink Bypass
+                    if (href && href.includes('url=')) {
+                        try {
+                            const urlParam = new URL(href.startsWith('http') ? href : `https://nimegami.id${href}`).searchParams.get('url');
+                            if (urlParam) {
+                                const decoded = Buffer.from(urlParam, 'base64').toString('utf8');
+                                if (decoded.startsWith('http')) {
+                                    href = decoded;
+                                } else if (urlParam.startsWith('http')) {
+                                    href = urlParam;
+                                }
+                            }
+                        } catch (e) {}
+                    }
                     
                     const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
                     const isAllowed = allowedHosts.some(h => hostNameLower.includes(h));
