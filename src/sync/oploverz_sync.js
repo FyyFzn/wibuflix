@@ -27,49 +27,81 @@ export async function syncOploverz() {
         log(`[OploverzSync] Navigasi ke ${OPLOVERZ_SERIES_URL}...`);
         await page.goto(OPLOVERZ_SERIES_URL, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Scroll ke bawah untuk memastikan semua konten lazy-load ter-render
-        await page.evaluate(async () => {
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 400;
-                const timer = setInterval(() => {
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-                    if (totalHeight >= document.body.scrollHeight - window.innerHeight) {
-                        clearInterval(timer);
-                        resolve();
-                    }
-                }, 150);
-            });
-        });
-
         const html = await page.content();
         const $ = cheerio.load(html);
 
-        const animeMap = new Map();
-        $('a[href^="/series/"]').each((_, el) => {
-            const href = $(el).attr('href');
-            if (!href || href.includes('/episode/')) return;
-
-            let titleRaw = $(el).text().trim() || $(el).attr('title') || $(el).find('img').attr('alt');
-            titleRaw = titleRaw ? String(titleRaw).trim() : '';
-            if (!titleRaw || titleRaw.length < 2) return;
-
-            const id = href.replace('/series/', '').replace(/\/$/, '');
-            if (!animeMap.has(id)) {
-                animeMap.set(id, {
-                    title: titleRaw,
-                    url: `https://plus.oploverz.ltd${href}`,
-                    id
-                });
+        let svelteDataScript = '';
+        $('script').each((_, el) => {
+            const content = $(el).html() || '';
+            if (content.includes('__sveltekit') && content.includes('allSeries')) {
+                svelteDataScript = content;
             }
         });
 
+        if (!svelteDataScript) {
+            log('[OploverzSync] ❌ Gagal menemukan SvelteKit hydration script payload.');
+            return;
+        }
+
+        // Ekstrak data: [...] array
+        const dataStart = svelteDataScript.indexOf('data: [');
+        if (dataStart === -1) {
+            log('[OploverzSync] ❌ Gagal menemukan start of data array.');
+            return;
+        }
+
+        let openBrackets = 1;
+        let index = dataStart + 7; // after 'data: ['
+        while (openBrackets > 0 && index < svelteDataScript.length) {
+            const char = svelteDataScript[index];
+            if (char === '[') openBrackets++;
+            else if (char === ']') openBrackets--;
+            index++;
+        }
+
+        const dataJsonStr = svelteDataScript.substring(dataStart + 6, index);
+        let parsedData;
+        try {
+            // Evaluasi array data secara lokal
+            parsedData = eval(dataJsonStr);
+        } catch (e) {
+            log('[OploverzSync] ❌ Gagal mengevaluasi data array:', e.message);
+            return;
+        }
+
+        // Cari allSeries di element ke-2 (atau index lainnya jika bergeser)
+        let rawSeriesList = [];
+        for (const item of parsedData) {
+            if (item && item.data && item.data.allSeries && Array.isArray(item.data.allSeries.data)) {
+                rawSeriesList = item.data.allSeries.data;
+                break;
+            }
+        }
+
+        if (rawSeriesList.length === 0) {
+            log('[OploverzSync] ❌ Gagal mengekstrak allSeries array dari data payload.');
+            return;
+        }
+
+        const animeMap = new Map();
+        for (const item of rawSeriesList) {
+            const title = item.title ? String(item.title).trim() : '';
+            const slug = item.slug ? String(item.slug).trim() : '';
+            
+            if (title && slug) {
+                animeMap.set(slug, {
+                    title: title,
+                    url: `https://plus.oploverz.ltd/series/${slug}`,
+                    id: slug
+                });
+            }
+        }
+
         const list = Array.from(animeMap.values());
-        log(`[OploverzSync] ${list.length} anime ditemukan. Memulai pemetaan ke database...`);
+        log(`[OploverzSync] ${list.length} anime ditemukan via SvelteKit Payload. Memulai pemetaan ke database...`);
 
         if (list.length === 0) {
-            log('[OploverzSync] Tidak ada anime ditemukan. SvelteKit DOM mungkin tidak terrender sempurna.');
+            log('[OploverzSync] Tidak ada anime ditemukan.');
             return;
         }
 
