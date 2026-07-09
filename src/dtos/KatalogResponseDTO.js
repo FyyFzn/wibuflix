@@ -23,6 +23,9 @@ export class KatalogResponseDTO {
         } else if (item.sources?.nimegami?.url) {
             finalUrl = item.sources.nimegami.url;
             finalId = item.sources.nimegami.id || '';
+        } else if (item.sources?.oploverz?.url) {
+            finalUrl = item.sources.oploverz.url;
+            finalId = item.sources.oploverz.id || '';
         }
 
         let displayType = item.type || '';
