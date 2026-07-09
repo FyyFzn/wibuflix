@@ -157,11 +157,11 @@ export function isSafeToMergeById(title1, title2) {
 export function formatEpisodeTitle(title) {
     if (!title) return 'Episode ?';
     if (title.toLowerCase().includes('batch')) return 'Batch';
-    const typeMatch = title.match(/(OVA|OAD|Special|SP)[\s-_]*(\d+(\.\d+)?)/i);
+    const typeMatch = title.match(/(OVA|OAD|Special|SP)[\s-_]*(\d+(?:[\s-_&+/]*\d+)?(?:\.\d+)?)/i);
     if (typeMatch) return `${typeMatch[1].toUpperCase()} ${typeMatch[2]}`;
-    const epMatch = title.match(/(?:episode|ep|eps)[\s-_]*(\d+(?:\.\d+)?)/i);
+    const epMatch = title.match(/(?:episode|ep|eps)[\s-_]*(\d+(?:[\s-_&+/]*\d+)?(?:\.\d+)?)/i);
     if (epMatch) return `Episode ${epMatch[1]}`;
-    const fallback = title.match(/\b(\d+(\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    const fallback = title.match(/\b(\d+(?:[\s-_&+/]*\d+)?(?:\.\d+)?)\s*(?:\(End\))?\s*$/i);
     if (fallback) return `Episode ${fallback[1]}`;
     return title;
 }

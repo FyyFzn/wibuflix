@@ -46,8 +46,21 @@ export async function getOploverzEpisodes(targetUrl) {
                 
                 if (epNum !== null && !seenEpNums.has(epNum)) {
                     seenEpNums.add(epNum);
+                    
+                    let finalEpTitle = epTitleRaw;
+                    const lowerTitle = epTitleRaw.toLowerCase();
+                    const isGeneric = lowerTitle.includes('sekarang') || 
+                                      lowerTitle.includes('nonton') || 
+                                      lowerTitle.includes('tonton') || 
+                                      lowerTitle.includes('play') ||
+                                      !/\d/.test(epTitleRaw);
+                    
+                    if (isGeneric) {
+                        finalEpTitle = `Episode ${epNum}`;
+                    }
+
                     daftar_episode.push({
-                        judul: formatEpisodeTitle(epTitleRaw !== 'Episode' ? epTitleRaw : `Episode ${epNum}`),
+                        judul: formatEpisodeTitle(finalEpTitle !== 'Episode' ? finalEpTitle : `Episode ${epNum}`),
                         url: epUrl,
                         num: epNum
                     });
