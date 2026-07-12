@@ -95,7 +95,18 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             return false;
         };
 
-        let targetUrlPromise = getServersBasedOnUrl(episodeUrl);
+        const checkUrlBlacklisted = (url) => {
+            if (!url) return false;
+            if (globalBlacklistCache.get(`broken_url_${url}`)) return true;
+            for (const prov of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
+                if (url.includes(prov) && globalBlacklistCache.get(`broken_provider_${prov}`)) return true;
+            }
+            return false;
+        };
+
+        let targetUrlPromise = checkUrlBlacklisted(episodeUrl)
+            ? Promise.resolve({ servers: [] })
+            : getServersBasedOnUrl(episodeUrl);
 
         let targetData = null;
         if (!episodeTitle || !seriesTitle) {
@@ -104,7 +115,9 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             if (!seriesTitle && targetData?.judul) {
                 seriesTitle = targetData.judul.replace(/\s+Episode\s+\d+.*$/i, '').replace(/\s+Sub(title)?\s+Indo(nesia)?.*$/i, '').trim();
             }
-            targetUrlPromise = Promise.resolve(targetData);
+            if (!checkUrlBlacklisted(episodeUrl)) {
+                targetUrlPromise = Promise.resolve(targetData);
+            }
         }
 
         let urlsObj = preloadedUrlsObj || null;
@@ -132,6 +145,10 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             console.info(`${logPrefix} Mengambil URL alternatif dari metadata urls:`, JSON.stringify(urlsObj));
             for (const [provider, provUrl] of Object.entries(urlsObj)) {
                 if (!provUrl || typeof provUrl !== 'string') continue;
+                if (checkUrlBlacklisted(provUrl) || globalBlacklistCache.get(`broken_provider_${provider}`)) {
+                    console.info(`${logPrefix} Melewati provider [${provider.toUpperCase()}] karena dilaporkan rusak/blacklisted.`);
+                    continue;
+                }
                 if (episodeUrl.includes(provUrl) || (provider === 'otakudesu' && episodeUrl.includes('otakudesu')) || (provider === 'kuronime' && episodeUrl.includes('kuronime')) || (provider === 'samehadaku' && episodeUrl.includes('samehadaku')) || (provider === 'nanime' && episodeUrl.includes('nanime')) || (provider === 'neosatsu' && episodeUrl.includes('neosatsu')) || (provider === 'nimegami' && episodeUrl.includes('nimegami'))) {
                     continue;
                 }

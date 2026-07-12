@@ -5,6 +5,7 @@ import { checkUploadStatusWithFallback, getBlobPath, getBlobUrl } from '../servi
 import { getUploadProgress, invalidateAndDeleteBlob } from '../services/stream/uploadProgressService.js';
 import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
+import { globalBlacklistCache } from '../services/stream/streamStateStore.js';
 
 /**
  * Controller V2 Stream:
@@ -127,26 +128,55 @@ export async function reportBrokenV2(req, res) {
             await invalidateAndDeleteBlob(oldSeriesSlug, episodeSlug);
         }
 
-        // SMART SERVER-SIDE FAILOVER: Cari URL provider alternatif dari Orchestrator
+        const getProviderKey = (url) => {
+            if (!url) return '';
+            if (url.includes('otakudesu')) return 'otakudesu';
+            if (url.includes('kuronime')) return 'kuronime';
+            if (url.includes('nanime')) return 'nanime';
+            if (url.includes('neosatsu')) return 'neosatsu';
+            if (url.includes('nimegami')) return 'nimegami';
+            if (url.includes('samehadaku')) return 'samehadaku';
+            return '';
+        };
+        const brokenProv = getProviderKey(targetUrl);
+        if (targetUrl) globalBlacklistCache.set(`broken_url_${targetUrl}`, true);
+        if (brokenProv) {
+            globalBlacklistCache.set(`broken_provider_${brokenProv}`, true);
+            console.info(`[API v2 Failover] Blacklist sementara 1 jam untuk URL rusak (${targetUrl}) dan provider: [${brokenProv.toUpperCase()}]`);
+        }
+
+        // SMART SERVER-SIDE FAILOVER: Cari URL provider alternatif dari Orchestrator (force refresh jika perlu)
         let fallbackUrl = null;
+        let targetEpUrls = null;
         try {
             const epNum = extractEpNum(episodeTitle || targetUrl);
             if (epNum != null) {
-                const animeData = await getUnifiedAnimeEpisodes({ targetUrl: targetUrl, forceRefresh: false });
+                const orchQuerySlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
+                let animeData = null;
+                if (orchQuerySlug || seriesTitle) {
+                    animeData = await getUnifiedAnimeEpisodes({ slug: orchQuerySlug || seriesTitle, forceRefresh: true }).catch(() => null);
+                }
+                if (!animeData || !animeData.episodes || animeData.episodes.length === 0) {
+                    animeData = await getUnifiedAnimeEpisodes({ targetUrl: targetUrl, forceRefresh: true }).catch(() => null);
+                }
                 if (animeData && animeData.episodes) {
                     const targetEp = animeData.episodes.find(e => e.num === epNum);
                     if (targetEp && targetEp.urls) {
-                        // Prioritas failover: Kuronime -> Samehadaku -> Otakudesu -> Nanime -> Neosatsu
+                        targetEpUrls = targetEp.urls;
+                        // Prioritas failover ke provider yang TIDAK rusak dan TIDAK diblacklist
                         const candidates = [
-                            targetEp.urls.kuronime,
                             targetEp.urls.samehadaku,
                             targetEp.urls.otakudesu,
                             targetEp.urls.nanime,
-                            targetEp.urls.neosatsu
+                            targetEp.urls.neosatsu,
+                            targetEp.urls.nimegami,
+                            targetEp.urls.kuronime
                         ].filter(Boolean);
 
                         for (const cand of candidates) {
-                            if (cand && cand !== targetUrl) {
+                            if (cand && cand !== targetUrl && !globalBlacklistCache.get(`broken_url_${cand}`)) {
+                                const candProv = getProviderKey(cand);
+                                if (candProv && candProv === brokenProv) continue; // Jangan pakai provider yang sama jika rusak total
                                 fallbackUrl = cand;
                                 break;
                             }
@@ -160,7 +190,7 @@ export async function reportBrokenV2(req, res) {
 
         const nextUrlToExtract = fallbackUrl || targetUrl;
         console.info(`[API v2 Failover] Memulai ekstraksi ulang dari provider alternatif: ${nextUrlToExtract}`);
-        prefetchOneEpisode(seriesSlug, nextUrlToExtract, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId)
+        prefetchOneEpisode(seriesSlug, nextUrlToExtract, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId, null, targetEpUrls)
             .then(res => {
                 const nextEpUrl = req.body?.nextEpisodeUrl || req.query?.nextEpisodeUrl;
                 if (res && res.success && nextEpUrl) {

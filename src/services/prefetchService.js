@@ -167,24 +167,32 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
 
-                // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator hanya sekali per task prefetch jika jumlah provider kurang dari 3.
-                // Ini memastikan findBestVideoSource mencoba multi-provider tanpa memicu rekursi berulang pada tiap percobaan retry.
-                if (!hasFetchedOrch && (!urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3) && (uniqueId || seriesTitle)) {
+                // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator agar Queue/Prefetch mendapat multi-provider seperti Smart Play.
+                // Pada percobaan > 1 atau jika provider masih kurang dari 3, panggil Orchestrator dengan fallback targetUrl & forceRefresh jika perlu.
+                if ((!hasFetchedOrch || attempt > 1) && (!urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3) && (uniqueId || seriesTitle || episodeUrl)) {
                     hasFetchedOrch = true;
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
                         if (epNum != null) {
                             const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
-                            const animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug, forceRefresh: false }).catch(async () => {
-                                if (seriesTitle) {
-                                    return getUnifiedAnimeEpisodes({ slug: seriesTitle, forceRefresh: false }).catch(() => null);
-                                }
-                                return null;
-                            });
+                            const forceRefreshOrch = attempt > 1; // Jika retry attempt > 1, minta force refresh dari Orchestrator
+                            let animeData = null;
+                            if (orchSlug || seriesTitle) {
+                                animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: forceRefreshOrch }).catch(async () => {
+                                    if (seriesTitle && seriesTitle !== orchSlug) {
+                                        return getUnifiedAnimeEpisodes({ slug: seriesTitle, forceRefresh: forceRefreshOrch }).catch(() => null);
+                                    }
+                                    return null;
+                                });
+                            }
+                            // Jika masih null atau tidak punya ep, fallback cari menggunakan episodeUrl langsung
+                            if (!animeData || !animeData.episodes || animeData.episodes.length === 0) {
+                                animeData = await getUnifiedAnimeEpisodes({ targetUrl: episodeUrl, forceRefresh: forceRefreshOrch }).catch(() => null);
+                            }
                             const targetEp = animeData?.episodes?.find(e => e.num === epNum);
                             if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
                                 urlsObjForAttempt = { ...(urlsObjForAttempt || {}), ...targetEp.urls };
-                                console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${Object.keys(urlsObjForAttempt).length} provider untuk multi-source fetch (ep ${epNum}).`);
+                                console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${Object.keys(urlsObjForAttempt).length} provider (${Object.keys(urlsObjForAttempt).join(', ')}) untuk multi-source fetch persis seperti Smart Play (ep ${epNum}).`);
                             }
                         }
                     } catch (orchErr) {}

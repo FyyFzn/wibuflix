@@ -401,9 +401,16 @@ export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtaku
         
         if (cacheAge <= 3600000) {
             console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
+            const cleanEpsList = dbAnime.episodesList.map(ep => {
+                const epObj = ep.toObject ? ep.toObject({ flattenMaps: true }) : { ...ep };
+                if (epObj.urls && (epObj.urls instanceof Map || typeof epObj.urls.entries === 'function')) {
+                    epObj.urls = Object.fromEntries(epObj.urls);
+                }
+                return epObj;
+            });
             const data = {
                 judul_seri: dbAnime.title,
-                daftar_episode: dbAnime.episodesList,
+                daftar_episode: cleanEpsList,
                 cover_scraper: dbAnime.image,
                 mal: {
                     malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,

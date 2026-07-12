@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import axios from 'axios';
-import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
+import { acquireFromPool, releaseToPool, getCfCookie, globalUserAgent, waitForCloudflare } from '../puppeteer/pool.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
 
@@ -82,7 +82,8 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
                     'Content-Type': 'application/json',
                     'Referer': 'https://kuronime.sbs/',
                     'Origin': 'https://kuronime.sbs',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Cookie': getCfCookie('animeku.org') || getCfCookie('v2.samehadaku.how') || ''
                 },
                 timeout: 10000
             }
@@ -92,29 +93,21 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         console.warn('[KuronimeDecryptor] Axios di-blokir oleh CDN (403), mengaktifkan Puppeteer fallback...');
         
         let tempSlot = null;
-        let evalPage = page;
-
-        if (!evalPage) {
-            console.log('[KuronimeDecryptor] Meminjam page Puppeteer sementara untuk fallback...');
-            try {
-                tempSlot = await acquireFromPool();
-                evalPage = tempSlot.page;
-                // Harus navigate ke origin yang sama agar CORS Origin header sesuai
-                await evalPage.goto('https://kuronime.sbs/', { waitUntil: 'domcontentloaded' });
-            } catch (poolErr) {
-                console.error('[KuronimeDecryptor] Gagal mendapatkan/menyiapkan page dari pool:', poolErr.message);
-                if (tempSlot) releaseToPool(tempSlot);
-                return null;
-            }
-        }
-        
-        console.log('[KuronimeDecryptor] Mencoba fallback fetch API menggunakan Puppeteer page.evaluate...');
+        console.log('[KuronimeDecryptor] Meminjam page Puppeteer khusus ke origin animeku.org untuk fallback...');
         try {
+            tempSlot = await acquireFromPool();
+            const evalPage = tempSlot.page;
+            
+            await evalPage.goto('https://animeku.org/', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+            await waitForCloudflare(evalPage);
+            
+            console.log('[KuronimeDecryptor] Mencoba fallback fetch API menggunakan Puppeteer page.evaluate pada origin animeku.org...');
             apiResp = await evalPage.evaluate(async (tokenId) => {
-                const fetchRes = await fetch('https://animeku.org/api/v9/sources', {
+                const fetchRes = await fetch('/api/v9/sources', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json, text/plain, */*'
                     },
                     body: JSON.stringify({ id: tokenId })
                 });

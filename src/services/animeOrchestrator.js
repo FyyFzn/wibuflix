@@ -131,32 +131,36 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         const epNum = ep.num != null ? ep.num : extractEpNum(ep.judul);
         const epId = epNum != null ? `ep_${epNum}` : `idx_${idx}`;
         
+        const urlsObj = (ep.urls && (ep.urls instanceof Map || typeof ep.urls.entries === 'function'))
+            ? Object.fromEntries(ep.urls)
+            : (ep.urls || {});
+
         // Kumpulkan daftar provider yang tersedia untuk episode ini
         const availableSources = [];
-        if (ep.urls?.samehadaku) availableSources.push('samehadaku');
-        if (ep.urls?.otakudesu) availableSources.push('otakudesu');
-        if (ep.urls?.kuronime) availableSources.push('kuronime');
-        if (ep.urls?.nanime) availableSources.push('nanime');
-        if (ep.urls?.neosatsu) availableSources.push('neosatsu');
-        if (ep.urls?.nimegami) availableSources.push('nimegami');
-        if (ep.urls?.oploverz) availableSources.push('oploverz');
+        if (urlsObj.samehadaku) availableSources.push('samehadaku');
+        if (urlsObj.otakudesu) availableSources.push('otakudesu');
+        if (urlsObj.kuronime) availableSources.push('kuronime');
+        if (urlsObj.nanime) availableSources.push('nanime');
+        if (urlsObj.neosatsu) availableSources.push('neosatsu');
+        if (urlsObj.nimegami) availableSources.push('nimegami');
+        if (urlsObj.oploverz) availableSources.push('oploverz');
 
         // Pilih URL representatif (prioritas: Kuronime -> Samehadaku -> Otakudesu -> Nanime)
-        const representativeUrl = ep.url || 
-                                  ep.urls?.kuronime || 
-                                  ep.urls?.samehadaku || 
-                                  ep.urls?.otakudesu || 
-                                  ep.urls?.nanime || 
-                                  ep.urls?.nimegami || 
-                                  ep.urls?.oploverz || 
-                                  ep.urls?.neosatsu || '';
+        const representativeUrl = ep.url ||
+                                  urlsObj.kuronime ||
+                                  urlsObj.samehadaku ||
+                                  urlsObj.otakudesu ||
+                                  urlsObj.nanime ||
+                                  urlsObj.nimegami ||
+                                  urlsObj.oploverz ||
+                                  urlsObj.neosatsu || '';
 
         return {
             id: epId,
             num: epNum,
             title: formatEpisodeTitle(ep.judul),
             url: representativeUrl,
-            urls: ep.urls || {},
+            urls: urlsObj,
             available_sources: availableSources
         };
     });

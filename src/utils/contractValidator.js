@@ -93,7 +93,15 @@ export function validateEpisodeCatalogContract(data, providerName = 'unknown') {
             );
         }
 
-        const epUrl = ep.url || ep.slug || (ep.urls && Object.values(ep.urls).find(u => Boolean(u))) || '';
+        let epUrl = ep.url || ep.slug || '';
+        if (!epUrl && ep.urls) {
+            if (ep.urls instanceof Map || typeof ep.urls.get === 'function' || typeof ep.urls.values === 'function') {
+                const vals = Array.from(typeof ep.urls.values === 'function' ? ep.urls.values() : []);
+                epUrl = vals.find(u => Boolean(u)) || '';
+            } else if (typeof ep.urls === 'object') {
+                epUrl = Object.values(ep.urls).find(u => Boolean(u)) || '';
+            }
+        }
         if (typeof epUrl !== 'string' || !epUrl.trim()) {
             throw new ScraperContractError(
                 `Episode "${epTitle}" pada indeks [${i}] di ${providerName} tidak memiliki URL/ID/Slug yang valid.`,
