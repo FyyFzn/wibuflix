@@ -235,7 +235,8 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
                 page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
             );
             await waitForCloudflare(page);
-            const cookies = await page.cookies();
+            await new Promise(r => setTimeout(r, 2000)); // Beri waktu script latar belakang CF/WordPress menetapkan cookie
+            const cookies = await context.cookies().catch(async () => await page.cookies());
             if (cookies && cookies.length > 0) {
                 const cfClearance = cookies.find(c => c.name === 'cf_clearance');
                 const cookieString = cfClearance
@@ -245,7 +246,13 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
                 const label = cfClearance ? 'cf_clearance' : `session (${cookies.length} cookies)`;
                 console.log(`[PagePool] Cookie berhasil diperbarui untuk ${domain} ✓ [${label}]`);
             } else {
-                console.warn(`[PagePool] Tidak ada cookie ditemukan setelah refresh untuk ${domain}.`);
+                const title = await page.title().catch(() => '');
+                if (!title.toLowerCase().includes('just a moment') && !title.toLowerCase().includes('please wait')) {
+                    setCfCookie(domain, '', []);
+                    console.log(`[PagePool] ${domain} merespons normal tanpa cookie tantangan Cloudflare (Public Edge CDN) ✓`);
+                } else {
+                    console.warn(`[PagePool] ⚠️ Tantangan Cloudflare masih aktif namun tidak ada cookie yang didapat untuk ${domain}.`);
+                }
             }
         } catch (e) {
             console.warn(`[PagePool] Gagal me-refresh CF cookie untuk ${domain}:`, e.message);
