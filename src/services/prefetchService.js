@@ -198,7 +198,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                     } catch (orchErr) {}
                 }
 
-                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt, excludedServers);
+                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt, excludedServers, { seriesSlug: activeSlug, episodeSlug: activeEpSlug });
                 matchedSource = result.matchedSource;
                 
                 if (activeSignal && activeSignal.aborted) {

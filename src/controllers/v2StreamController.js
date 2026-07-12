@@ -185,6 +185,10 @@ export async function reportBrokenV2(req, res) {
         const brokenProv = getProviderKey(targetUrl);
         if (targetUrl) globalBlacklistCache.set(`broken_url_${targetUrl}`, true);
         if (brokenProv) {
+            if (seriesSlug && episodeSlug) {
+                globalBlacklistCache.set(`broken_ep_prov_${seriesSlug}_${episodeSlug}_${brokenProv}`, true);
+                console.info(`[API v2 Failover] Deprioritizing provider [${brokenProv.toUpperCase()}] untuk episode ini (${seriesSlug}/${episodeSlug}) agar failover mencoba web lain lebih dulu.`);
+            }
             const failCount = (globalBlacklistCache.get(`fail_count_${brokenProv}`) || 0) + 1;
             globalBlacklistCache.set(`fail_count_${brokenProv}`, failCount);
             if (failCount >= 5) {

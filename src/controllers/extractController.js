@@ -131,7 +131,7 @@ export async function smartPlayHandler(req, res) {
         let matchedSource = null;
 
         try {
-            const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, '[Smart-Play]', req);
+            const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, '[Smart-Play]', req, null, new Set(), { seriesSlug, episodeSlug });
             matchedSource = result.matchedSource;
 
             if (!matchedSource) {
@@ -158,7 +158,7 @@ export async function smartPlayHandler(req, res) {
                     try {
                         if (attempt > 1) {
                             console.info(`[Smart-Play] Mencoba ulang upload latar belakang (${attempt}/${maxAttempts})...`);
-                            const res = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, `[Smart-Play Retry ${attempt}/${maxAttempts}]`, req, null, excludedServers);
+                            const res = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, `[Smart-Play Retry ${attempt}/${maxAttempts}]`, req, null, excludedServers, { seriesSlug, episodeSlug });
                             currentSource = res.matchedSource;
                             if (!currentSource) {
                                 throw new Error(res.error || 'Tidak ada server cadangan lain.');

@@ -80,7 +80,7 @@ export function getResolutionGroup(serverName) {
     return null;
 }
 
-export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set()) {
+export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set(), slugs = null) {
     let matchedSource = null;
     try {
         const isServerExcluded = (nameOrHost) => {
@@ -239,6 +239,14 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                     const bIsNegative = scoreB < 0 ? 1 : 0;
                     if (aIsNegative !== bIsNegative) return aIsNegative - bIsNegative;
 
+                    if (slugs?.seriesSlug && slugs?.episodeSlug) {
+                        const provA = (a.source || '').toLowerCase();
+                        const provB = (b.source || '').toLowerCase();
+                        let aBrokenProv = provA && globalBlacklistCache.get(`broken_ep_prov_${slugs.seriesSlug}_${slugs.episodeSlug}_${provA}`) ? 1 : 0;
+                        let bBrokenProv = provB && globalBlacklistCache.get(`broken_ep_prov_${slugs.seriesSlug}_${slugs.episodeSlug}_${provB}`) ? 1 : 0;
+                        if (aBrokenProv !== bBrokenProv) return aBrokenProv - bBrokenProv;
+                    }
+
                     if (scoreB !== scoreA) return scoreB - scoreA;
 
                     const aIsM3u8 = a.type === 'direct' && a.iframeUrl && a.iframeUrl.includes('.m3u8') ? 1 : 0;
@@ -281,6 +289,9 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                             }
                         } catch (resolveErr) {
                             console.error(`${logPrefix} Gagal resolve AJAX untuk server ${srv.namaHost || srv.nama}:`, resolveErr.message);
+                            if (slugs?.seriesSlug && slugs?.episodeSlug && srv.source) {
+                                globalBlacklistCache.set(`broken_ep_prov_${slugs.seriesSlug}_${slugs.episodeSlug}_${srv.source.toLowerCase()}`, true);
+                            }
                             continue;
                         }
                     }
@@ -319,11 +330,17 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                                 continue;
                             }
                             console.warn(`${logPrefix} Server ${srv.namaHost} gagal uji koneksi (${pingErr.message}), lompat ke server berikutnya...`);
+                            if (slugs?.seriesSlug && slugs?.episodeSlug && srv.source) {
+                                globalBlacklistCache.set(`broken_ep_prov_${slugs.seriesSlug}_${slugs.episodeSlug}_${srv.source.toLowerCase()}`, true);
+                            }
                             continue;
                         }
                     }
                 } catch (e) {
                     console.error(`${logPrefix} Gagal mengekstrak dari server ${srv.namaHost}:`, e.message);
+                    if (slugs?.seriesSlug && slugs?.episodeSlug && srv.source) {
+                        globalBlacklistCache.set(`broken_ep_prov_${slugs.seriesSlug}_${slugs.episodeSlug}_${srv.source.toLowerCase()}`, true);
+                    }
                 }
             }
             if (matchedSource) break;
