@@ -236,13 +236,16 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
             );
             await waitForCloudflare(page);
             const cookies = await page.cookies();
-            const cfClearance = cookies.find(c => c.name === 'cf_clearance');
-            if (cfClearance) {
-                const cookieString = `cf_clearance=${cfClearance.value};`;
+            if (cookies && cookies.length > 0) {
+                const cfClearance = cookies.find(c => c.name === 'cf_clearance');
+                const cookieString = cfClearance
+                    ? `cf_clearance=${cfClearance.value};`
+                    : cookies.map(c => `${c.name}=${c.value}`).join('; ');
                 setCfCookie(domain, cookieString, cookies);
-                console.log(`[PagePool] cf_clearance cookie berhasil diperbarui untuk ${domain} ✓`);
+                const label = cfClearance ? 'cf_clearance' : `session (${cookies.length} cookies)`;
+                console.log(`[PagePool] Cookie berhasil diperbarui untuk ${domain} ✓ [${label}]`);
             } else {
-                console.warn(`[PagePool] cf_clearance cookie tidak ditemukan setelah refresh untuk ${domain}.`);
+                console.warn(`[PagePool] Tidak ada cookie ditemukan setelah refresh untuk ${domain}.`);
             }
         } catch (e) {
             console.warn(`[PagePool] Gagal me-refresh CF cookie untuk ${domain}:`, e.message);
