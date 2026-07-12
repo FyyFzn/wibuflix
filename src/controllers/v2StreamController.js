@@ -69,12 +69,56 @@ export async function getV2Stream(req, res) {
         }
 
         // 3. JIKA BELUM ADA ATAU FAILED -> MULAI EKSTRAKSI KE AZURE BLOB DI BACKGROUND
-        console.info(`[API v2 Stream] Memulai ekstraksi video ke Azure Blob untuk: ${targetUrl}`);
         let urlsObj = null;
         if (urls) {
             try { urlsObj = typeof urls === 'string' ? JSON.parse(urls) : urls; } catch (e) {}
         }
-        prefetchOneEpisode(seriesSlug, targetUrl, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId, null, urlsObj)
+
+        // BLACKLIST CHECK: Jika URL utama sudah dilaporkan rusak, cari alternatif SEBELUM mulai ekstraksi
+        let extractionUrl = targetUrl;
+        const isUrlBlacklisted = globalBlacklistCache.get(`broken_url_${targetUrl}`);
+        const getProvKey = (u) => {
+            if (!u) return '';
+            for (const p of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
+                if (u.includes(p)) return p;
+            }
+            return '';
+        };
+        const isProvBlacklisted = getProvKey(targetUrl) && globalBlacklistCache.get(`broken_provider_${getProvKey(targetUrl)}`);
+
+        if (isUrlBlacklisted || isProvBlacklisted) {
+            console.info(`[API v2 Stream] URL ${targetUrl} terdeteksi blacklisted. Mencari provider alternatif...`);
+            try {
+                const epNum = extractEpNum(episodeTitle || targetUrl);
+                if (epNum != null) {
+                    const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
+                    let animeData = null;
+                    if (orchSlug || seriesTitle) {
+                        animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: false }).catch(() => null);
+                    }
+                    if (!animeData?.episodes?.length) {
+                        animeData = await getUnifiedAnimeEpisodes({ targetUrl, forceRefresh: false }).catch(() => null);
+                    }
+                    const ep = animeData?.episodes?.find(e => e.num === epNum);
+                    if (ep?.urls) {
+                        urlsObj = { ...(urlsObj || {}), ...ep.urls };
+                        const brokenProv = getProvKey(targetUrl);
+                        for (const [prov, pUrl] of Object.entries(ep.urls)) {
+                            if (pUrl && pUrl !== targetUrl && prov !== brokenProv && !globalBlacklistCache.get(`broken_url_${pUrl}`)) {
+                                extractionUrl = pUrl;
+                                console.info(`[API v2 Stream] ✓ Mengalihkan ekstraksi ke provider alternatif: [${prov.toUpperCase()}] ${extractionUrl}`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[API v2 Stream] Gagal mencari alternatif saat blacklist check:', e.message);
+            }
+        }
+
+        console.info(`[API v2 Stream] Memulai ekstraksi video ke Azure Blob untuk: ${extractionUrl}`);
+        prefetchOneEpisode(seriesSlug, extractionUrl, seriesTitle, 'player', oldSeriesSlug, slugsToCheck, episodeTitle, uniqueId, null, urlsObj)
             .then(res => {
                 if (res && res.success && nextEpisodeUrl) {
                     console.info(`[API v2 Stream] Upload episode selesai. Memulai prefetch episode berikutnya: ${nextEpisodeUrl}`);

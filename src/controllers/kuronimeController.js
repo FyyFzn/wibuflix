@@ -123,6 +123,135 @@ export async function getKuronimeServers(episodeUrl) {
             }
         }
 
+        // 3. DOM FALLBACK: Jika API animeku.org gagal dari server-side (sources kosong),
+        //    coba memanfaatkan Puppeteer page yang sudah terbuka di halaman Kuronime.
+        //    JavaScript client-side halaman Kuronime sendiri memanggil API yang sama (animeku.org/api/v9/sources)
+        //    dan meng-render hasilnya ke download section. Kita cukup tunggu JS selesai dan baca dari DOM.
+        if (servers.length === 0 && slot && slot.page && !slot.page.isClosed()) {
+            console.info('[Kuronime] API sources kosong dari server-side. Mencoba DOM Fallback: menunggu client-side JS selesai render download section...');
+            try {
+                const page = slot.page;
+
+                // Strategi 1: Scroll ke bawah untuk trigger lazy-load, lalu tunggu download section di-render
+                await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                // Tunggu download section muncul (max 10 detik) — client JS akan merender setelah API call selesai
+                const hasDownloadSection = await page.waitForSelector('.dlbox table a, .bixbox table a[href*="openlink"]', { timeout: 10000 })
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (hasDownloadSection) {
+                    await new Promise(r => setTimeout(r, 1000)); // Beri waktu render tambahan
+
+                    // Strategi 2: Ambil URL langsung dari DOM yang sudah di-render client-side JS
+                    // Fungsi openlink() di browser Kuronime sudah memiliki data URL di memori JS.
+                    // Kita bisa memanggil openlink dan menangkap URL via request interception.
+                    const domLinks = await page.evaluate(() => {
+                        const results = [];
+                        const rows = document.querySelectorAll('.dlbox table tr, .bixbox table tr, table tr');
+                        for (const row of rows) {
+                            const resEl = row.querySelector('td:first-child');
+                            const resolution = resEl ? resEl.textContent.trim() : '';
+                            if (!resolution || resolution.toLowerCase().includes('vip')) continue;
+
+                            const links = row.querySelectorAll('a');
+                            for (const link of links) {
+                                const hostName = link.textContent.trim();
+                                if (!hostName) continue;
+                                const hrefStr = link.getAttribute('href') || '';
+                                const olMatch = hrefStr.match(/openlink\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']/);
+                                if (olMatch) {
+                                    results.push({ resolution: olMatch[1], host: olMatch[2], hostLabel: hostName });
+                                }
+                            }
+                        }
+                        return results;
+                    });
+
+                    if (domLinks.length > 0) {
+                        console.info(`[Kuronime] ✓ DOM Fallback: Ditemukan ${domLinks.length} download entries. Resolving URL via openlink()...`);
+
+                        // Setup request interception untuk menangkap redirect dari openlink
+                        const resolvedUrls = [];
+                        const pendingResolves = new Map();
+
+                        // Intercept navigasi: openlink() biasanya melakukan window.location atau window.open
+                        const navHandler = (request) => {
+                            const reqUrl = request.url();
+                            if (reqUrl && !reqUrl.includes('kuronime.sbs') && !reqUrl.includes('animeku.org') && reqUrl.startsWith('http')) {
+                                resolvedUrls.push(reqUrl);
+                            }
+                            // Abort navigasi agar page tidak berpindah
+                            if (request.isNavigationRequest() && !reqUrl.includes('kuronime.sbs')) {
+                                request.abort().catch(() => {});
+                            } else {
+                                request.continue().catch(() => {});
+                            }
+                        };
+
+                        // Resolve hanya beberapa host terbaik (1080p > 720p) agar tidak terlalu lama
+                        const priorityLinks = domLinks
+                            .filter(d => d.resolution.includes('1080') || d.resolution.includes('720'))
+                            .slice(0, 6); // Max 6 untuk hemat waktu
+
+                        if (priorityLinks.length > 0) {
+                            try {
+                                await page.setRequestInterception(true);
+                                page.on('request', navHandler);
+
+                                for (const dl of priorityLinks) {
+                                    resolvedUrls.length = 0; // Reset
+                                    try {
+                                        // Panggil openlink dari context halaman
+                                        await page.evaluate((res, host) => {
+                                            if (typeof window.openlink === 'function') {
+                                                const origOpen = window.open;
+                                                window.open = (url) => { window._lastOpenUrl = url; };
+                                                try { window.openlink(res, host); } catch(e) {}
+                                                window.open = origOpen;
+                                            }
+                                        }, dl.resolution, dl.host);
+
+                                        await new Promise(r => setTimeout(r, 1500)); // Tunggu redirect/fetch
+
+                                        // Cek apakah URL berhasil ditangkap
+                                        const capturedUrl = await page.evaluate(() => window._lastOpenUrl || null);
+                                        const finalUrl = capturedUrl || (resolvedUrls.length > 0 ? resolvedUrls[resolvedUrls.length - 1] : null);
+
+                                        if (finalUrl && typeof finalUrl === 'string' && finalUrl.startsWith('http')) {
+                                            const resLabel = dl.resolution.replace('v', '').toUpperCase();
+                                            servers.push({
+                                                nama: `${resLabel} MP4`,
+                                                namaHost: dl.hostLabel || dl.host,
+                                                iframeUrl: finalUrl,
+                                                type: 'direct',
+                                                aktif: servers.length === 0
+                                            });
+                                            console.info(`[Kuronime] ✓ DOM resolved: [${dl.host}] ${resLabel} → ${finalUrl.substring(0, 60)}...`);
+                                        }
+                                    } catch (olErr) {
+                                        // Skip host ini
+                                    }
+                                }
+                            } finally {
+                                page.removeListener('request', navHandler);
+                                await page.setRequestInterception(false).catch(() => {});
+                                // Reset _lastOpenUrl
+                                await page.evaluate(() => { window._lastOpenUrl = null; }).catch(() => {});
+                            }
+                        }
+
+                        if (servers.length === 0) {
+                            console.warn('[Kuronime] DOM Fallback: openlink resolve gagal untuk semua host. API animeku.org kemungkinan juga diblokir dari sisi browser.');
+                        }
+                    }
+                } else {
+                    console.warn('[Kuronime] DOM Fallback: Download section tidak muncul setelah scroll. Client JS mungkin juga gagal memanggil API.');
+                }
+            } catch (domErr) {
+                console.warn('[Kuronime] DOM Fallback error:', domErr.message);
+            }
+        }
+
         if (servers.length === 0 && debugInfo === "OK") {
             debugInfo = "Sources API returned null or empty. Possibly blocked by animeku.org.";
         }
