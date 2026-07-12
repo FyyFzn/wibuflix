@@ -305,19 +305,69 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     ffmpegInputSource = tempFilePath;
                     await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);
                 } else if (videoUrl.includes('/api/proxy/mega')) {
-                    console.info(`[FFmpegStream] Mode Mega: Mengalirkan data (Pipe) ke FFmpeg...`);
-                    isPipeMode = true;
-                    uploadProgressCache.set(blobPath, 'Menyiapkan aliran Mega...');
+                    console.info(`[FFmpegStream] Mode Mega: Mengunduh file penuh terlebih dahulu ke lokal (maxConnections: 4)...`);
+                    isPipeMode = false;
+                    ffmpegInputSource = tempFilePath;
+                    uploadProgressCache.set(blobPath, 'Menyiapkan unduhan Mega...');
                     
                     const megaUrl = new URL(videoUrl).searchParams.get('url');
                     const { File } = await import('megajs');
                     const file = File.fromURL(megaUrl);
                     await file.loadAttributes();
-                    streamSource = file.download({ maxConnections: 2 });
-                    streamSource.on('error', (err) => {
-                        console.error('[FFmpegStream] Mega Stream Error:', err.message);
-                        console.warn('[FFmpegStream] Mega limit/blocked/disconnected hit. Blacklisting Mega for 10 minutes.');
-                        globalBlacklistCache.set('mega_blacklist', true, 600); // 10 minutes TTL
+                    
+                    const totalMegaSize = file.size || 0;
+                    const totalMegaMB = Math.round(totalMegaSize / 1024 / 1024);
+                    let downloadedMegaBytes = 0;
+                    let nextMegaLogThreshold = 5 * 1024 * 1024;
+
+                    await new Promise((resolve, reject) => {
+                        const megaStream = file.download({ maxConnections: 4 });
+                        const writer = fs.createWriteStream(tempFilePath);
+                        
+                        const onAbort = () => {
+                            try { megaStream.destroy(); } catch (e) {}
+                            writer.destroy(new Error('UPLOAD_CANCELLED'));
+                            reject(new Error('UPLOAD_CANCELLED'));
+                        };
+                        globalAbort.signal.addEventListener('abort', onAbort, { once: true });
+
+                        megaStream.on('data', (chunk) => {
+                            downloadedMegaBytes += chunk.length;
+                            if (totalMegaSize > 0 && downloadedMegaBytes >= nextMegaLogThreshold) {
+                                const downloadedMB = Math.round(downloadedMegaBytes / 1024 / 1024);
+                                const msg = `Mengunduh dari Mega: ${Math.round((downloadedMegaBytes / totalMegaSize) * 100)}% (${downloadedMB}MB / ${totalMegaMB}MB)`;
+                                console.info(`[FFmpegStream] ${blobPath} - ${msg}`);
+                                uploadProgressCache.set(blobPath, msg);
+                                nextMegaLogThreshold += 25 * 1024 * 1024;
+                            } else if (totalMegaSize === 0 && downloadedMegaBytes >= nextMegaLogThreshold) {
+                                const downloadedMB = Math.round(downloadedMegaBytes / 1024 / 1024);
+                                const msg = `Mengunduh dari Mega: ${downloadedMB}MB...`;
+                                console.info(`[FFmpegStream] ${blobPath} - ${msg}`);
+                                uploadProgressCache.set(blobPath, msg);
+                                nextMegaLogThreshold += 25 * 1024 * 1024;
+                            }
+                        });
+
+                        megaStream.pipe(writer);
+
+                        writer.on('finish', () => {
+                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            console.info(`[FFmpegStream] ✓ Unduhan Mega selesai (${Math.round(downloadedMegaBytes / 1024 / 1024)}MB). Memulai pemotongan HLS lokal...`);
+                            resolve();
+                        });
+
+                        writer.on('error', (err) => {
+                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            reject(err);
+                        });
+
+                        megaStream.on('error', (err) => {
+                            globalAbort.signal.removeEventListener('abort', onAbort);
+                            console.error('[FFmpegStream] Mega Download Error:', err.message);
+                            console.warn('[FFmpegStream] Mega limit/blocked/disconnected hit. Blacklisting Mega for 10 minutes.');
+                            globalBlacklistCache.set('mega_blacklist', true, 600);
+                            reject(err);
+                        });
                     });
                 } else {
                     console.info(`[FFmpegStream] Mode Single Stream: Mengalirkan data (Pipe)...`);
