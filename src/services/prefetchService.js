@@ -151,10 +151,11 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     let matchedSource = null;
 
     try {
-        const maxAttempts = 5;
+        const maxAttempts = source === 'queue' ? 3 : 5;
         let lastError = null;
         let urlsObjForAttempt = preloadedUrlsObj;
         const excludedServers = new Set();
+        let hasFetchedOrch = false;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -166,10 +167,10 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
 
-                // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator jika jumlah provider kurang dari 3.
-                // Ini memastikan findBestVideoSource selalu mencoba 1080p dari Samehadaku/Kuronime,
-                // meskipun frontend hanya mengirimkan 1 atau 2 provider di query params.
-                if ((!urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3) && (uniqueId || seriesTitle)) {
+                // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator hanya sekali per task prefetch jika jumlah provider kurang dari 3.
+                // Ini memastikan findBestVideoSource mencoba multi-provider tanpa memicu rekursi berulang pada tiap percobaan retry.
+                if (!hasFetchedOrch && (!urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3) && (uniqueId || seriesTitle)) {
+                    hasFetchedOrch = true;
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
                         if (epNum != null) {

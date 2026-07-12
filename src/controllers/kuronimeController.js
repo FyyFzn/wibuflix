@@ -82,7 +82,7 @@ export async function getKuronimeServers(episodeUrl) {
     let $, html, slot;
     let debugInfo = "OK";
     try {
-        const fetchRes = await fetchWithCF(episodeUrl, { timeout: 60000, fetchTimeout: 8000 });
+        const fetchRes = await fetchWithCF(episodeUrl, { timeout: 60000, fetchTimeout: 8000, forcePuppeteer: true });
         $ = fetchRes.$;
         html = fetchRes.html;
         slot = fetchRes.slot;

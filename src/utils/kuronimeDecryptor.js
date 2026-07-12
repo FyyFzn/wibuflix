@@ -46,12 +46,30 @@ export function decryptKuronimeField(encryptedBase64) {
  * @returns {object|null} - { stream: { src, src_sd }, mirror: { embed, download } }
  */
 export async function fetchKuronimeSourcesFromHtml(html, page = null) {
+    let token = null;
     const tokenMatch = html.match(/var\s+_0xa100d42aa\s*=\s*["']([^"']+)["']/i);
-    if (!tokenMatch) {
+    if (tokenMatch && tokenMatch[1]) {
+        token = tokenMatch[1];
+    } else if (page && !page.isClosed()) {
+        console.log('[KuronimeDecryptor] Token _0xa100d42aa belum ada di HTML statis, menunggu via Puppeteer page...');
+        try {
+            await page.waitForFunction(() => {
+                return typeof window._0xa100d42aa !== 'undefined' || document.documentElement.innerHTML.includes('_0xa100d42aa');
+            }, { timeout: 12000 });
+            token = await page.evaluate(() => {
+                if (typeof window._0xa100d42aa !== 'undefined') return window._0xa100d42aa;
+                const match = document.documentElement.innerHTML.match(/var\s+_0xa100d42aa\s*=\s*["']([^"']+)["']/i);
+                return match ? match[1] : null;
+            });
+        } catch (waitErr) {
+            console.warn('[KuronimeDecryptor] Timeout menunggu token _0xa100d42aa di Puppeteer page:', waitErr.message);
+        }
+    }
+
+    if (!token) {
         console.log('[KuronimeDecryptor] Token _0xa100d42aa tidak ditemukan di halaman.');
         return null;
     }
-    const token = tokenMatch[1];
     console.log(`[KuronimeDecryptor] Token ditemukan: ${token.substring(0, 20)}...`);
 
     let apiResp;

@@ -131,6 +131,11 @@ export async function fetchWithCF(url, options = {}) {
 
             // ⚠️ FIX 3: Tunggu CF challenge selesai (timeout 12 detik)
             await waitForCloudflare(page);
+            if (url.includes('kuronime')) {
+                await page.waitForFunction(() => {
+                    return typeof window._0xa100d42aa !== 'undefined' || document.documentElement.innerHTML.includes('_0xa100d42aa');
+                }, { timeout: 10000 }).catch(() => {});
+            }
             html = await page.content();
 
             // ⚠️ FIX 4: Jika CF masih lolos, coba refresh cookie & retry SEKALI
@@ -148,6 +153,11 @@ export async function fetchWithCF(url, options = {}) {
                     retryPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
                 );
                 await waitForCloudflare(retryPage);
+                if (url.includes('kuronime')) {
+                    await retryPage.waitForFunction(() => {
+                        return typeof window._0xa100d42aa !== 'undefined' || document.documentElement.innerHTML.includes('_0xa100d42aa');
+                    }, { timeout: 10000 }).catch(() => {});
+                }
                 html = await retryPage.content();
 
                 if (isCloudflareHtml(html)) {

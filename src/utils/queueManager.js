@@ -24,7 +24,7 @@ class QueueManager extends EventEmitter {
                 task.priority = Date.now(); // Jadikan prioritas utama agar langsung dikerjakan
                 if (seriesUrl && !task.seriesUrl) task.seriesUrl = seriesUrl; // update if missing
                 await task.save();
-                this.processNext();
+                setImmediate(() => this.processNext());
             }
             return task;
         }
@@ -44,7 +44,7 @@ class QueueManager extends EventEmitter {
 
         await task.save();
         console.info(`[Queue] Ditambahkan ke MongoDB queue: ${episodeTitle}`);
-        this.processNext();
+        setImmediate(() => this.processNext());
         return task;
     }
 
@@ -138,30 +138,38 @@ class QueueManager extends EventEmitter {
                 setTimeout(() => reject(new Error('PROCESSOR_TIMEOUT_EXCEEDED_10M')), 10 * 60 * 1000)
             );
             await Promise.race([this.processor(nextItem), timeoutPromise]);
-            // Jika sukses, ubah status ke COMPLETED (bisa juga dihapus jika ingin hemat DB)
+            // Jika sukses, ubah status ke COMPLETED
             nextItem.status = 'COMPLETED';
             nextItem.progress = 'Selesai';
             await nextItem.save();
         } catch (err) {
             console.error(`[Queue Error] ${nextItem.episodeTitle}:`, err.message);
             
+            const isFatalError = err.message && (
+                err.message.includes('Maximum call stack size exceeded') ||
+                err.message.includes('UPLOAD_CANCELLED') ||
+                err.message.includes('PROCESSOR_TIMEOUT') ||
+                err.message.includes('Proses upload oleh proses lain mengalami kegagalan') ||
+                err.message.includes('Gagal Total')
+            );
+
             // Retry mechanism via counter custom
             const currentRetries = nextItem.priority < 0 ? Math.abs(nextItem.priority) : 0;
-            if (currentRetries < 2) {
+            if (!isFatalError && currentRetries < 2) {
                 console.info(`[Queue Retry] Mengulang ${nextItem.episodeTitle} (Percobaan ke-${currentRetries + 2})...`);
                 nextItem.status = 'PENDING';
                 nextItem.priority = -(currentRetries + 1); // Menggunakan minus priority untuk retry
                 nextItem.progress = `Gagal: ${err.message}. Menunggu dicoba ulang...`;
                 await nextItem.save();
             } else {
-                console.warn(`[Queue Failed] ${nextItem.episodeTitle} gagal total.`);
+                console.warn(`[Queue Failed] ${nextItem.episodeTitle} gagal total (${err.message}).`);
                 nextItem.status = 'FAILED';
                 nextItem.progress = `Gagal Total: ${err.message}`;
                 await nextItem.save();
             }
         } finally {
             this.isProcessing = false;
-            // Lanjut periksa antrean berikutnya
+            // Lanjut periksa antrean berikutnya dengan delay aman agar event loop tidak terbebani
             setTimeout(() => this.processNext(), 5000);
         }
     }
@@ -179,8 +187,8 @@ class QueueManager extends EventEmitter {
             console.info(`[Queue] Berhasil meresume ${result.modifiedCount} tugas terputus ke PENDING.`);
         }
         
-        // Mulai memutar roda antrean
-        this.processNext();
+        // Mulai memutar roda antrean via setImmediate
+        setImmediate(() => this.processNext());
     }
 }
 
