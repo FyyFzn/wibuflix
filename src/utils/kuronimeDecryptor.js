@@ -83,7 +83,7 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
                     'Referer': 'https://kuronime.sbs/',
                     'Origin': 'https://kuronime.sbs',
                     'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Cookie': getCfCookie('animeku.org') || getCfCookie('v2.samehadaku.how') || ''
+                    'Cookie': getCfCookie('animeku.org') || ''
                 },
                 timeout: 10000
             }
@@ -95,7 +95,7 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         let tempSlot = null;
         console.log('[KuronimeDecryptor] Meminjam page Puppeteer khusus ke origin animeku.org untuk fallback...');
         try {
-            tempSlot = await acquireFromPool();
+            tempSlot = await acquireFromPool('animeku.org');
             const evalPage = tempSlot.page;
             
             await evalPage.goto('https://animeku.org/', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});

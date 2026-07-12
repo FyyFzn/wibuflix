@@ -271,16 +271,18 @@ export async function initPagePool() {
     if (poolReady) return;
     poolReady = true;
     
-    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie untuk Samehadaku & Kuronime...');
+    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie untuk Samehadaku, Kuronime, & Animeku...');
     await getBrowser().catch(e => console.error('[PagePool] Gagal membuka browser awal:', e.message));
     await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up Samehadaku gagal:', e.message));
     await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Warm-up Kuronime gagal:', e.message));
+    await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Warm-up Animeku gagal:', e.message));
 
-    // Auto-refresh cookie setiap 30 menit untuk kedua domain
+    // Auto-refresh cookie setiap 30 menit untuk ketiga domain
     setInterval(async () => {
         console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
         await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh Samehadaku gagal:', e.message));
         await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Auto-refresh Kuronime gagal:', e.message));
+        await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Auto-refresh Animeku gagal:', e.message));
     }, 30 * 60 * 1000);
 }
 
