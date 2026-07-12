@@ -185,8 +185,14 @@ export async function reportBrokenV2(req, res) {
         const brokenProv = getProviderKey(targetUrl);
         if (targetUrl) globalBlacklistCache.set(`broken_url_${targetUrl}`, true);
         if (brokenProv) {
-            globalBlacklistCache.set(`broken_provider_${brokenProv}`, true);
-            console.info(`[API v2 Failover] Blacklist sementara 1 jam untuk URL rusak (${targetUrl}) dan provider: [${brokenProv.toUpperCase()}]`);
+            const failCount = (globalBlacklistCache.get(`fail_count_${brokenProv}`) || 0) + 1;
+            globalBlacklistCache.set(`fail_count_${brokenProv}`, failCount);
+            if (failCount >= 5) {
+                globalBlacklistCache.set(`broken_provider_${brokenProv}`, true);
+                console.warn(`[API v2 Failover] Provider [${brokenProv.toUpperCase()}] gagal ${failCount}x berturut-turut. Blacklist sementara 15 menit.`);
+            } else {
+                console.info(`[API v2 Failover] Blacklist URL rusak (${targetUrl}). Provider [${brokenProv.toUpperCase()}] fail count: ${failCount}/5`);
+            }
         }
 
         // SMART SERVER-SIDE FAILOVER: Cari URL provider alternatif dari Orchestrator (force refresh jika perlu)

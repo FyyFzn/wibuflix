@@ -248,7 +248,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                     return 0;
                 });
 
-                const serverNames = groups[resVal].map(s => s.namaHost).join(', ');
+                const serverNames = groups[resVal].map(s => s.namaHost || s.nama || 'Server').filter(Boolean).join(', ');
                 console.info(`${logPrefix} Menguji kandidat ${resVal}p: ${serverNames}`);
             }
 
@@ -269,7 +269,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                             const res = await resolveSingleServer(episodeUrl, srv.nume, req);
                             if (res && res.iframeUrl) {
                                 iframeUrlToExtract = res.iframeUrl;
-                                srv.namaHost = res.namaHost;
+                                srv.namaHost = res.namaHost || srv.namaHost || srv.nama;
                             }
                             if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
                                 console.warn(`${logPrefix} Melewati ${srv.namaHost} (setelah resolve) karena sedang di-blacklist.`);
@@ -283,6 +283,10 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                             console.error(`${logPrefix} Gagal resolve AJAX untuk server ${srv.namaHost || srv.nama}:`, resolveErr.message);
                             continue;
                         }
+                    }
+
+                    if (!iframeUrlToExtract || typeof iframeUrlToExtract !== 'string' || !iframeUrlToExtract.trim()) {
+                        continue;
                     }
 
                     const extracted = await extractVideoUrl(iframeUrlToExtract, req);

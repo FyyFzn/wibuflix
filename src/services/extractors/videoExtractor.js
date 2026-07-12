@@ -254,8 +254,10 @@ export async function scrapeVideoServers(targetUrl) {
         // Selalu gunakan cara lama (mengambil server iframe bawaan web) untuk menghindari link shortener
         const rawServers = [];
         $('.east_player_option').each((_, el) => {
+            const namaVal = $(el).find('span').text().trim() || $(el).text().trim() || 'Server';
             rawServers.push({
-                nama: $(el).find('span').text().trim() || $(el).text().trim() || 'Server',
+                nama: namaVal,
+                namaHost: namaVal,
                 post: $(el).attr('data-post') || '',
                 nume: $(el).attr('data-nume') || '',
                 type: $(el).attr('data-type') || 'schtml',
