@@ -1,4 +1,5 @@
 import { getEpisodeServiceData } from '../services/episodeService.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 export async function getEpisodesMerged(req, res) {
     const targetUrl = req.query.url;
@@ -25,6 +26,7 @@ export async function getEpisodesMerged(req, res) {
         });
 
         if (!res.headersSent) {
+            if (!assertAndRespondContract(res, result.data, 'episodes', result.source || 'multi-provider')) return;
             return res.json({
                 status: result.status,
                 data: result.data,

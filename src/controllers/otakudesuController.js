@@ -7,6 +7,7 @@ import { getCache } from '../utils/cacheManager.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 const cache = getCache('otakudesu', 3600);
 const resolveLimit = pLimit(3); // Maksimal 3 request serentak untuk mencegah Self-DDoS
@@ -20,6 +21,7 @@ export async function getEpisodes(req, res) {
         const slug = req.params.slug;
         const data = await getOtakuEpisodesFormatted(slug);
         if (!data) return res.status(404).json({ error: "Anime tidak ditemukan di Otakudesu" });
+        if (!assertAndRespondContract(res, data, 'episodes', 'Otakudesu')) return;
         res.json(data);
     } catch (err) {
         console.error("[Otakudesu Episodes Error]", err.message);
@@ -86,6 +88,7 @@ export async function getServers(req, res) {
         if (!url) return res.status(400).json({ error: "Parameter url wajib diisi" });
 
         const data = await getServersInternal(url);
+        if (!assertAndRespondContract(res, data, 'servers', 'Otakudesu')) return;
         res.json(data);
     } catch (err) {
         console.error("[Otakudesu Servers Error]", err.message);
@@ -116,13 +119,19 @@ async function resolveOtakuServers($) {
                         return;
                     }
                     try {
-                        // Resolve the desustream.com redirect link
-                        const redRes = await axios.get(href, {
+                        const redRes = await axios.request({
+                            method: 'HEAD',
+                            url: href,
                             maxRedirects: 0,
                             validateStatus: () => true,
                             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                            timeout: 4500
-                        });
+                            timeout: 3500
+                        }).catch(() => axios.get(href, {
+                            maxRedirects: 0,
+                            validateStatus: () => true,
+                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                            timeout: 3500
+                        }));
 
                         let directUrl = redRes.headers.location;
                         // Fallback: jika bukan redirect (status 200), gunakan URL aslinya

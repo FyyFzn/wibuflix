@@ -142,36 +142,39 @@ export async function getBrowser() {
     return await browserLaunchPromise;
 }
 
-export async function createPage(targetContextOrBrowser) {
-    const page = await targetContextOrBrowser.newPage();
+const EXTENDED_BLACKLIST_DOMAINS = [
+    'googlesyndication.com', 'doubleclick.net', 'dtscout.com', 'facebook.com',
+    'google-analytics.com', 'googletagmanager.com', 'yandex.ru', 'mc.yandex.ru',
+    'histats.com', 'popads.net', 'popcash.net', 'adsterra.com', 'exoclick.com',
+    'propellerads.com', 'onclickmax.com', 'sentry.io', 'hotjar.com', 'clarity.ms'
+];
+
+async function configureOptimizedPage(page) {
     await page.setUserAgent(globalUserAgent);
     await page.setRequestInterception(true);
     page.on('request', req => {
         if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
         const type = req.resourceType();
-        const url = req.url();
-        if (['font', 'image', 'stylesheet', 'media'].includes(type)) return req.abort().catch(() => {});
-        if (url.includes('googlesyndication') || url.includes('doubleclick') ||
-            url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
+        const urlLower = req.url().toLowerCase();
+        if (['font', 'image', 'stylesheet', 'media', 'manifest', 'other'].includes(type)) {
+            return req.abort().catch(() => {});
+        }
+        if (EXTENDED_BLACKLIST_DOMAINS.some(domain => urlLower.includes(domain))) {
+            return req.abort().catch(() => {});
+        }
         req.continue().catch(() => {});
     });
     return page;
 }
 
+export async function createPage(targetContextOrBrowser) {
+    const page = await targetContextOrBrowser.newPage();
+    return await configureOptimizedPage(page);
+}
+
 export async function createExtractorPage(targetContextOrBrowser) {
     const page = await targetContextOrBrowser.newPage();
-    await page.setUserAgent(globalUserAgent);
-    await page.setRequestInterception(true);
-    page.on('request', req => {
-        if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
-        const type = req.resourceType();
-        const url = req.url();
-        if (['font', 'image', 'stylesheet', 'media'].includes(type)) return req.abort().catch(() => {});
-        if (url.includes('googlesyndication') || url.includes('doubleclick') ||
-            url.includes('dtscout') || url.includes('facebook.com/tr')) return req.abort().catch(() => {});
-        req.continue().catch(() => {});
-    });
-    return page;
+    return await configureOptimizedPage(page);
 }
 
 export async function waitForCloudflare(page) {
@@ -180,14 +183,20 @@ export async function waitForCloudflare(page) {
     let elapsed = 0;
     while (elapsed < MAX_WAIT) {
         if (page.isClosed()) return;
-        const judul = await page.title().catch(() => '');
+        const judul = await Promise.race([
+            page.title().catch(() => ''),
+            new Promise(r => setTimeout(() => r(''), 2000))
+        ]);
         const titleLower = judul.toLowerCase();
         if (!titleLower.includes('just a moment') && !titleLower.includes('please wait')) return;
         await new Promise(r => setTimeout(r, INTERVAL));
         elapsed += INTERVAL;
     }
     if (!page.isClosed()) {
-        const finalTitle = await page.title().catch(() => '');
+        const finalTitle = await Promise.race([
+            page.title().catch(() => ''),
+            new Promise(r => setTimeout(() => r(''), 2000))
+        ]);
         if (finalTitle.toLowerCase().includes('just a moment')) {
             console.warn('[waitForCloudflare] Timeout menunggu CF challenge selesai!');
         }
@@ -267,13 +276,23 @@ export async function acquireFromPool(domain = 'v2.samehadaku.how', signal = nul
     if (signal && signal.aborted) {
         throw new Error('REQUEST_ABORTED_BEFORE_ACQUIRE');
     }
+    const QUEUE_TIMEOUT = 30000;
     while (activeRegularCount >= MAX_REGULAR_CONCURRENCY) {
         await new Promise((resolve, reject) => {
-            const queueItem = { resolve, reject };
+            const timer = setTimeout(() => {
+                const idx = regularQueue.indexOf(queueItem);
+                if (idx > -1) regularQueue.splice(idx, 1);
+                reject(new Error('QUEUE_TIMEOUT_EXCEEDED'));
+            }, QUEUE_TIMEOUT);
+            const queueItem = { 
+                resolve: () => { clearTimeout(timer); resolve(); }, 
+                reject: (err) => { clearTimeout(timer); reject(err); } 
+            };
             regularQueue.push(queueItem);
             
             if (signal) {
                 const onAbort = () => {
+                    clearTimeout(timer);
                     const index = regularQueue.indexOf(queueItem);
                     if (index > -1) {
                         regularQueue.splice(index, 1);
@@ -281,7 +300,7 @@ export async function acquireFromPool(domain = 'v2.samehadaku.how', signal = nul
                     }
                 };
                 signal.addEventListener('abort', onAbort, { once: true });
-                const originalResolve = resolve;
+                const originalResolve = queueItem.resolve;
                 queueItem.resolve = () => {
                     signal.removeEventListener('abort', onAbort);
                     originalResolve();
@@ -294,44 +313,65 @@ export async function acquireFromPool(domain = 'v2.samehadaku.how', signal = nul
     }
     activeRegularCount++;
 
-    const browser = await getBrowser();
-    const context = await browser.createBrowserContext();
-    const page = await createPage(context);
+    try {
+        const browser = await getBrowser();
+        const context = await browser.createBrowserContext();
+        const page = await createPage(context);
 
-    if (domain) {
-        await injectStoredCookies(page, domain);
-    }
-
-    const slot = {
-        page,
-        context,
-        busy: true,
-        type: 'regular',
-        acquiredAt: Date.now()
-    };
-
-    // Safety timeout: jika slot tidak dilepas dalam 90 detik, lepas paksa
-    slot.safetyTimer = setTimeout(() => {
-        if (slot.busy) {
-            console.warn('[PagePool] Safety timeout (90s): Melepaskan slot regular yang macet.');
-            releaseToPool(slot);
+        if (domain) {
+            await injectStoredCookies(page, domain);
         }
-    }, 90000);
 
-    return slot;
+        const slot = {
+            page,
+            context,
+            busy: true,
+            type: 'regular',
+            acquiredAt: Date.now()
+        };
+
+        // Safety timeout: jika slot macet lebih dari 90 detik, lepas paksa dari memori
+        slot.safetyTimer = setTimeout(() => {
+            if (slot.busy) {
+                console.warn('[PagePool] Safety timeout (90s): Melepaskan slot regular yang macet.');
+                releaseToPool(slot);
+            }
+        }, 90000);
+
+        return slot;
+    } catch (err) {
+        if (activeRegularCount > 0) activeRegularCount--;
+        if (regularQueue.length > 0) {
+            const next = regularQueue.shift();
+            if (next && typeof next.resolve === 'function') next.resolve();
+            else if (typeof next === 'function') next();
+        }
+        console.error(`[PagePool Fatal] Gagal menginisialisasi slot regular browser (${err.message}). Counter di-rollback.`);
+        throw err;
+    }
 }
 
 export async function acquireFromExtractorPool(domain = null, signal = null) {
     if (signal && signal.aborted) {
         throw new Error('REQUEST_ABORTED_BEFORE_ACQUIRE');
     }
+    const QUEUE_TIMEOUT = 30000;
     while (activeExtractorCount >= MAX_EXTRACTOR_CONCURRENCY) {
         await new Promise((resolve, reject) => {
-            const queueItem = { resolve, reject };
+            const timer = setTimeout(() => {
+                const idx = extractorQueue.indexOf(queueItem);
+                if (idx > -1) extractorQueue.splice(idx, 1);
+                reject(new Error('QUEUE_TIMEOUT_EXCEEDED'));
+            }, QUEUE_TIMEOUT);
+            const queueItem = { 
+                resolve: () => { clearTimeout(timer); resolve(); }, 
+                reject: (err) => { clearTimeout(timer); reject(err); } 
+            };
             extractorQueue.push(queueItem);
             
             if (signal) {
                 const onAbort = () => {
+                    clearTimeout(timer);
                     const index = extractorQueue.indexOf(queueItem);
                     if (index > -1) {
                         extractorQueue.splice(index, 1);
@@ -339,7 +379,7 @@ export async function acquireFromExtractorPool(domain = null, signal = null) {
                     }
                 };
                 signal.addEventListener('abort', onAbort, { once: true });
-                const originalResolve = resolve;
+                const originalResolve = queueItem.resolve;
                 queueItem.resolve = () => {
                     signal.removeEventListener('abort', onAbort);
                     originalResolve();
@@ -352,30 +392,41 @@ export async function acquireFromExtractorPool(domain = null, signal = null) {
     }
     activeExtractorCount++;
 
-    const browser = await getBrowser();
-    const context = await browser.createBrowserContext();
-    const page = await createExtractorPage(context);
+    try {
+        const browser = await getBrowser();
+        const context = await browser.createBrowserContext();
+        const page = await createExtractorPage(context);
 
-    if (domain) {
-        await injectStoredCookies(page, domain);
-    }
-
-    const slot = {
-        page,
-        context,
-        busy: true,
-        type: 'extractor',
-        acquiredAt: Date.now()
-    };
-
-    slot.safetyTimer = setTimeout(() => {
-        if (slot.busy) {
-            console.warn('[ExtractorPool] Safety timeout (90s): Melepaskan slot extractor yang macet.');
-            releaseToPool(slot);
+        if (domain) {
+            await injectStoredCookies(page, domain);
         }
-    }, 90000);
 
-    return slot;
+        const slot = {
+            page,
+            context,
+            busy: true,
+            type: 'extractor',
+            acquiredAt: Date.now()
+        };
+
+        slot.safetyTimer = setTimeout(() => {
+            if (slot.busy) {
+                console.warn('[ExtractorPool] Safety timeout (90s): Melepaskan slot extractor yang macet.');
+                releaseToPool(slot);
+            }
+        }, 90000);
+
+        return slot;
+    } catch (err) {
+        if (activeExtractorCount > 0) activeExtractorCount--;
+        if (extractorQueue.length > 0) {
+            const next = extractorQueue.shift();
+            if (next && typeof next.resolve === 'function') next.resolve();
+            else if (typeof next === 'function') next();
+        }
+        console.error(`[ExtractorPool Fatal] Gagal menginisialisasi slot extractor browser (${err.message}). Counter di-rollback.`);
+        throw err;
+    }
 }
 
 export async function releaseToPool(slot) {

@@ -92,30 +92,69 @@ export async function extract(embedUrl, req) {
         };
         tempPage.on('response', responseHandler);
 
+        // Eksekusi satu kali injeksi auto-play JS yang pasif namun efektif
+        await tempPage.evaluateOnNewDocument(() => {
+            window.addEventListener('DOMContentLoaded', () => {
+                setInterval(() => {
+                    document.querySelectorAll('video').forEach(v => {
+                        if (v.paused) v.play().catch(() => {});
+                    });
+                }, 2000);
+            });
+        }).catch(() => {});
+
         const extractPromise = new Promise(resolve => {
+            let elapsed = 0;
+            const checkStep = 1000; // Polling 1 detik (mengurangi 50% beban IPC)
+
+            let isPolling = false;
             checkInterval = setInterval(async () => {
-                if (videoUrl) {
-                    clearInterval(checkInterval);
-                    if (timeoutId) clearTimeout(timeoutId);
-                    return resolve(videoUrl);
-                }
+                if (isPolling || tempPage.isClosed()) return;
+                isPolling = true;
                 try {
-                    for (const f of tempPage.frames()) {
-                        const html = await f.content().catch(() => '');
-                        const match = html.match(/(https?:\/\/[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*)/i);
-                        if (match && match[1] && !match[1].includes('google')) {
-                            videoUrl = match[1];
-                            clearInterval(checkInterval);
-                            if (timeoutId) clearTimeout(timeoutId);
-                            return resolve(videoUrl);
-                        }
+                    elapsed += checkStep;
+                    if (videoUrl) {
+                        clearInterval(checkInterval);
+                        if (timeoutId) clearTimeout(timeoutId);
+                        return resolve(videoUrl);
                     }
-                } catch (e) {}
-            }, 500); // 500ms lebih hemat CPU & tidak membebani IPC Puppeteer
+
+                    // Klik berkala dengan frekuensi lebih rendah (tiap 3 detik, bukan 1.5s)
+                    if (elapsed % 3000 === 0 && !tempPage.isClosed()) {
+                        try {
+                            const viewport = tempPage.viewport() || { width: 800, height: 600 };
+                            await tempPage.mouse.click(viewport.width / 2, viewport.height / 2).catch(() => {});
+                            await tempPage.evaluate(() => {
+                                const btn = document.querySelector('.play-btn, [class*="play"], button, [role="button"]');
+                                if (btn) btn.click();
+                            }).catch(() => {});
+                        } catch (e) {}
+                    }
+
+                    // Cek frame tiap 2 detik
+                    if (elapsed % 2000 === 0 && !tempPage.isClosed()) {
+                        try {
+                            for (const f of tempPage.frames()) {
+                                const html = await Promise.race([f.content().catch(() => ''), new Promise(r => setTimeout(() => r(''), 1000))]);
+                                const match = html.match(/(https?:\/\/[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*)/i);
+                                if (match && match[1] && !match[1].includes('google')) {
+                                    videoUrl = match[1];
+                                    clearInterval(checkInterval);
+                                    if (timeoutId) clearTimeout(timeoutId);
+                                    return resolve(videoUrl);
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                } finally {
+                    isPolling = false;
+                }
+            }, checkStep);
+
             timeoutId = setTimeout(() => { 
                 clearInterval(checkInterval); 
                 resolve(null); 
-            }, 25000); // 25s for slow SPA
+            }, 25000);
         });
 
         if (isSPA) {
@@ -132,39 +171,6 @@ export async function extract(embedUrl, req) {
                 document.body.appendChild(iframe);
             }, embedUrl);
         }
-
-        // Klik agresif berulang setiap 1.5 detik
-        clickInterval = setInterval(async () => {
-            if (videoUrl) {
-                clearInterval(clickInterval);
-                return;
-            }
-            try {
-                const viewport = tempPage.viewport() || { width: 800, height: 600 };
-                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2).catch(() => {});
-                await new Promise(r => setTimeout(r, 200));
-                await tempPage.mouse.click(viewport.width / 2, viewport.height / 2).catch(() => {});
-                
-                await tempPage.evaluate(() => {
-                    try {
-                        document.querySelectorAll('iframe').forEach(f => {
-                            try {
-                                const doc = f.contentDocument || f.contentWindow?.document;
-                                if (!doc) return;
-                                const btn = doc.querySelector('.play-btn, [class*="play"], button, [role="button"]');
-                                if (btn) btn.click();
-                                const v = doc.querySelector('video');
-                                if (v) v.play().catch(() => {});
-                            } catch(e) {}
-                        });
-                        const btn = document.querySelector('.play-btn, [class*="play"], button, [role="button"]');
-                        if (btn) btn.click();
-                        const v = document.querySelector('video');
-                        if (v) v.play().catch(() => {});
-                    } catch(e) {}
-                }).catch(() => {});
-            } catch (e) {}
-        }, 1500);
 
         const finalUrl = await extractPromise;
         

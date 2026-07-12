@@ -5,6 +5,7 @@ import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronime
 import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import Anime from '../models/Anime.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 const cache = getCache('kuronime', 3600);
 
@@ -143,6 +144,7 @@ export async function handleGetEpisodes(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: 'Parameter url wajib diisi' });
         const data = await getKuronimeEpisodes(url);
+        if (!assertAndRespondContract(res, data, 'episodes', 'Kuronime')) return;
         res.json(data);
     } catch (err) {
         console.error('[Kuronime Episodes Error]', err.message);
@@ -158,6 +160,7 @@ export async function handleGetServers(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: 'Parameter url wajib diisi' });
         const data = await getKuronimeServers(url);
+        if (!assertAndRespondContract(res, data, 'servers', 'Kuronime')) return;
         res.json(data);
     } catch (err) {
         console.error('[Kuronime Servers Error]', err.message);

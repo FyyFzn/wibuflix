@@ -175,63 +175,114 @@ export async function runSync(isInitial = false) {
                 let updatedCount = 0;
                 let createdCount = 0;
 
+                // 1. BULK LOOKUP: Ambil semua URL dan Normalized Title dalam 1x Query Database!
+                const allUrls = allAnime.map(a => a.url).filter(Boolean);
+                const allNormTitles = allAnime.map(a => normalizeTitleForMatch(a.judul)).filter(Boolean);
+
+                const existingDocs = await Anime.find({
+                    $or: [
+                        { 'sources.samehadaku.url': { $in: allUrls } },
+                        { normalizedTitle: { $in: allNormTitles } }
+                    ]
+                });
+
+                const urlMap = new Map();
+                const titleMap = new Map();
+                const malIdMap = new Map();
+                const processedMalIds = new Set();
+                existingDocs.forEach(doc => {
+                    if (doc.sources?.samehadaku?.url) urlMap.set(doc.sources.samehadaku.url, doc);
+                    if (doc.normalizedTitle) titleMap.set(doc.normalizedTitle, doc);
+                    if (doc.malId) malIdMap.set(doc.malId, doc);
+                });
+
+                const bulkOperations = [];
+
                 for (let index = 0; index < allAnime.length; index++) {
                     const anime = allAnime[index];
                     const normTitle = normalizeTitleForMatch(anime.judul);
-
-                    // 1. Cari apakah anime sudah ada berdasarkan URL atau normalizedTitle
-                    let existing = await Anime.findOne({
-                        $or: [
-                            { 'sources.samehadaku.url': anime.url },
-                            { normalizedTitle: normTitle }
-                        ]
-                    });
+                    let existing = urlMap.get(anime.url) || titleMap.get(normTitle);
 
                     if (existing) {
                         if (!existing.isLocked) {
-                            existing.sources.samehadaku = { url: anime.url };
-                            existing.status = anime.status || existing.status;
+                            const updateFields = {
+                                'sources.samehadaku': { url: anime.url },
+                                'lastUpdated': new Date(now - index * 1000)
+                            };
+                            if (anime.status) updateFields.status = anime.status;
                             if (!existing.image || existing.image.includes('placehold')) {
-                                existing.image = anime.gambarScraper;
+                                updateFields.image = anime.gambarScraper;
                             }
-                            existing.lastUpdated = new Date(now - index * 1000);
-                            await existing.save();
+
+                            bulkOperations.push({
+                                updateOne: {
+                                    filter: { _id: existing._id },
+                                    update: { $set: updateFields }
+                                }
+                            });
                         } else {
-                            // Jika terkunci, hanya update URL sumber dan lastUpdated
-                            existing.sources.samehadaku = { url: anime.url };
-                            existing.lastUpdated = new Date(now - index * 1000);
-                            await existing.save();
+                            bulkOperations.push({
+                                updateOne: {
+                                    filter: { _id: existing._id },
+                                    update: { $set: { 'sources.samehadaku': { url: anime.url }, 'lastUpdated': new Date(now - index * 1000) } }
+                                }
+                            });
                         }
                         updatedCount++;
                     } else {
-                        // 2. Jika belum ada, cegah blind insert dengan bertanya ke Jikan/MAL terlebih dahulu
-                        const metadata = await searchAnime(anime.judul);
-                        if (metadata?.malId) {
-                            const existingByMal = await Anime.findOne({ malId: metadata.malId });
+                        // Untuk anime baru, cari Jikan dengan Rate Limiting (Jeda 350ms agar tidak diblokir MAL)
+                        await delay(350);
+                        const metadata = await searchAnime(anime.judul).catch(() => null);
+                        
+                        if (metadata && metadata.malId) {
+                            if (processedMalIds.has(metadata.malId)) {
+                                continue;
+                            }
+                            let existingByMal = malIdMap.get(metadata.malId);
+                            if (!existingByMal) {
+                                existingByMal = await Anime.findOne({ malId: metadata.malId });
+                                if (existingByMal) malIdMap.set(metadata.malId, existingByMal);
+                            }
                             if (existingByMal) {
-                                // Gabungkan ke kartu MAL eksisting (Anti Duplikat!)
-                                existingByMal.sources.samehadaku = { url: anime.url };
-                                existingByMal.lastUpdated = new Date(now - index * 1000);
-                                await existingByMal.save();
+                                bulkOperations.push({
+                                    updateOne: {
+                                        filter: { _id: existingByMal._id },
+                                        update: { $set: { 'sources.samehadaku': { url: anime.url }, 'lastUpdated': new Date(now - index * 1000) } }
+                                    }
+                                });
                                 updatedCount++;
+                                processedMalIds.add(metadata.malId);
                                 continue;
                             }
                         }
 
-                        // Buat dokumen baru dengan metadata resmi jika ada
-                        await Anime.create({
-                            title: metadata?.title || anime.judul,
-                            normalizedTitle: normTitle,
-                            malId: metadata?.malId || null,
-                            image: metadata?.cover || anime.gambarScraper,
-                            type: anime.tipe,
-                            score: metadata?.malScore || anime.skor,
-                            status: anime.status,
-                            sources: { samehadaku: { url: anime.url } },
-                            lastUpdated: new Date(now - index * 1000)
+                        if (metadata?.malId) processedMalIds.add(metadata.malId);
+                        bulkOperations.push({
+                            insertOne: {
+                                document: {
+                                    title: metadata?.title || anime.judul,
+                                    normalizedTitle: normTitle,
+                                    malId: metadata?.malId || undefined,
+                                    image: metadata?.cover || anime.gambarScraper,
+                                    type: anime.tipe,
+                                    score: metadata?.malScore || anime.skor,
+                                    status: anime.status,
+                                    sources: { samehadaku: { url: anime.url } },
+                                    lastUpdated: new Date(now - index * 1000)
+                                }
+                            }
                         });
                         createdCount++;
                     }
+
+                    if (bulkOperations.length >= 100) {
+                        await Anime.bulkWrite(bulkOperations, { ordered: false }).catch(e => console.warn('[BulkWrite Partial Error]', e.message));
+                        bulkOperations.length = 0;
+                    }
+                }
+
+                if (bulkOperations.length > 0) {
+                    await Anime.bulkWrite(bulkOperations, { ordered: false }).catch(e => console.warn('[BulkWrite Partial Error]', e.message));
                 }
 
                 log(`[Anime Sync] ✅ Sinkronisasi selesai: ${updatedCount} diupdate/digabung, ${createdCount} baru dibuat.`);

@@ -101,14 +101,18 @@ export async function getNeosatsuEpisodes(targetUrl) {
                 isMovieOrSpecial = true;
             }
 
-            const match = content.match(/var dlItem\s*=\s*(\[.*?\]);/s);
+            const match = content.match(/(?:var\s+dlItem|dlItem|const\s+dlItem|let\s+dlItem)\s*=\s*(\[[\s\S]*?\])\s*(?:;|\/\/|<\/script>)/i);
             if (match && match[1]) {
                 let parsedData = [];
                 try {
-                    const parseFunc = new Function(`return ${match[1]};`);
-                    parsedData = parseFunc();
-                } catch (e) {
-                    console.error("Gagal parse array JS Neosatsu:", e.message);
+                    parsedData = JSON.parse(match[1].replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":').replace(/'/g, '"'));
+                } catch (e1) {
+                    try {
+                        const parseFunc = new Function(`return ${match[1]};`);
+                        parsedData = parseFunc();
+                    } catch (e2) {
+                        console.error("Gagal parse array JS Neosatsu:", e2.message);
+                    }
                 }
 
                 parsedData.forEach(ep => {

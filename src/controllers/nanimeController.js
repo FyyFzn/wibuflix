@@ -2,6 +2,7 @@ import axios from 'axios';
 import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import Anime from '../models/Anime.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 const cache = getCache('nanime', 3600);
 
@@ -254,6 +255,7 @@ export async function handleGetEpisodes(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: 'Parameter url wajib diisi' });
         const data = await getNanimeEpisodes(url);
+        if (!assertAndRespondContract(res, data, 'episodes', 'Nanime')) return;
         res.json(data);
     } catch (err) {
         console.error('[Nanime Episodes Error]', err.message);
@@ -269,6 +271,7 @@ export async function handleGetServers(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: 'Parameter url wajib diisi' });
         const data = await getNanimeServers(url);
+        if (!assertAndRespondContract(res, data, 'servers', 'Nanime')) return;
         res.json(data);
     } catch (err) {
         console.error('[Nanime Servers Error]', err.message);

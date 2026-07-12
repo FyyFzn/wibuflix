@@ -366,7 +366,11 @@ async function finalizeScrapedData(data, dbAnime) {
         if (newEpsCount > oldEpsCount) {
             dbAnime.lastUpdated = new Date();
         }
-        await dbAnime.save().catch(() => {});
+        try {
+            await dbAnime.save();
+        } catch (err) {
+            console.error('[EpisodeService] Gagal menyimpan update episode ke database:', err.message);
+        }
     }
 
     if (dbAnime && data) {
@@ -395,34 +399,44 @@ export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtaku
     if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0 && !forceRefresh) {
         const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
         
-        // Jika cache sudah >1 jam, kita tunggu hasil scrape terbaru (sinkron) agar data selalu up-to-date
-        if (cacheAge > 3600000) {
-            console.log(`[Cache] Cache sudah tua (${Math.floor(cacheAge / 60000)} menit). Melakukan scraping pembaruan langsung untuk: ${dbAnime.title}`);
-            const freshData = await scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz });
-            return { status: 'success', data: freshData, source: 'scraper' };
+        if (cacheAge <= 3600000) {
+            console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
+            const data = {
+                judul_seri: dbAnime.title,
+                daftar_episode: dbAnime.episodesList,
+                cover_scraper: dbAnime.image,
+                mal: {
+                    malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
+                    synopsis: dbAnime.synopsis || null,
+                    status: dbAnime.status,
+                    genres: dbAnime.genres || [],
+                    episodes: dbAnime.episodesCount,
+                    year: dbAnime.year,
+                    cover: dbAnime.image,
+                    malId: dbAnime.malId
+                }
+            };
+
+            return { status: 'success', data, source: 'database' };
         }
-
-        console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
-        const data = {
-            judul_seri: dbAnime.title,
-            daftar_episode: dbAnime.episodesList,
-            cover_scraper: dbAnime.image,
-            mal: {
-                malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
-                synopsis: dbAnime.synopsis || null,
-                status: dbAnime.status,
-                genres: dbAnime.genres || [],
-                episodes: dbAnime.episodesCount,
-                year: dbAnime.year,
-                cover: dbAnime.image,
-                malId: dbAnime.malId
-            }
-        };
-
-        return { status: 'success', data, source: 'database' };
     }
 
-    // Jika belum ada di cache atau forceRefresh = true, jalankan scraping langsung
-    const data = await scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz });
+    const lockKey = targetUrl || dbAnime?._id?.toString() || urlSamehadaku || urlOtakudesu || 'global_scrape';
+    if (activeScrapeLocks.has(lockKey)) {
+        console.log(`[EpisodeService] Menggunakan hasil dari scraping yang sedang berjalan (Lock Key: ${lockKey})`);
+        const data = await activeScrapeLocks.get(lockKey);
+        return { status: 'success', data, source: 'scraper' };
+    }
+
+    const scrapePromise = (async () => {
+        try {
+            return await scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz });
+        } finally {
+            activeScrapeLocks.delete(lockKey);
+        }
+    })();
+
+    activeScrapeLocks.set(lockKey, scrapePromise);
+    const data = await scrapePromise;
     return { status: 'success', data, source: 'scraper' };
 }

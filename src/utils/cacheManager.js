@@ -21,4 +21,5 @@ export function getCache(namespace, ttl = 3600) {
  */
 export function flushAll() {
     Object.values(caches).forEach(c => c.flushAll());
+    import('../services/animeOrchestrator.js').then(m => m.orchestratorCache && m.orchestratorCache.clear()).catch(() => {});
 }

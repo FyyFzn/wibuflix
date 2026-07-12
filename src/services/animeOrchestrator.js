@@ -11,6 +11,16 @@ class LRUMemoryCache {
         this.max = max;
         this.ttl = ttl;
         this.cache = new Map();
+        
+        this.cleanupInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [key, item] of this.cache.entries()) {
+                if (now - item.timestamp > this.ttl) {
+                    this.cache.delete(key);
+                }
+            }
+        }, Math.min(ttl, 300000));
+        if (this.cleanupInterval.unref) this.cleanupInterval.unref();
     }
 
     get(key) {
@@ -20,7 +30,6 @@ class LRUMemoryCache {
             this.cache.delete(key);
             return undefined;
         }
-        // Refresh ordering in LRU
         this.cache.delete(key);
         this.cache.set(key, item);
         return item.data;
@@ -39,9 +48,13 @@ class LRUMemoryCache {
     invalidate(key) {
         this.cache.delete(key);
     }
+
+    clear() {
+        this.cache.clear();
+    }
 }
 
-const orchestratorCache = new LRUMemoryCache(1500, 3600000);
+export const orchestratorCache = new LRUMemoryCache(1500, 3600000);
 
 /**
  * Service utama untuk arsitektur Thin Client (Server-Driven).

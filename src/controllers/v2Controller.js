@@ -1,4 +1,5 @@
 import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 /**
  * Controller V2: Mengambil detail dan urutan episode anime
@@ -26,6 +27,7 @@ export async function getV2Episodes(req, res) {
         });
 
         if (!res.headersSent) {
+            if (!assertAndRespondContract(res, result, 'episodes', result.source_type || 'orchestrator-v2')) return;
             return res.json({
                 status: 'success',
                 data: result

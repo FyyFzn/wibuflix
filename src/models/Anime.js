@@ -90,8 +90,8 @@ const animeSchema = new mongoose.Schema({
     }],
     year: { type: Number, default: null },
     malScore: { type: String, default: null },
-    malId: { type: Number, default: null, index: true, sparse: true },
-    tmdbId: { type: Number, default: null, index: true, sparse: true },
+    malId: { type: Number, index: true, sparse: true },
+    tmdbId: { type: Number, index: true, sparse: true },
 
     tmdbEnriched: {
         type: Boolean,

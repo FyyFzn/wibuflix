@@ -130,16 +130,29 @@ export async function scrapeVideoServers(targetUrl) {
                             // Nimegami Shortlink Bypass
                             if (href && href.includes('url=')) {
                                 try {
-                                    const urlParam = new URL(href.startsWith('http') ? href : `https://nimegami.id${href}`).searchParams.get('url');
+                                    const parsedUrl = new URL(href.startsWith('http') ? href : `https://nimegami.id${href}`);
+                                    const urlParam = parsedUrl.searchParams.get('url');
                                     if (urlParam) {
-                                        const decoded = Buffer.from(urlParam, 'base64').toString('utf8');
-                                        if (decoded.startsWith('http')) {
-                                            href = decoded;
-                                        } else if (urlParam.startsWith('http')) {
+                                        // Tes 1: Apakah direct HTTP URL (Tanpa encode base64)?
+                                        if (urlParam.startsWith('http://') || urlParam.startsWith('https://')) {
                                             href = urlParam;
+                                        } else {
+                                            // Tes 2: Decode dari Base64 secara aman
+                                            const decoded = Buffer.from(urlParam, 'base64').toString('utf8').trim();
+                                            if (decoded.startsWith('http://') || decoded.startsWith('https://')) {
+                                                href = decoded;
+                                            } else {
+                                                // Tes 3: Decode URI Component jika berupa URL encoded biasa
+                                                const uriDecoded = decodeURIComponent(urlParam);
+                                                if (uriDecoded.startsWith('http://') || uriDecoded.startsWith('https://')) {
+                                                    href = uriDecoded;
+                                                }
+                                            }
                                         }
                                     }
-                                } catch (e) {}
+                                } catch (err) {
+                                    console.warn(`[VideoExtractor Warning] Gagal me-decode shortlink URL (${href}): ${err.message}`);
+                                }
                             }
                             
                             const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];

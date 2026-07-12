@@ -4,6 +4,7 @@ import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import Anime from '../models/Anime.js';
 import { cleanSeriesTitle } from '../utils/stringUtils.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 const cache = getCache('nimegami', 3600);
 
@@ -322,6 +323,7 @@ export async function getEpisodes(req, res) {
     }
     try {
         const data = await getNimegamiEpisodes(targetUrl);
+        if (!assertAndRespondContract(res, data, 'episodes', 'Nimegami')) return;
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Nimegami Episodes Error]', err.message);
@@ -339,6 +341,7 @@ export async function getServers(req, res) {
     }
     try {
         const data = await getNimegamiServers(episodeUrl);
+        if (!assertAndRespondContract(res, data, 'servers', 'Nimegami')) return;
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Nimegami Servers Error]', err.message);

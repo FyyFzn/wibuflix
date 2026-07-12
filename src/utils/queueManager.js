@@ -134,7 +134,10 @@ class QueueManager extends EventEmitter {
         console.info(`[Queue] Memproses unduhan: ${nextItem.episodeTitle}`);
 
         try {
-            await this.processor(nextItem);
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('PROCESSOR_TIMEOUT_EXCEEDED_10M')), 10 * 60 * 1000)
+            );
+            await Promise.race([this.processor(nextItem), timeoutPromise]);
             // Jika sukses, ubah status ke COMPLETED (bisa juga dihapus jika ingin hemat DB)
             nextItem.status = 'COMPLETED';
             nextItem.progress = 'Selesai';

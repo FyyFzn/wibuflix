@@ -38,15 +38,29 @@ export function standardizeAnimeTitle(title) {
 export function isSafeToMerge(titleA, titleB, scoreThreshold = 0.85) {
     if (!titleA || !titleB) return false;
 
-    // Jangan gabungkan Movie dengan non-Movie
+    // Jangan gabungkan Movie dengan non-Movie atau OVA/Special dengan non-Special
     const isMovieA = titleA.toLowerCase().includes('movie') || titleA.toLowerCase().includes('gekijouban');
     const isMovieB = titleB.toLowerCase().includes('movie') || titleB.toLowerCase().includes('gekijouban');
     if (isMovieA !== isMovieB) return false;
+
+    const isOvaA = /\b(ova|ona|special|spesial)\b/i.test(titleA);
+    const isOvaB = /\b(ova|ona|special|spesial)\b/i.test(titleB);
+    if (isOvaA !== isOvaB) return false;
 
     const sA = standardizeAnimeTitle(titleA);
     const sB = standardizeAnimeTitle(titleB);
 
     if (!sA || !sB) return false;
+
+    // Pastikan nomor season tidak bertabrakan (contoh: s1 vs s2 atau p1 vs p2)
+    const getSeasonToken = (str) => {
+        const match = str.match(/\b([sp]\d+)\b/i);
+        return match ? match[1].toLowerCase() : null;
+    };
+    const tokenA = getSeasonToken(sA);
+    const tokenB = getSeasonToken(sB);
+    if (tokenA && tokenB && tokenA !== tokenB) return false;
+    if ((tokenA && !tokenB && tokenA !== 's1' && tokenA !== 'p1') || (!tokenA && tokenB && tokenB !== 's1' && tokenB !== 'p1')) return false;
 
     const similarity = stringSimilarity.compareTwoStrings(sA, sB);
     return similarity >= scoreThreshold;

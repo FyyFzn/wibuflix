@@ -2,6 +2,7 @@ import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 const cache = getCache('oploverz', 3600);
 
@@ -208,6 +209,7 @@ export async function handleGetEpisodes(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: 'Parameter url wajib diisi' });
         const data = await getOploverzEpisodes(url);
+        if (!assertAndRespondContract(res, data, 'episodes', 'Oploverz')) return;
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -219,6 +221,7 @@ export async function handleGetServers(req, res) {
         const url = req.query.url;
         if (!url) return res.status(400).json({ error: 'Parameter url wajib diisi' });
         const data = await getOploverzServers(url);
+        if (!assertAndRespondContract(res, data, 'servers', 'Oploverz')) return;
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: err.message });

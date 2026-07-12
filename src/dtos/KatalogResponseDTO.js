@@ -4,7 +4,7 @@
  * agar selalu konsisten dan dapat diprediksi oleh antarmuka frontend (React Native / Web).
  */
 export class KatalogResponseDTO {
-    constructor(item) {
+    constructor(item = {}) {
         let finalUrl = '';
         let finalId = '';
 
@@ -40,13 +40,13 @@ export class KatalogResponseDTO {
         }
 
         this.judul = item.title || '';
-        this.url = finalUrl;
+        this.url = finalUrl || item.url || '';
         this.gambar = item.image || '';
         this.gambarScraper = item.image || '';
-        this.tipe = displayType;
+        this.tipe = displayType || 'TV';
         this.skor = item.score || '-';
-        this.status = item.status || '';
-        this.id = finalId;
+        this.status = item.status || 'Completed';
+        this.id = finalId || item.id || '';
         this.sources = item.sources || {};
     }
 

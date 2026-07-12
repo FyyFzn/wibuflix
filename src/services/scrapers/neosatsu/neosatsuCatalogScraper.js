@@ -173,7 +173,8 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                 let pageResults = localResults.slice((page - 1) * 9, page * 9);
                 pageResults = await Promise.all(pageResults.map(async (item) => {
                     try {
-                        const tmdbData = await searchTokusatsu(item.title);
+                        const timeoutTmdb = new Promise((_, rej) => setTimeout(() => rej(new Error('TMDB_TIMEOUT')), 5000));
+                        const tmdbData = await Promise.race([searchTokusatsu(item.title), timeoutTmdb]);
                         if (tmdbData && tmdbData.image) {
                             item.thumb = tmdbData.image;
                             item.skor = tmdbData.score;
@@ -263,7 +264,8 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             let pageResults = finalAnimeList.slice(0, 9);
             pageResults = await Promise.all(pageResults.map(async (item) => {
                 try {
-                    const tmdbData = await searchTokusatsu(item.title);
+                    const timeoutTmdb = new Promise((_, rej) => setTimeout(() => rej(new Error('TMDB_TIMEOUT')), 5000));
+                    const tmdbData = await Promise.race([searchTokusatsu(item.title), timeoutTmdb]);
                     if (tmdbData && tmdbData.image) {
                         item.thumb = tmdbData.image;
                         item.skor = tmdbData.score;
@@ -281,7 +283,8 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             let pageResults = browseDb.slice((page - 1) * 9, page * 9);
             pageResults = await Promise.all(pageResults.map(async (item) => {
                 try {
-                    const tmdbData = await searchTokusatsu(item.title);
+                    const timeoutTmdb = new Promise((_, rej) => setTimeout(() => rej(new Error('TMDB_TIMEOUT')), 5000));
+                    const tmdbData = await Promise.race([searchTokusatsu(item.title), timeoutTmdb]);
                     if (tmdbData && tmdbData.image) {
                         item.thumb = tmdbData.image;
                         item.skor = tmdbData.score;

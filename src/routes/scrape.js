@@ -4,6 +4,7 @@ import { getNeosatsuServers } from '../services/scrapers/neosatsuScraperService.
 import * as otakudesu from '../controllers/otakudesuController.js';
 import { getKuronimeServers } from '../controllers/kuronimeController.js';
 import { getOploverzServers } from '../controllers/oploverzController.js';
+import { assertAndRespondContract } from '../utils/contractValidator.js';
 
 const router = express.Router();
 
@@ -91,6 +92,7 @@ router.get('/api/scrape', async (req, res) => {
                 }
             }
             
+            if (!assertAndRespondContract(res, data, 'servers', 'multi-provider')) return;
             return res.json({ status: 'success', data });
         }
 
@@ -116,7 +118,7 @@ router.get('/api/scrape', async (req, res) => {
                 cover_scraper: neoData.cover_scraper || '',
                 nav_prev: neoData.nav_prev,
                 nav_next: neoData.nav_next,
-                servers: neoData.servers.map(s => ({ ...s, source: 'Neosatsu' }))
+                servers: (neoData.servers || []).map(s => ({ ...s, source: 'Neosatsu' }))
             };
         } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/servers')) {
             let realUrl = targetUrl;
@@ -172,6 +174,9 @@ router.get('/api/scrape', async (req, res) => {
                 }
             }
         }
+        
+        const providerLabel = isOtakudesu ? 'Otakudesu' : (targetUrl.includes('neosatsu') ? 'Neosatsu' : (targetUrl.includes('kuronime') ? 'Kuronime' : (targetUrl.includes('oploverz') ? 'Oploverz' : 'Samehadaku')));
+        if (!assertAndRespondContract(res, data, 'servers', providerLabel)) return;
         res.json({ status: 'success', data });
     } catch (err) {
         console.error('[Scrape Error]', err.message);
