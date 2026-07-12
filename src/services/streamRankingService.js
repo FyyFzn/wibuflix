@@ -137,9 +137,18 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             return 'Samehadaku';
         };
 
-        const fetchTasks = [
-            targetUrlPromise.then(res => (res?.servers || []).map(s => ({ ...s, source: getSourceLabel(episodeUrl) }))).catch(() => [])
-        ];
+        const fetchTasks = []; // Provider cepat (Otakudesu, Samehadaku, Nanime, dll)
+        const slowFetchTasks = []; // Provider lambat yang butuh Puppeteer penuh (Kuronime)
+
+        const isSlowProvider = (url) => url && (url.includes('kuronime') || url.includes('/api/kuronime/'));
+
+        // Primary URL task
+        const primaryTask = targetUrlPromise.then(res => (res?.servers || []).map(s => ({ ...s, source: getSourceLabel(episodeUrl) }))).catch(() => []);
+        if (isSlowProvider(episodeUrl)) {
+            slowFetchTasks.push(primaryTask);
+        } else {
+            fetchTasks.push(primaryTask);
+        }
 
         if (urlsObj && typeof urlsObj === 'object') {
             console.info(`${logPrefix} Mengambil URL alternatif dari metadata urls:`, JSON.stringify(urlsObj));
@@ -159,15 +168,51 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                         fetchUrl = new URL('http://localhost' + fetchUrl).searchParams.get('url') || fetchUrl;
                     } catch (e) {}
                 }
-                fetchTasks.push(getServersBasedOnUrl(fetchUrl).then(res => (res?.servers || []).map(s => ({ ...s, source: label }))).catch(err => {
+                const task = getServersBasedOnUrl(fetchUrl).then(res => (res?.servers || []).map(s => ({ ...s, source: label }))).catch(err => {
                     console.warn(`${logPrefix} Gagal fetch provider ${label} (${fetchUrl}):`, err.message);
                     return [];
-                }));
+                });
+
+                if (isSlowProvider(fetchUrl) || provider === 'kuronime') {
+                    slowFetchTasks.push(task);
+                } else {
+                    fetchTasks.push(task);
+                }
             }
         }
 
-        const resultsArray = await Promise.all(fetchTasks);
-        const servers = resultsArray.flat();
+        // TWO-PHASE FETCH STRATEGY:
+        // Phase 1: Tunggu provider cepat (Otakudesu, Samehadaku, Nanime) selesai
+        // Phase 2: Jika provider cepat sudah memberikan hasil → beri Kuronime grace period 5 detik
+        //          Jika TIDAK ada hasil dari provider cepat → tunggu Kuronime penuh (max 45 detik)
+        let servers = [];
+
+        if (fetchTasks.length > 0) {
+            const fastResults = await Promise.all(fetchTasks);
+            servers = fastResults.flat();
+        }
+
+        if (slowFetchTasks.length > 0) {
+            const gracePeriod = servers.length > 0 ? 5000 : 45000; // 5 detik jika sudah ada, 45 detik jika belum
+            const phaseLabel = servers.length > 0 ? 'grace period 5s' : 'full wait 45s';
+            console.info(`${logPrefix} Provider cepat menghasilkan ${servers.length} server. Menunggu Kuronime (${phaseLabel})...`);
+
+            const slowWithTimeout = slowFetchTasks.map(task =>
+                Promise.race([
+                    task,
+                    new Promise(resolve => setTimeout(() => {
+                        console.info(`${logPrefix} Kuronime timeout setelah ${gracePeriod / 1000}s — melanjutkan tanpa Kuronime.`);
+                        resolve([]);
+                    }, gracePeriod))
+                ])
+            );
+            const slowResults = await Promise.all(slowWithTimeout);
+            const slowServers = slowResults.flat();
+            if (slowServers.length > 0) {
+                console.info(`${logPrefix} ✓ Kuronime berhasil: ${slowServers.length} server ditambahkan ke kandidat.`);
+                servers = servers.concat(slowServers);
+            }
+        }
 
         if (servers.length === 0) {
             return { matchedSource: null, error: 'Tidak ada server download/streaming yang ditemukan di halaman episode.' };

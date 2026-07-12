@@ -145,15 +145,15 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         if (urlsObj.nimegami) availableSources.push('nimegami');
         if (urlsObj.oploverz) availableSources.push('oploverz');
 
-        // Pilih URL representatif (prioritas: Kuronime -> Samehadaku -> Otakudesu -> Nanime)
-        const representativeUrl = ep.url ||
-                                  urlsObj.kuronime ||
-                                  urlsObj.samehadaku ||
+        // Pilih URL representatif (prioritas: Samehadaku -> Otakudesu -> Nanime -> Neosatsu -> Nimegami -> Oploverz -> Kuronime)
+        const representativeUrl = urlsObj.samehadaku ||
                                   urlsObj.otakudesu ||
                                   urlsObj.nanime ||
+                                  urlsObj.neosatsu ||
                                   urlsObj.nimegami ||
                                   urlsObj.oploverz ||
-                                  urlsObj.neosatsu || '';
+                                  ep.url ||
+                                  urlsObj.kuronime || '';
 
         return {
             id: epId,
