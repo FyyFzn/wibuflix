@@ -91,15 +91,14 @@ export async function syncOtakudesu() {
                     }
                     
                     if (bestScore > 0.85 && matchedId) {
-                        // Gabungkan ke entri yang sudah ada jika kemiripan tinggi
+                        // Gabungkan ke entri yang sudah ada jika kemiripan tinggi (tanpa menimpa lastUpdated!)
                         bulkOps.push({
                             updateOne: {
                                 filter: { _id: matchedId },
                                 update: { 
                                     $set: { 
                                         'sources.otakudesu.url': anime.url,
-                                        'sources.otakudesu.id': anime.id,
-                                        lastUpdated: new Date(now - i * 1000)
+                                        'sources.otakudesu.id': anime.id
                                     }
                                 }
                             }
@@ -114,8 +113,7 @@ export async function syncOtakudesu() {
                                     $set: { 
                                         'sources.otakudesu.url': anime.url,
                                         'sources.otakudesu.id': anime.id,
-                                        normalizedTitle: normTitle,
-                                        lastUpdated: new Date(now - i * 1000)
+                                        normalizedTitle: normTitle
                                     },
                                     $setOnInsert: {
                                         title: anime.title,
@@ -123,6 +121,7 @@ export async function syncOtakudesu() {
                                         status: 'Completed',
                                         image: 'https://via.placeholder.com/225x320?text=No+Cover', 
                                         tmdbEnriched: false,
+                                        lastUpdated: new Date(now - i * 1000),
                                         last_sync: new Date()
                                     }
                                 },

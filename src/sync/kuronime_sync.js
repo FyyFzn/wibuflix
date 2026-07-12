@@ -89,15 +89,14 @@ export async function syncKuronime() {
             }
 
             if (bestScore > 0.85 && matchedId) {
-                // Gabungkan ke entri yang sudah ada
+                // Gabungkan ke entri yang sudah ada (tanpa menimpa lastUpdated!)
                 bulkOps.push({
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
                             $set: {
                                 'sources.kuronime.url': anime.url,
-                                'sources.kuronime.id': anime.id,
-                                lastUpdated: new Date(now - i * 1000)
+                                'sources.kuronime.id': anime.id
                             }
                         }
                     }
@@ -111,15 +110,15 @@ export async function syncKuronime() {
                             $set: {
                                 'sources.kuronime.url': anime.url,
                                 'sources.kuronime.id': anime.id,
-                                normalizedTitle: normTitle,
-                                lastUpdated: new Date(now - i * 1000)
+                                normalizedTitle: normTitle
                             },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: 'TV',
                                 status: 'Completed',
                                 image: '',
-                                tmdbEnriched: false
+                                tmdbEnriched: false,
+                                lastUpdated: new Date(now - i * 1000)
                             }
                         },
                         upsert: true

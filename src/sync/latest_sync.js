@@ -89,20 +89,8 @@ async function scrapeSamehadakuLatest() {
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate. Melakukan sinkronisasi ke MongoDB...`);
-        
-        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
-        const bulkOps = updates.map(anime => {
-            const normTitle = normalizeTitleForMatch(anime.judul);
-            return {
-                updateOne: {
-                    filter: { normalizedTitle: normTitle },
-                    update: { $set: { status: anime.status } }
-                }
-            };
-        });
-
-        const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Samehadaku: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+        const count = await processLatestUpdatesWithGuard(updates, 'samehadaku');
+        log(`[Latest Sync] ✅ Samehadaku: Berhasil mengupdate status/waktu ${count} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Samehadaku.`);
     }
@@ -142,26 +130,8 @@ async function scrapeOtakudesuLatest() {
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Otakudesu. Melakukan sinkronisasi ke MongoDB...`);
-        
-        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
-        const now = Date.now();
-        const bulkOps = updates.map((anime, index) => {
-            const normTitle = normalizeTitleForMatch(anime.title);
-            return {
-                updateOne: {
-                    filter: { normalizedTitle: normTitle },
-                    update: { 
-                        $set: { 
-                            status: anime.status,
-                            lastUpdated: new Date(now - index * 1000)
-                        } 
-                    }
-                }
-            };
-        });
-
-        const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Otakudesu: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+        const count = await processLatestUpdatesWithGuard(updates, 'otakudesu');
+        log(`[Latest Sync] ✅ Otakudesu: Berhasil mengupdate status ${count} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Otakudesu.`);
     }
@@ -205,27 +175,8 @@ async function scrapeKuronimeLatest() {
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Kuronime.`);
-
-        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
-        const now = Date.now();
-        const bulkOps = updates.map((anime, index) => {
-            const normTitle = normalizeTitleForMatch(anime.title);
-            return {
-                updateOne: {
-                    filter: { normalizedTitle: normTitle },
-                    update: {
-                        $set: {
-                            status: anime.status,
-                            lastUpdated: new Date(now - index * 1000)
-                        }
-                    }
-                    // Tidak pakai upsert — hanya update yang sudah ada di database
-                }
-            };
-        });
-
-        const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Kuronime: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+        const count = await processLatestUpdatesWithGuard(updates, 'kuronime');
+        log(`[Latest Sync] ✅ Kuronime: Berhasil mengupdate status ${count} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Kuronime.`);
     }
@@ -296,26 +247,8 @@ async function scrapeNanimeLatest() {
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Nanime ID. Melakukan sinkronisasi ke MongoDB...`);
-
-        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
-        const now = Date.now();
-        const bulkOps = updates.map((anime, index) => {
-            const normTitle = normalizeTitleForMatch(anime.title);
-            return {
-                updateOne: {
-                    filter: { normalizedTitle: normTitle },
-                    update: {
-                        $set: {
-                            status: anime.status,
-                            lastUpdated: new Date(now - index * 1000)
-                        }
-                    }
-                }
-            };
-        });
-
-        const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Nanime ID: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+        const count = await processLatestUpdatesWithGuard(updates, 'nanime');
+        log(`[Latest Sync] ✅ Nanime ID: Berhasil mengupdate status ${count} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Nanime ID.`);
     }
@@ -382,30 +315,102 @@ async function scrapeNimegamiLatest() {
 
     if (updates.length > 0) {
         log(`[Latest Sync] Ditemukan ${updates.length} anime terupdate di Nimegami. Melakukan sinkronisasi ke MongoDB...`);
-
-        const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
-        const now = Date.now();
-        const bulkOps = updates.map((anime, index) => {
-            const normTitle = normalizeTitleForMatch(anime.title);
-            return {
-                updateOne: {
-                    filter: { $or: [{ normalizedTitle: normTitle }, { 'sources.nimegami.url': anime.url }] },
-                    update: {
-                        $set: {
-                            status: anime.status,
-                            'sources.nimegami.url': anime.url,
-                            lastUpdated: new Date(now - index * 1000)
-                        }
-                    }
-                }
-            };
-        });
-
-        const result = await Anime.bulkWrite(bulkOps);
-        log(`[Latest Sync] ✅ Nimegami: Berhasil mengupdate status ${result.modifiedCount} anime.`);
+        const count = await processLatestUpdatesWithGuard(updates, 'nimegami');
+        log(`[Latest Sync] ✅ Nimegami: Berhasil mengupdate status ${count} anime.`);
     } else {
         log(`[Latest Sync] Tidak ada elemen update yang terdeteksi di Nimegami.`);
     }
+}
+
+function extractEpisodeNumFromText(text) {
+    if (!text || typeof text !== 'string') return 0;
+    const match = text.match(/(?:eps?|episode|ep)\s*(\d+(?:\.\d+)?)/i) || text.match(/(\d+(?:\.\d+)?)/);
+    if (match && !isNaN(parseFloat(match[1]))) return parseFloat(match[1]);
+    return 0;
+}
+
+async function processLatestUpdatesWithGuard(updates, providerName) {
+    if (!updates || updates.length === 0) return 0;
+    const { normalizeTitleForMatch } = await import('../utils/stringUtils.js');
+    const now = Date.now();
+
+    const normTitles = updates.map(u => normalizeTitleForMatch(u.judul || u.title)).filter(Boolean);
+    const urls = updates.map(u => u.url).filter(Boolean);
+    const filterOr = [{ normalizedTitle: { $in: normTitles } }];
+    if (urls.length > 0 && providerName === 'nimegami') {
+        filterOr.push({ 'sources.nimegami.url': { $in: urls } });
+    }
+
+    const existingDocs = await Anime.find({ $or: filterOr });
+    const docByTitle = new Map();
+    const docByUrl = new Map();
+    existingDocs.forEach(d => {
+        if (d.normalizedTitle) docByTitle.set(d.normalizedTitle, d);
+        if (d.sources?.nimegami?.url) docByUrl.set(d.sources.nimegami.url, d);
+    });
+
+    const bulkOps = [];
+    let updatedCount = 0;
+
+    for (let index = 0; index < updates.length; index++) {
+        const item = updates[index];
+        const title = item.judul || item.title;
+        if (!title) continue;
+        const normTitle = normalizeTitleForMatch(title);
+        const doc = docByUrl.get(item.url) || docByTitle.get(normTitle);
+        if (!doc) continue;
+
+        const newStatus = item.status || '';
+        const newEpNum = extractEpisodeNumFromText(newStatus);
+        const oldEpNum = Math.max(doc.episodesCount || 0, extractEpisodeNumFromText(doc.status));
+
+        let shouldUpdateStatus = false;
+        let shouldUpdateTimestamp = false;
+
+        if (providerName === 'samehadaku') {
+            if (newEpNum > oldEpNum || (newEpNum === oldEpNum && newEpNum > 0 && doc.status !== newStatus) || !doc.lastUpdated) {
+                shouldUpdateStatus = true;
+                shouldUpdateTimestamp = true;
+            } else if (newEpNum >= oldEpNum) {
+                shouldUpdateStatus = true;
+            }
+        } else {
+            // Web lain (Otakudesu, Kuronime, Nanime, Nimegami) TIDAK BOLEH downgrade status maupun menimpa timestamp jika episodenya <= yang ada di DB
+            if (newEpNum > oldEpNum && newEpNum > 0) {
+                shouldUpdateStatus = true;
+                shouldUpdateTimestamp = true;
+            }
+        }
+
+        const setFields = {};
+        if (shouldUpdateStatus && newStatus) {
+            setFields.status = newStatus;
+            if (newEpNum > (doc.episodesCount || 0)) {
+                setFields.episodesCount = newEpNum;
+            }
+        }
+        if (shouldUpdateTimestamp) {
+            setFields.lastUpdated = new Date(now - index * 1000);
+        }
+        if (providerName === 'nimegami' && item.url) {
+            setFields['sources.nimegami.url'] = item.url;
+        }
+
+        if (Object.keys(setFields).length > 0) {
+            bulkOps.push({
+                updateOne: {
+                    filter: { _id: doc._id },
+                    update: { $set: setFields }
+                }
+            });
+            updatedCount++;
+        }
+    }
+
+    if (bulkOps.length > 0) {
+        await Anime.bulkWrite(bulkOps);
+    }
+    return updatedCount;
 }
 
 

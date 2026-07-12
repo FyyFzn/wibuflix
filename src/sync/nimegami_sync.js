@@ -134,15 +134,14 @@ export async function syncNimegami() {
             }
 
             if (bestScore > 0.85 && matchedId) {
-                // Gabungkan ke entri yang sudah ada
+                // Gabungkan ke entri yang sudah ada (tanpa menimpa lastUpdated!)
                 bulkOps.push({
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
                             $set: {
                                 'sources.nimegami.url': anime.url,
-                                'sources.nimegami.id': anime.id,
-                                lastUpdated: new Date(now - i * 1000)
+                                'sources.nimegami.id': anime.id
                             }
                         }
                     }
@@ -156,15 +155,15 @@ export async function syncNimegami() {
                             $set: {
                                 'sources.nimegami.url': anime.url,
                                 'sources.nimegami.id': anime.id,
-                                normalizedTitle: normTitle,
-                                lastUpdated: new Date(now - i * 1000)
+                                normalizedTitle: normTitle
                             },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: 'TV',
                                 status: 'Completed',
                                 image: '',
-                                tmdbEnriched: false
+                                tmdbEnriched: false,
+                                lastUpdated: new Date(now - i * 1000)
                             }
                         },
                         upsert: true

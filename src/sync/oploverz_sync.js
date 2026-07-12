@@ -152,15 +152,14 @@ export async function syncOploverz() {
             if (bestScore === 999) continue; // Sudah ada, skip
 
             if (bestScore > 0.85 && matchedId) {
-                // Merge ke entri yang sudah ada
+                // Merge ke entri yang sudah ada (tanpa menimpa lastUpdated!)
                 bulkOps.push({
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
                             $set: {
                                 'sources.oploverz.url': anime.url,
-                                'sources.oploverz.id': anime.id,
-                                lastUpdated: new Date(now - i * 1000)
+                                'sources.oploverz.id': anime.id
                             }
                         }
                     }
@@ -174,15 +173,15 @@ export async function syncOploverz() {
                             $set: {
                                 'sources.oploverz.url': anime.url,
                                 'sources.oploverz.id': anime.id,
-                                normalizedTitle: normTitle,
-                                lastUpdated: new Date(now - i * 1000)
+                                normalizedTitle: normTitle
                             },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: 'TV',
                                 status: 'Completed',
                                 image: '',
-                                tmdbEnriched: false
+                                tmdbEnriched: false,
+                                lastUpdated: new Date(now - i * 1000)
                             }
                         },
                         upsert: true

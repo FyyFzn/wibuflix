@@ -131,15 +131,14 @@ export async function syncNanimeCatalog() {
             }
 
             if (bestScore > 0.85 && matchedId) {
-                // Gabungkan ke dokumen existing
+                // Gabungkan ke dokumen existing (tanpa menimpa lastUpdated!)
                 bulkOps.push({
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
                             $set: {
                                 'sources.nanime.url': anime.url,
-                                'sources.nanime.id': anime.id,
-                                lastUpdated: new Date(now - i * 1000)
+                                'sources.nanime.id': anime.id
                             }
                         }
                     }
@@ -157,15 +156,15 @@ export async function syncNanimeCatalog() {
                                 image: anime.poster || '',
                                 score: anime.score || '-',
                                 year: anime.year || null,
-                                genres: anime.genres || [],
-                                lastUpdated: new Date(now - i * 1000)
+                                genres: anime.genres || []
                             },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: anime.type || 'TV',
                                 isToku: false,
                                 status: anime.status || 'Completed',
-                                tmdbEnriched: false
+                                tmdbEnriched: false,
+                                lastUpdated: new Date(now - i * 1000)
                             }
                         },
                         upsert: true
