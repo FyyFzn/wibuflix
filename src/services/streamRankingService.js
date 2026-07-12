@@ -130,10 +130,12 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
         const getSourceLabel = (url) => {
             if (!url) return 'Web';
+            if (url.includes('___neosatsu_ep___') || url.includes('neosatsu.com')) return 'Neosatsu';
             if (url.includes('otakudesu') || url.includes('/api/otakudesu/servers')) return 'Otakudesu';
             if (url.includes('kuronime.sbs') || url.includes('/api/kuronime/servers')) return 'Kuronime';
             if (url.includes('nanimeid.net') || url.includes('/api/nanime/servers')) return 'Nanime';
             if (url.includes('nimegami.id') || url.includes('/api/nimegami/servers')) return 'Nimegami';
+            if (url.includes('oploverz.ltd') || url.includes('/api/oploverz/servers')) return 'Oploverz';
             return 'Samehadaku';
         };
 

@@ -128,6 +128,9 @@ export function calculateOffsets(sameRes, otakuRes, kuroRes, nanimeRes, nimegami
  * Cari anime di database lokal
  */
 export async function findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz }) {
+    if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
+        targetUrl = targetUrl.split('___neosatsu_ep___')[0];
+    }
     let dbAnime = null;
     const orQuery = [];
     
@@ -168,7 +171,7 @@ export async function findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakude
             const otakuId = extractOtakuSlug(targetUrl);
             if (otakuId) dbAnime = await Anime.findOne({ $or: [{ "sources.otakudesu.id": otakuId }, { "episodesList.urls.otakudesu": { $regex: otakuId, $options: 'i' } }] });
         } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
-            dbAnime = await Anime.findOne({ "sources.neosatsu.url": targetUrl });
+            dbAnime = await Anime.findOne({ $or: [{ "sources.neosatsu.url": targetUrl }, { "episodesList.urls.neosatsu": targetUrl }, { "url": targetUrl }] });
         } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
             dbAnime = await Anime.findOne({ $or: [{ "sources.kuronime.url": targetUrl }, { "episodesList.urls.kuronime": targetUrl }] });
         } else if (targetUrl.includes('nanimeid.net') || targetUrl.startsWith('/api/nanime/')) {
@@ -189,6 +192,9 @@ export async function findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakude
  * dan menerapkan standarisasi judul & format episode secara terpadu.
  */
 async function executeScraperStrategy(targetUrl) {
+    if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
+        targetUrl = targetUrl.split('___neosatsu_ep___')[0];
+    }
     let data = null;
     let providerName = 'samehadaku';
 
@@ -254,6 +260,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
     let cleanNanime = urlNanime || dbAnime?.sources?.nanime?.url || (dbAnime?.sources?.nanime?.id ? `https://nanimeid.net/anime/${dbAnime.sources.nanime.id}` : null);
     let cleanNimegami = urlNimegami || dbAnime?.sources?.nimegami?.url || (dbAnime?.sources?.nimegami?.id ? `https://nimegami.id/${dbAnime.sources.nimegami.id.replace(/^nimegami:/, '')}/` : null);
     let cleanOploverz = urlOploverz || dbAnime?.sources?.oploverz?.url || (dbAnime?.sources?.oploverz?.id ? `https://plus.oploverz.ltd/series/${dbAnime.sources.oploverz.id}` : null);
+    let cleanNeosatsu = dbAnime?.sources?.neosatsu?.url || (typeof targetUrl === 'string' && targetUrl.includes('neosatsu') ? (targetUrl.includes('___neosatsu_ep___') ? targetUrl.split('___neosatsu_ep___')[0] : targetUrl) : null);
 
     if (targetUrl) {
         if ((targetUrl.includes('samehadaku') || targetUrl.includes('v2.samehadaku')) && !cleanSamehadaku) cleanSamehadaku = targetUrl;
@@ -262,25 +269,23 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
         else if (targetUrl.includes('nanime') && !cleanNanime) cleanNanime = targetUrl;
         else if (targetUrl.includes('nimegami') && !cleanNimegami) cleanNimegami = targetUrl;
         else if (targetUrl.includes('oploverz') && !cleanOploverz) cleanOploverz = targetUrl;
-        else if (targetUrl.includes('neosatsu') && !cleanSamehadaku && !cleanOtakudesu && !cleanKuronime && !cleanNanime && !cleanNimegami && !cleanOploverz) {
-            const neosatsuRes = await executeScraperStrategy(targetUrl).catch(() => null);
-            if (neosatsuRes && neosatsuRes.daftar_episode?.length > 0) {
-                return finalizeScrapedData(neosatsuRes, dbAnime);
-            }
+        else if (targetUrl.includes('neosatsu') && !cleanSamehadaku && !cleanOtakudesu && !cleanKuronime && !cleanNanime && !cleanNimegami && !cleanOploverz && !cleanNeosatsu) {
+            cleanNeosatsu = targetUrl.includes('___neosatsu_ep___') ? targetUrl.split('___neosatsu_ep___')[0] : targetUrl;
         }
     }
 
     // TAHAP 2: Independent Scraping secara Paralel menggunakan executeScraperStrategy
-    const [sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes] = await Promise.all([
+    const [sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes, neosatsuRes] = await Promise.all([
         cleanSamehadaku ? executeScraperStrategy(cleanSamehadaku).catch(() => null) : Promise.resolve(null),
         cleanOtakudesu ? executeScraperStrategy(cleanOtakudesu).catch(() => null) : Promise.resolve(null),
         cleanKuronime ? executeScraperStrategy(cleanKuronime).catch(() => null) : Promise.resolve(null),
         cleanNanime ? executeScraperStrategy(cleanNanime).catch(() => null) : Promise.resolve(null),
         cleanNimegami ? executeScraperStrategy(cleanNimegami).catch(() => null) : Promise.resolve(null),
         cleanOploverz ? executeScraperStrategy(cleanOploverz).catch(() => null) : Promise.resolve(null),
+        cleanNeosatsu ? executeScraperStrategy(cleanNeosatsu).catch(() => null) : Promise.resolve(null),
     ]);
 
-    const allResults = [sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes].filter(r => r && r.daftar_episode && r.daftar_episode.length > 0);
+    const allResults = [sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes, neosatsuRes].filter(r => r && r.daftar_episode && r.daftar_episode.length > 0);
 
     // ZERO DATA LOSS FALLBACK: Jika hasil gabungan kosong tapi targetUrl ada, ambil langsung
     if (allResults.length === 0 && targetUrl) {

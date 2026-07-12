@@ -9,6 +9,9 @@ import { cache, IGNORED_CATS, cleanTitle } from './neosatsuShared.js';
  */
 export async function getNeosatsuEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
+    if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
+        targetUrl = targetUrl.split('___neosatsu_ep___')[0];
+    }
     console.info(`\n[Neosatsu Scraper] Mengambil post/label dari: ${targetUrl}`);
 
     try {

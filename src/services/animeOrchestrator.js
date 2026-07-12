@@ -63,6 +63,9 @@ export const orchestratorCache = new LRUMemoryCache(1500, 3600000);
  */
 export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefresh = false }) {
     let queryUrl = targetUrl;
+    if (typeof queryUrl === 'string' && queryUrl.includes('___neosatsu_ep___')) {
+        queryUrl = queryUrl.split('___neosatsu_ep___')[0];
+    }
 
     // 1. Jika diberikan slug atau id, cari dokumen di MongoDB untuk mendapatkan URL utama
     if (!queryUrl && (slug || id)) {
@@ -79,6 +82,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
                 { "sources.otakudesu.id": slug },
                 { "sources.kuronime.url": { $regex: slug, $options: 'i' } },
                 { "sources.nanime.url": { $regex: slug, $options: 'i' } },
+                { "sources.neosatsu.url": { $regex: slug, $options: 'i' } },
                 { "sources.nimegami.url": { $regex: slug, $options: 'i' } },
                 { "sources.oploverz.url": { $regex: slug, $options: 'i' } }
             ];
@@ -93,6 +97,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
                        dbAnime.sources?.samehadaku?.url || 
                        dbAnime.sources?.kuronime?.url || 
                        dbAnime.sources?.nanime?.url || 
+                       dbAnime.sources?.neosatsu?.url || 
                        dbAnime.sources?.nimegami?.url || 
                        dbAnime.sources?.oploverz?.url || 
                        (dbAnime.sources?.otakudesu?.id ? `/anime/${dbAnime.sources.otakudesu.id}` : null);
