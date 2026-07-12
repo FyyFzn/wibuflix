@@ -6,6 +6,7 @@ import { getUploadProgress, invalidateAndDeleteBlob } from '../services/stream/u
 import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
 import { globalBlacklistCache } from '../services/stream/streamStateStore.js';
+import { isEpisodeProviderBlacklisted } from '../services/streamRankingService.js';
 
 /**
  * Controller V2 Stream:
@@ -74,9 +75,8 @@ export async function getV2Stream(req, res) {
             try { urlsObj = typeof urls === 'string' ? JSON.parse(urls) : urls; } catch (e) {}
         }
 
-        // BLACKLIST CHECK: Jika URL utama sudah dilaporkan rusak, cari alternatif SEBELUM mulai ekstraksi
+        // BLACKLIST CHECK: Jika URL utama atau provider sudah dilaporkan rusak untuk episode ini, cari alternatif SEBELUM mulai ekstraksi
         let extractionUrl = targetUrl;
-        const isUrlBlacklisted = globalBlacklistCache.get(`broken_url_${targetUrl}`);
         const getProvKey = (u) => {
             if (!u) return '';
             for (const p of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
@@ -84,10 +84,25 @@ export async function getV2Stream(req, res) {
             }
             return '';
         };
-        const isProvBlacklisted = getProvKey(targetUrl) && globalBlacklistCache.get(`broken_provider_${getProvKey(targetUrl)}`);
+        const currentProv = getProvKey(targetUrl);
+        const checkUrlOrEpBroken = (url, prov) => {
+            if (!url) return false;
+            if (globalBlacklistCache.get(`broken_url_${url}`)) return true;
+            if (url.includes('?url=')) {
+                try {
+                    const dec = decodeURIComponent(url.split('?url=')[1]);
+                    if (dec && globalBlacklistCache.get(`broken_url_${dec}`)) return true;
+                } catch(e) {}
+            }
+            if (prov && globalBlacklistCache.get(`broken_provider_${prov}`)) return true;
+            if (prov && isEpisodeProviderBlacklisted(prov, { seriesSlug, episodeSlug, oldSeriesSlug })) return true;
+            return false;
+        };
 
-        if (isUrlBlacklisted || isProvBlacklisted) {
-            console.info(`[API v2 Stream] URL ${targetUrl} terdeteksi blacklisted. Mencari provider alternatif...`);
+        const isMainUrlOrProvBroken = checkUrlOrEpBroken(targetUrl, currentProv);
+
+        if (isMainUrlOrProvBroken) {
+            console.info(`[API v2 Stream] URL/Provider ${currentProv || targetUrl} terdeteksi blacklisted/rusak untuk episode ini. Mencari provider alternatif...`);
             try {
                 const epNum = extractEpNum(episodeTitle || targetUrl);
                 if (epNum != null) {
@@ -102,9 +117,8 @@ export async function getV2Stream(req, res) {
                     const ep = animeData?.episodes?.find(e => e.num === epNum);
                     if (ep?.urls) {
                         urlsObj = { ...(urlsObj || {}), ...ep.urls };
-                        const brokenProv = getProvKey(targetUrl);
                         for (const [prov, pUrl] of Object.entries(ep.urls)) {
-                            if (pUrl && pUrl !== targetUrl && prov !== brokenProv && !globalBlacklistCache.get(`broken_url_${pUrl}`)) {
+                            if (pUrl && pUrl !== targetUrl && prov !== currentProv && !checkUrlOrEpBroken(pUrl, prov)) {
                                 extractionUrl = pUrl;
                                 console.info(`[API v2 Stream] ✓ Mengalihkan ekstraksi ke provider alternatif: [${prov.toUpperCase()}] ${extractionUrl}`);
                                 break;
@@ -183,10 +197,28 @@ export async function reportBrokenV2(req, res) {
             return '';
         };
         const brokenProv = getProviderKey(targetUrl);
-        if (targetUrl) globalBlacklistCache.set(`broken_url_${targetUrl}`, true);
+        if (targetUrl) {
+            globalBlacklistCache.set(`broken_url_${targetUrl}`, true);
+            if (targetUrl.includes('?url=')) {
+                try {
+                    const dec = decodeURIComponent(targetUrl.split('?url=')[1]);
+                    if (dec) globalBlacklistCache.set(`broken_url_${dec}`, true);
+                } catch(e) {}
+            }
+        }
         if (brokenProv) {
             if (seriesSlug && episodeSlug) {
-                globalBlacklistCache.set(`broken_ep_prov_${seriesSlug}_${episodeSlug}_${brokenProv}`, true);
+                const sList = [seriesSlug];
+                const cleanSeries = seriesSlug.replace(/^(mal-|db-)\d+_/, '');
+                if (cleanSeries && !sList.includes(cleanSeries)) sList.push(cleanSeries);
+                if (oldSeriesSlug && !sList.includes(oldSeriesSlug)) {
+                    sList.push(oldSeriesSlug);
+                    const cleanOld = oldSeriesSlug.replace(/^(mal-|db-)\d+_/, '');
+                    if (cleanOld && !sList.includes(cleanOld)) sList.push(cleanOld);
+                }
+                for (const s of sList) {
+                    globalBlacklistCache.set(`broken_ep_prov_${s}_${episodeSlug}_${brokenProv}`, true);
+                }
                 console.info(`[API v2 Failover] Deprioritizing provider [${brokenProv.toUpperCase()}] untuk episode ini (${seriesSlug}/${episodeSlug}) agar failover mencoba web lain lebih dulu.`);
             }
             const failCount = (globalBlacklistCache.get(`fail_count_${brokenProv}`) || 0) + 1;
@@ -228,9 +260,17 @@ export async function reportBrokenV2(req, res) {
                         ].filter(Boolean);
 
                         for (const cand of candidates) {
-                            if (cand && cand !== targetUrl && !globalBlacklistCache.get(`broken_url_${cand}`)) {
+                            if (cand && cand !== targetUrl) {
                                 const candProv = getProviderKey(cand);
                                 if (candProv && candProv === brokenProv) continue; // Jangan pakai provider yang sama jika rusak total
+                                if (globalBlacklistCache.get(`broken_url_${cand}`)) continue;
+                                if (cand.includes('?url=')) {
+                                    try {
+                                        const dec = decodeURIComponent(cand.split('?url=')[1]);
+                                        if (dec && globalBlacklistCache.get(`broken_url_${dec}`)) continue;
+                                    } catch(e) {}
+                                }
+                                if (candProv && isEpisodeProviderBlacklisted(candProv, { seriesSlug, episodeSlug, oldSeriesSlug })) continue;
                                 fallbackUrl = cand;
                                 break;
                             }

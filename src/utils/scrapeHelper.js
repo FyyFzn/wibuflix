@@ -105,10 +105,13 @@ export async function fetchWithCF(url, options = {}) {
     }
 
     let slot = null;
+    let hostname = 'v2.samehadaku.how';
+    try { hostname = new URL(url).hostname; } catch (e) {}
+
     try {
         if (!html || html.trim() === '') {
             console.log(`[scrapeHelper] Fallback ke Puppeteer page.goto: ${url}`);
-            slot = await acquireFromPool();
+            slot = await acquireFromPool(hostname);
             const page = slot.page;
 
             // ⚠️ FIX 1: Inject cookie CF yang ada sebelum navigasi
@@ -140,13 +143,13 @@ export async function fetchWithCF(url, options = {}) {
 
             // ⚠️ FIX 4: Jika CF masih lolos, coba refresh cookie & retry SEKALI
             if (isCloudflareHtml(html)) {
-                console.warn(`[scrapeHelper] CF challenge masih aktif setelah Puppeteer. Mencoba refresh cookie & retry...`);
+                console.warn(`[scrapeHelper] CF challenge masih aktif setelah Puppeteer. Mencoba refresh cookie & retry untuk ${hostname}...`);
                 releaseToPool(slot);
                 slot = null;
                 await refreshCfCookie(url);
 
                 // Retry dengan cookie baru
-                slot = await acquireFromPool();
+                slot = await acquireFromPool(hostname);
                 const retryPage = slot.page;
                 await injectCFCookies(retryPage, url);
                 await retryPage.goto(url, { waitUntil: 'networkidle2', timeout }).catch(() =>

@@ -24,13 +24,23 @@ const cfCookieStore = new Map(); // domain -> { cookieString, cookiesArray, time
 const activeRefreshLocks = new Map(); // domain -> Promise
 
 export function getCfCookie(domain = 'v2.samehadaku.how') {
-    const entry = cfCookieStore.get(domain) || cfCookieStore.get('v2.samehadaku.how');
-    return entry ? entry.cookieString : globalCfCookie;
+    const entry = cfCookieStore.get(domain);
+    if (entry && entry.cookieString) return entry.cookieString;
+    if (domain.includes('samehadaku')) {
+        const fallbackEntry = cfCookieStore.get('v2.samehadaku.how');
+        return fallbackEntry ? fallbackEntry.cookieString : globalCfCookie;
+    }
+    return '';
 }
 
 export function getCfCookiesArray(domain = 'v2.samehadaku.how') {
-    const entry = cfCookieStore.get(domain) || cfCookieStore.get('v2.samehadaku.how');
-    return entry ? entry.cookiesArray : [];
+    const entry = cfCookieStore.get(domain);
+    if (entry && entry.cookiesArray) return entry.cookiesArray;
+    if (domain.includes('samehadaku')) {
+        const fallbackEntry = cfCookieStore.get('v2.samehadaku.how');
+        return fallbackEntry ? fallbackEntry.cookiesArray : [];
+    }
+    return [];
 }
 
 export function setCfCookie(domain, cookieString, cookiesArray) {
@@ -251,14 +261,16 @@ export async function initPagePool() {
     if (poolReady) return;
     poolReady = true;
     
-    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie...');
+    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie untuk Samehadaku & Kuronime...');
     await getBrowser().catch(e => console.error('[PagePool] Gagal membuka browser awal:', e.message));
-    await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up awal gagal:', e.message));
+    await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up Samehadaku gagal:', e.message));
+    await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Warm-up Kuronime gagal:', e.message));
 
-    // Auto-refresh cookie setiap 30 menit
+    // Auto-refresh cookie setiap 30 menit untuk kedua domain
     setInterval(async () => {
         console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
-        await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh gagal:', e.message));
+        await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh Samehadaku gagal:', e.message));
+        await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Auto-refresh Kuronime gagal:', e.message));
     }, 30 * 60 * 1000);
 }
 

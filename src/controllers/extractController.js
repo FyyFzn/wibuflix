@@ -310,10 +310,42 @@ export async function reportBrokenHandler(req, res) {
         }
 
         uniqueId = await resolveCanonicalUniqueId(seriesUrl, url, seriesTitle, uniqueId);
-        const { seriesSlug, episodeSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId, episodeTitle);
+        const { seriesSlug, episodeSlug, oldSeriesSlug, slugsToCheck, episodeSlugsToCheck } = extractSlugs(url, seriesUrl, seriesTitle, uniqueId, episodeTitle);
         
         console.warn(`[Report Broken] ⚠️ Laporan dari pengguna untuk video: "${episodeTitle || url}" (Server: ${currentServer || 'Unknown'})`);
         
+        const getProviderKey = (u) => {
+            if (!u) return '';
+            for (const p of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
+                if (u.includes(p)) return p;
+            }
+            return '';
+        };
+        const brokenProv = getProviderKey(url);
+        if (url) {
+            globalBlacklistCache.set(`broken_url_${url}`, true);
+            if (url.includes('?url=')) {
+                try {
+                    const dec = decodeURIComponent(url.split('?url=')[1]);
+                    if (dec) globalBlacklistCache.set(`broken_url_${dec}`, true);
+                } catch(e) {}
+            }
+        }
+        if (brokenProv && seriesSlug && episodeSlug) {
+            const sList = [seriesSlug];
+            const cleanSeries = seriesSlug.replace(/^(mal-|db-)\d+_/, '');
+            if (cleanSeries && !sList.includes(cleanSeries)) sList.push(cleanSeries);
+            if (oldSeriesSlug && !sList.includes(oldSeriesSlug)) {
+                sList.push(oldSeriesSlug);
+                const cleanOld = oldSeriesSlug.replace(/^(mal-|db-)\d+_/, '');
+                if (cleanOld && !sList.includes(cleanOld)) sList.push(cleanOld);
+            }
+            for (const s of sList) {
+                globalBlacklistCache.set(`broken_ep_prov_${s}_${episodeSlug}_${brokenProv}`, true);
+            }
+            console.info(`[Report Broken] Deprioritizing/Blacklisting provider [${brokenProv.toUpperCase()}] untuk episode (${seriesSlug}/${episodeSlug}).`);
+        }
+
         // Hapus blob dari Azure dan bersihkan cache agar upload baru dari server lain bisa berjalan
         await invalidateAndDeleteBlob(slugsToCheck, episodeSlugsToCheck);
         removeActiveExtractions(slugsToCheck, episodeSlugsToCheck);

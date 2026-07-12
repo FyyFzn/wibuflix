@@ -80,10 +80,41 @@ export function getResolutionGroup(serverName) {
     return null;
 }
 
+export function isEpisodeProviderBlacklisted(provider, slugs) {
+    if (!provider || !slugs) return false;
+    const prov = provider.toString().toLowerCase().trim();
+    if (!prov) return false;
+
+    const sList = [];
+    if (slugs.seriesSlug) {
+        sList.push(slugs.seriesSlug);
+        const clean = slugs.seriesSlug.replace(/^(mal-|db-)\d+_/, '');
+        if (clean && !sList.includes(clean)) sList.push(clean);
+    }
+    if (slugs.oldSeriesSlug && slugs.oldSeriesSlug !== slugs.seriesSlug) {
+        sList.push(slugs.oldSeriesSlug);
+        const cleanOld = slugs.oldSeriesSlug.replace(/^(mal-|db-)\d+_/, '');
+        if (cleanOld && !sList.includes(cleanOld)) sList.push(cleanOld);
+    }
+    const eList = [];
+    if (slugs.episodeSlug) {
+        eList.push(slugs.episodeSlug);
+    }
+
+    for (const s of sList) {
+        for (const e of eList) {
+            if (globalBlacklistCache.get(`broken_ep_prov_${s}_${e}_${prov}`)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set(), slugs = null) {
     let matchedSource = null;
     try {
-        const isServerExcluded = (nameOrHost) => {
+        const isServerExcluded = (nameOrHost, currentSlugs = slugs) => {
             if (!nameOrHost) return false;
             const clean = nameOrHost.toString().toLowerCase().trim();
             if (excludedServers && (excludedServers.has(clean) || Array.from(excludedServers).some(ex => ex && clean.includes(ex.toString().toLowerCase())))) {
@@ -92,19 +123,38 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             if (globalBlacklistCache.get(`broken_srv_${clean}`) || globalBlacklistCache.get(`broken_host_${clean}`)) {
                 return true;
             }
-            return false;
-        };
-
-        const checkUrlBlacklisted = (url) => {
-            if (!url) return false;
-            if (globalBlacklistCache.get(`broken_url_${url}`)) return true;
-            for (const prov of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
-                if (url.includes(prov) && globalBlacklistCache.get(`broken_provider_${prov}`)) return true;
+            if (currentSlugs) {
+                for (const prov of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
+                    if (clean.includes(prov) && isEpisodeProviderBlacklisted(prov, currentSlugs)) return true;
+                }
             }
             return false;
         };
 
-        let targetUrlPromise = checkUrlBlacklisted(episodeUrl)
+        const checkUrlBlacklisted = (url, currentSlugs = slugs) => {
+            if (!url) return false;
+            const checkUrls = [url];
+            if (url.includes('?url=')) {
+                try {
+                    const dec = decodeURIComponent(url.split('?url=')[1]);
+                    if (dec && !checkUrls.includes(dec)) checkUrls.push(dec);
+                } catch(e) {}
+            }
+            for (const u of checkUrls) {
+                if (globalBlacklistCache.get(`broken_url_${u}`)) return true;
+                const stripped = u.replace(/\/+$/, '');
+                if (stripped !== u && globalBlacklistCache.get(`broken_url_${stripped}`)) return true;
+            }
+            for (const prov of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
+                if (url.toLowerCase().includes(prov)) {
+                    if (globalBlacklistCache.get(`broken_provider_${prov}`)) return true;
+                    if (currentSlugs && isEpisodeProviderBlacklisted(prov, currentSlugs)) return true;
+                }
+            }
+            return false;
+        };
+
+        let targetUrlPromise = checkUrlBlacklisted(episodeUrl, slugs)
             ? Promise.resolve({ servers: [] })
             : getServersBasedOnUrl(episodeUrl);
 
@@ -156,8 +206,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             console.info(`${logPrefix} Mengambil URL alternatif dari metadata urls:`, JSON.stringify(urlsObj));
             for (const [provider, provUrl] of Object.entries(urlsObj)) {
                 if (!provUrl || typeof provUrl !== 'string') continue;
-                if (checkUrlBlacklisted(provUrl) || globalBlacklistCache.get(`broken_provider_${provider}`)) {
-                    console.info(`${logPrefix} Melewati provider [${provider.toUpperCase()}] karena dilaporkan rusak/blacklisted.`);
+                if (checkUrlBlacklisted(provUrl, slugs) || globalBlacklistCache.get(`broken_provider_${provider}`) || isEpisodeProviderBlacklisted(provider, slugs)) {
+                    console.info(`${logPrefix} Melewati provider [${provider.toUpperCase()}] karena dilaporkan rusak/blacklisted untuk episode ini.`);
                     continue;
                 }
                 if (episodeUrl.includes(provUrl) || (provider === 'otakudesu' && episodeUrl.includes('otakudesu')) || (provider === 'kuronime' && episodeUrl.includes('kuronime')) || (provider === 'samehadaku' && episodeUrl.includes('samehadaku')) || (provider === 'nanime' && episodeUrl.includes('nanime')) || (provider === 'neosatsu' && episodeUrl.includes('neosatsu')) || (provider === 'nimegami' && episodeUrl.includes('nimegami'))) {
@@ -195,8 +245,10 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
         }
 
         if (slowFetchTasks.length > 0) {
-            const gracePeriod = servers.length > 0 ? 5000 : 45000; // 5 detik jika sudah ada, 45 detik jika belum
-            const phaseLabel = servers.length > 0 ? 'grace period 5s' : 'full wait 45s';
+            const has1080 = servers.some(s => (s.kualitas && s.kualitas.includes('1080')) || (s.nama && s.nama.includes('1080')));
+            const hasBlacklistedProv = slugs && ['otakudesu', 'nanime', 'samehadaku'].some(p => isEpisodeProviderBlacklisted(p, slugs));
+            const gracePeriod = servers.length === 0 ? 45000 : (!has1080 || hasBlacklistedProv ? 15000 : 5000);
+            const phaseLabel = servers.length === 0 ? 'full wait 45s' : (!has1080 || hasBlacklistedProv ? 'grace period 15s' : 'grace period 5s');
             console.info(`${logPrefix} Provider cepat menghasilkan ${servers.length} server. Menunggu Kuronime (${phaseLabel})...`);
 
             const slowWithTimeout = slowFetchTasks.map(task =>
@@ -266,8 +318,12 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                         console.warn(`${logPrefix} Melewati ${srv.namaHost} karena sedang di-blacklist.`);
                         continue;
                     }
-                    if (isServerExcluded(srv.namaHost) || isServerExcluded(srv.nama)) {
-                        console.warn(`${logPrefix} Melewati server ${srv.namaHost || srv.nama} karena sebelumnya gagal/putus koneksi.`);
+                    if (isServerExcluded(srv.namaHost, slugs) || isServerExcluded(srv.nama, slugs)) {
+                        console.warn(`${logPrefix} Melewati server ${srv.namaHost || srv.nama} karena sebelumnya gagal/putus koneksi atau provider blacklisted.`);
+                        continue;
+                    }
+                    if (srv.source && isEpisodeProviderBlacklisted(srv.source, slugs)) {
+                        console.warn(`${logPrefix} Melewati server [${srv.source}] (${srv.namaHost || srv.nama}) karena provider telah dilaporkan rusak untuk episode ini.`);
                         continue;
                     }
                     
@@ -283,8 +339,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                                 console.warn(`${logPrefix} Melewati ${srv.namaHost} (setelah resolve) karena sedang di-blacklist.`);
                                 continue;
                             }
-                            if (isServerExcluded(srv.namaHost) || isServerExcluded(srv.nama)) {
-                                console.warn(`${logPrefix} Melewati ${srv.namaHost || srv.nama} (setelah resolve) karena sebelumnya gagal/putus koneksi.`);
+                            if (isServerExcluded(srv.namaHost, slugs) || isServerExcluded(srv.nama, slugs)) {
+                                console.warn(`${logPrefix} Melewati ${srv.namaHost || srv.nama} (setelah resolve) karena sebelumnya gagal/putus koneksi atau provider blacklisted.`);
                                 continue;
                             }
                         } catch (resolveErr) {

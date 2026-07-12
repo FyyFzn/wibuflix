@@ -76,16 +76,38 @@ export async function getKuronimeEpisodes(animeUrl) {
  * @returns {object} - { judul, servers, nav_prev, nav_next }
  */
 export async function getKuronimeServers(episodeUrl) {
+    const cacheKey = `kuro_srv_${episodeUrl}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData && cachedData.servers && cachedData.servers.length > 0) {
+        console.log(`[Kuronime Cache Hit] ${cacheKey} (${cachedData.servers.length} servers)`);
+        return cachedData;
+    }
+
     console.log(`[Kuronime] Fetching servers: ${episodeUrl}`);
 
-    // BUG FIX: Deklarasikan slot di luar try agar selalu bisa di-release di finally
     let $, html, slot;
     let debugInfo = "OK";
     try {
-        const fetchRes = await fetchWithCF(episodeUrl, { timeout: 60000, fetchTimeout: 8000, forcePuppeteer: true });
-        $ = fetchRes.$;
-        html = fetchRes.html;
-        slot = fetchRes.slot;
+        // FAST ATTEMPT: Coba HTTP GET cepat lebih dulu menggunakan CF cookie dari pool tanpa membuka browser baru
+        try {
+            const fastRes = await fetchWithCF(episodeUrl, { timeout: 15000, fetchTimeout: 6000, forcePuppeteer: false });
+            if (fastRes?.html && !fastRes.html.includes('Just a moment') && !fastRes.html.includes('cf-browser-verification') && fastRes.html.includes('_0xa100d42aa')) {
+                console.log(`[Kuronime] ✓ Fast HTTP berhasil mendapatkan token dekripsi tanpa Puppeteer.`);
+                $ = fastRes.$;
+                html = fastRes.html;
+                slot = fastRes.slot;
+            }
+        } catch (fastErr) {
+            console.log(`[Kuronime] Fast HTTP membutuhkan Puppeteer fallback: ${fastErr.message}`);
+        }
+
+        // FALLBACK: Jika Fast HTTP gagal/blocked/missing token, gunakan Puppeteer page penuh
+        if (!html) {
+            const fetchRes = await fetchWithCF(episodeUrl, { timeout: 60000, fetchTimeout: 8000, forcePuppeteer: true });
+            $ = fetchRes.$;
+            html = fetchRes.html;
+            slot = fetchRes.slot;
+        }
 
         if (!html) debugInfo = "HTML is entirely empty.";
         else if (html.includes('Just a moment') || html.includes('cf-browser-verification')) debugInfo = "Blocked by Cloudflare Captcha Page";
@@ -256,7 +278,11 @@ export async function getKuronimeServers(episodeUrl) {
             debugInfo = "Sources API returned null or empty. Possibly blocked by animeku.org.";
         }
 
-        return { judul, servers, nav_prev, nav_next, debug_info: debugInfo };
+        const result = { judul, servers, nav_prev, nav_next, debug_info: debugInfo };
+        if (servers.length > 0) {
+            cache.set(cacheKey, result);
+        }
+        return result;
     } catch (err) {
         return { judul: "Error", servers: [], debug_info: err.message };
     } finally {
