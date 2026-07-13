@@ -27,6 +27,9 @@ const originalConsole = {
     debug: console.debug
 };
 
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+const originalStderrWrite = process.stderr.write.bind(process.stderr);
+
 global.forceLog = originalConsole.log;
 if (!global.memLogs) global.memLogs = [];
 
@@ -69,24 +72,39 @@ function extractModuleAndCleanArgs(args) {
     return { moduleBadge: '', cleanModule: '', cleanArgs: args };
 }
 
-function pushToMemLogs(timeClean, levelClean, moduleClean, args) {
+function pushToMemLogs(timeClean, levelClean, moduleClean, argsOrText) {
     try {
-        const argsStr = args.map(a => {
-            if (typeof a === 'object' && a !== null) {
-                try { return JSON.stringify(a); } catch (e) { return '[Object]'; }
-            }
-            return stripAnsi(String(a));
-        }).join(' ');
+        let text = '';
+        if (Array.isArray(argsOrText)) {
+            text = argsOrText.map(a => {
+                if (typeof a === 'object' && a !== null) {
+                    try { return JSON.stringify(a); } catch (e) { return '[Object]'; }
+                }
+                return stripAnsi(String(a));
+            }).join(' ');
+        } else {
+            text = stripAnsi(String(argsOrText));
+        }
 
-        const msg = `${timeClean} [${levelClean}] ${moduleClean ? moduleClean + ' ' : ''}${argsStr}`.trim();
+        if (!text || text.trim() === '') return;
+
+        const msg = `${timeClean} [${levelClean}] ${moduleClean ? moduleClean + ' ' : ''}${text}`.trim();
         global.memLogs.push(msg);
-        if (global.memLogs.length > 500) global.memLogs.shift();
+        if (global.memLogs.length > 3000) global.memLogs.shift();
     } catch (e) {
         // Abaikan error format memLog agar tidak mengganggu sistem utama
     }
 }
 
+let isInitialized = false;
+
 export function initLogger(options = { productionSilent: false }) {
+    if (isInitialized && global._loggerOptions && global._loggerOptions.productionSilent === options.productionSilent) {
+        return;
+    }
+    isInitialized = true;
+    global._loggerOptions = options;
+
     console.log = (...args) => {
         const { moduleBadge, cleanModule, cleanArgs } = extractModuleAndCleanArgs(args);
         pushToMemLogs(getTimeStamp(true), 'LOG', cleanModule, cleanArgs);
@@ -132,6 +150,32 @@ export function initLogger(options = { productionSilent: false }) {
                 originalConsole.debug(`${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
             }
         }
+    };
+
+    // Intercept direct stdout/stderr writes dari library eksternal (Puppeteer, FFmpeg, Mongoose, dll)
+    process.stdout.write = function(chunk, encoding, callback) {
+        if (typeof chunk === 'string' || Buffer.isBuffer(chunk)) {
+            const str = chunk.toString();
+            // Jika str belum dicatat oleh console.log/info (bukan format jam kita)
+            if (str && !str.match(/^\d{2}:\d{2}:\d{2}\.\d{3}/)) {
+                str.split('\n').forEach(line => {
+                    if (line.trim()) pushToMemLogs(getTimeStamp(true), 'LOG', '', line.trim());
+                });
+            }
+        }
+        return originalStdoutWrite(chunk, encoding, callback);
+    };
+
+    process.stderr.write = function(chunk, encoding, callback) {
+        if (typeof chunk === 'string' || Buffer.isBuffer(chunk)) {
+            const str = chunk.toString();
+            if (str && !str.match(/^\d{2}:\d{2}:\d{2}\.\d{3}/)) {
+                str.split('\n').forEach(line => {
+                    if (line.trim()) pushToMemLogs(getTimeStamp(true), 'ERROR', '', line.trim());
+                });
+            }
+        }
+        return originalStderrWrite(chunk, encoding, callback);
     };
 }
 
