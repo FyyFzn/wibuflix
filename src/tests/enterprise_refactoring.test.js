@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+process.env.NODE_TEST_CONTEXT = 'true';
 import test from 'node:test';
 import assert from 'node:assert';
 
@@ -8,10 +10,10 @@ import { serverScore, getResolutionGroup } from '../services/streamRankingServic
 import { getUploadProgress, getActiveUploadCount } from '../services/stream/uploadProgressService.js';
 import { cleanTitle } from '../services/scrapers/neosatsu/neosatsuShared.js';
 
-// 2. Facade Compatibility Imports
-import * as extractRouteFacade from '../routes/extract.js';
-import * as azureUploaderFacade from '../utils/azureUploader.js';
-import * as neosatsuControllerFacade from '../controllers/neosatsuController.js';
+// 2. Layered Architecture Services Imports (1 file = 1 job)
+import * as blobStorageService from '../services/stream/blobStorageService.js';
+import * as uploadProgressService from '../services/stream/uploadProgressService.js';
+import * as neosatsuScraperService from '../services/scrapers/neosatsuScraperService.js';
 
 test('Tahap 1: Canonical Service - resolveCanonicalUniqueId deterministic identification', async () => {
     // Pre-seed map to avoid Mongoose timeout in unit tests without DB connection
@@ -71,21 +73,17 @@ test('Tahap 3: Neosatsu Scraper Shared - cleanTitle utility', () => {
     assert.ok(!cleaned.includes('Subtitle Indonesia'));
 });
 
-test('Tahap 1-3: Facade Backward Compatibility Verification', () => {
-    // 1. extract.js route facade should still export legacy functions
-    assert.strictEqual(typeof extractRouteFacade.extractSlugs, 'function');
-    assert.strictEqual(typeof extractRouteFacade.resolveCanonicalUniqueId, 'function');
-    assert.strictEqual(typeof extractRouteFacade.prefetchOneEpisode, 'function');
+test('Tahap 1-3: Clean Layered Architecture - Single Responsibility verification (1 file = 1 job)', () => {
+    // 1. Blob storage service handles only Azure storage operations
+    assert.strictEqual(typeof blobStorageService.getBlobPath, 'function');
+    assert.strictEqual(typeof blobStorageService.checkUploadStatusWithFallback, 'function');
 
-    // 2. azureUploader.js facade should still export legacy functions
-    assert.strictEqual(typeof azureUploaderFacade.getUploadProgress, 'function');
-    assert.strictEqual(typeof azureUploaderFacade.getBlobPath, 'function');
-    assert.strictEqual(typeof azureUploaderFacade.checkRangeSupport, 'function');
-    assert.strictEqual(typeof azureUploaderFacade.uploadStream, 'function');
+    // 2. Upload progress service handles only progress and state tracking
+    assert.strictEqual(typeof uploadProgressService.getUploadProgress, 'function');
+    assert.strictEqual(typeof uploadProgressService.cancelAllUploads, 'function');
 
-    // 3. neosatsuController.js facade should still export legacy functions
-    assert.strictEqual(typeof neosatsuControllerFacade.getNeosatsuCatalog, 'function');
-    assert.strictEqual(typeof neosatsuControllerFacade.getNeosatsuEpisodes, 'function');
-    assert.strictEqual(typeof neosatsuControllerFacade.getNeosatsuServers, 'function');
-    assert.ok(neosatsuControllerFacade.cache);
+    // 3. Neosatsu scraper service handles only web scraping for Neosatsu
+    assert.strictEqual(typeof neosatsuScraperService.getNeosatsuCatalog, 'function');
+    assert.strictEqual(typeof neosatsuScraperService.getNeosatsuEpisodes, 'function');
+    assert.strictEqual(typeof neosatsuScraperService.getNeosatsuServers, 'function');
 });

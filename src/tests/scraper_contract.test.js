@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+process.env.NODE_TEST_CONTEXT = 'true';
 import test from 'node:test';
 import assert from 'node:assert';
 import {

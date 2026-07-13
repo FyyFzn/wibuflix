@@ -80,6 +80,15 @@ export function getResolutionGroup(serverName) {
     return null;
 }
 
+export function getProviderKey(url) {
+    if (!url) return '';
+    const lower = url.toString().toLowerCase();
+    for (const p of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku', 'oploverz']) {
+        if (lower.includes(p)) return p;
+    }
+    return '';
+}
+
 export function isEpisodeProviderBlacklisted(provider, slugs) {
     if (!provider || !slugs) return false;
     const prov = provider.toString().toLowerCase().trim();
@@ -111,6 +120,53 @@ export function isEpisodeProviderBlacklisted(provider, slugs) {
     return false;
 }
 
+export function blacklistEpisodeProvider(provider, slugs) {
+    if (!provider || !slugs) return;
+    const prov = provider.toString().toLowerCase().trim();
+    if (!prov) return;
+
+    const sList = [];
+    if (slugs.seriesSlug) {
+        sList.push(slugs.seriesSlug);
+        const clean = slugs.seriesSlug.replace(/^(mal-|db-)\d+_/, '');
+        if (clean && !sList.includes(clean)) sList.push(clean);
+    }
+    if (slugs.oldSeriesSlug && slugs.oldSeriesSlug !== slugs.seriesSlug) {
+        sList.push(slugs.oldSeriesSlug);
+        const cleanOld = slugs.oldSeriesSlug.replace(/^(mal-|db-)\d+_/, '');
+        if (cleanOld && !sList.includes(cleanOld)) sList.push(cleanOld);
+    }
+    const eList = slugs.episodeSlug ? [slugs.episodeSlug] : [];
+
+    for (const s of sList) {
+        for (const e of eList) {
+            globalBlacklistCache.set(`broken_ep_prov_${s}_${e}_${prov}`, true);
+        }
+    }
+}
+
+export function checkUrlBlacklisted(url, currentSlugs = null) {
+    if (!url) return false;
+    const checkUrls = [url];
+    if (url.includes('?url=')) {
+        try {
+            const dec = decodeURIComponent(url.split('?url=')[1]);
+            if (dec && !checkUrls.includes(dec)) checkUrls.push(dec);
+        } catch(e) {}
+    }
+    for (const u of checkUrls) {
+        if (globalBlacklistCache.get(`broken_url_${u}`)) return true;
+        const stripped = u.replace(/\/+$/, '');
+        if (stripped !== u && globalBlacklistCache.get(`broken_url_${stripped}`)) return true;
+    }
+    const prov = getProviderKey(url);
+    if (prov) {
+        if (globalBlacklistCache.get(`broken_provider_${prov}`)) return true;
+        if (currentSlugs && isEpisodeProviderBlacklisted(prov, currentSlugs)) return true;
+    }
+    return false;
+}
+
 export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set(), slugs = null) {
     let matchedSource = null;
     try {
@@ -124,32 +180,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                 return true;
             }
             if (currentSlugs) {
-                for (const prov of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
-                    if (clean.includes(prov) && isEpisodeProviderBlacklisted(prov, currentSlugs)) return true;
-                }
-            }
-            return false;
-        };
-
-        const checkUrlBlacklisted = (url, currentSlugs = slugs) => {
-            if (!url) return false;
-            const checkUrls = [url];
-            if (url.includes('?url=')) {
-                try {
-                    const dec = decodeURIComponent(url.split('?url=')[1]);
-                    if (dec && !checkUrls.includes(dec)) checkUrls.push(dec);
-                } catch(e) {}
-            }
-            for (const u of checkUrls) {
-                if (globalBlacklistCache.get(`broken_url_${u}`)) return true;
-                const stripped = u.replace(/\/+$/, '');
-                if (stripped !== u && globalBlacklistCache.get(`broken_url_${stripped}`)) return true;
-            }
-            for (const prov of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku']) {
-                if (url.toLowerCase().includes(prov)) {
-                    if (globalBlacklistCache.get(`broken_provider_${prov}`)) return true;
-                    if (currentSlugs && isEpisodeProviderBlacklisted(prov, currentSlugs)) return true;
-                }
+                const prov = getProviderKey(clean);
+                if (prov && isEpisodeProviderBlacklisted(prov, currentSlugs)) return true;
             }
             return false;
         };
@@ -180,12 +212,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
         const getSourceLabel = (url) => {
             if (!url) return 'Web';
-            if (url.includes('___neosatsu_ep___') || url.includes('neosatsu.com')) return 'Neosatsu';
-            if (url.includes('otakudesu') || url.includes('/api/otakudesu/servers')) return 'Otakudesu';
-            if (url.includes('kuronime.sbs') || url.includes('/api/kuronime/servers')) return 'Kuronime';
-            if (url.includes('nanimeid.net') || url.includes('/api/nanime/servers')) return 'Nanime';
-            if (url.includes('nimegami.id') || url.includes('/api/nimegami/servers')) return 'Nimegami';
-            if (url.includes('oploverz.ltd') || url.includes('/api/oploverz/servers')) return 'Oploverz';
+            const prov = getProviderKey(url);
+            if (prov) return prov.charAt(0).toUpperCase() + prov.slice(1);
             return 'Samehadaku';
         };
 
@@ -210,7 +238,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                     console.info(`${logPrefix} Melewati provider [${provider.toUpperCase()}] karena dilaporkan rusak/blacklisted untuk episode ini.`);
                     continue;
                 }
-                if (episodeUrl.includes(provUrl) || (provider === 'otakudesu' && episodeUrl.includes('otakudesu')) || (provider === 'kuronime' && episodeUrl.includes('kuronime')) || (provider === 'samehadaku' && episodeUrl.includes('samehadaku')) || (provider === 'nanime' && episodeUrl.includes('nanime')) || (provider === 'neosatsu' && episodeUrl.includes('neosatsu')) || (provider === 'nimegami' && episodeUrl.includes('nimegami'))) {
+                if (episodeUrl.includes(provUrl) || provider === getProviderKey(episodeUrl)) {
                     continue;
                 }
                 const label = provider.charAt(0).toUpperCase() + provider.slice(1);

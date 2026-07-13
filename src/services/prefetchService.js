@@ -169,7 +169,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator agar Queue/Prefetch mendapat multi-provider seperti Smart Play.
                 // Pada percobaan > 1 atau jika provider masih kurang dari 3, panggil Orchestrator dengan fallback targetUrl & forceRefresh jika perlu.
-                if ((!hasFetchedOrch || attempt > 1) && (!urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3) && (uniqueId || seriesTitle || episodeUrl)) {
+                if ((!hasFetchedOrch || !urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3 || attempt > 1) && (uniqueId || seriesTitle || episodeUrl)) {
                     hasFetchedOrch = true;
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);

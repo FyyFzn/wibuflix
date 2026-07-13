@@ -12,12 +12,6 @@ import {
     queueStatusHandler,
     queueStreamHandler
 } from '../controllers/extractController.js';
-
-// Re-export untuk kompatibilitas mundur dengan kode legacy
-export { resolveCanonicalUniqueId } from '../services/canonicalService.js';
-export { extractSlugs } from '../services/slugService.js';
-export { prefetchOneEpisode } from '../services/prefetchService.js';
-
 const router = express.Router();
 
 // Video Extraction & Smart Play
