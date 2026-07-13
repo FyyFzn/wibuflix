@@ -65,9 +65,10 @@ export async function smartPlayHandler(req, res) {
         const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
 
         if (status === 'READY') {
-            if (prefetchWindow.length > 0) {
+            const validPrefetch = prefetchWindow.filter(u => u && u !== episodeUrl && u !== url);
+            if (validPrefetch.length > 0) {
                 // Selalu prefetch ke folder baru (seriesSlug)
-                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
+                triggerPrefetchWindow(seriesSlug, validPrefetch, seriesTitle, slugsToCheck, uniqueId);
             }
             return res.json({
                 success: true,
@@ -77,8 +78,9 @@ export async function smartPlayHandler(req, res) {
         }
 
         if (status === 'UPLOADING') {
-            if (prefetchWindow.length > 0) {
-                triggerPrefetchWindow(seriesSlug, prefetchWindow, seriesTitle, slugsToCheck, uniqueId);
+            const validPrefetch = prefetchWindow.filter(u => u && u !== episodeUrl && u !== url);
+            if (validPrefetch.length > 0) {
+                triggerPrefetchWindow(seriesSlug, validPrefetch, seriesTitle, slugsToCheck, uniqueId);
             }
 
             let cachedProxyUrl = proxyCache.get(`proxy_${seriesSlug}_${episodeSlug}`);

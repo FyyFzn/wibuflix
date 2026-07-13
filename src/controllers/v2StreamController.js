@@ -66,6 +66,12 @@ async function enrichStreamMetadata(data, targetUrl, seriesTitle, episodeTitle, 
         }
         if (nextEp) {
             enriched.nav_next = nextEp.url || nextEp.urls?.samehadaku || nextEp.urls?.otakudesu || nextEp.urls?.kuronime || null;
+            if (enriched.nav_next && typeof enriched.nav_next === 'string' && enriched.nav_next !== targetUrl) {
+                const { seriesSlug: sSlug } = extractSlugs(targetUrl, null, seriesTitle, uniqueId, null);
+                if (sSlug && typeof triggerPrefetchWindow === 'function') {
+                    triggerPrefetchWindow(sSlug, [enriched.nav_next], seriesTitle, null, uniqueId);
+                }
+            }
         }
 
         const servers = [
@@ -143,7 +149,7 @@ export async function getV2Stream(req, res) {
 
         // 1. JIKA SUDAH READY DI AZURE BLOB -> KEMBALIKAN URL BLOB (Kecuali forceRefresh = true)
         if (status === 'READY' && !forceRefresh) {
-            if (nextEpisodeUrl) {
+            if (nextEpisodeUrl && nextEpisodeUrl !== targetUrl && nextEpisodeUrl !== episodeUrl && nextEpisodeUrl !== url) {
                 triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
             }
             const enrichedData = await enrichStreamMetadata({
@@ -162,7 +168,7 @@ export async function getV2Stream(req, res) {
 
         // 2. JIKA SEDANG UPLOAD -> KEMBALIKAN PROGRESS (Tanpa fallback proxy/webview!)
         if (status === 'UPLOADING') {
-            if (nextEpisodeUrl) {
+            if (nextEpisodeUrl && nextEpisodeUrl !== targetUrl && nextEpisodeUrl !== episodeUrl && nextEpisodeUrl !== url) {
                 triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
             }
             const progress = getUploadProgress(activeSlug, activeEpSlug) || 0;
