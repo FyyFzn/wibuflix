@@ -1,3 +1,5 @@
+import { initLogger } from './src/utils/logger.js';
+initLogger();
 import { startServer } from './src/server.js';
 
 process.on('uncaughtException', (err) => {

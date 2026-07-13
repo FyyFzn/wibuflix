@@ -1,3 +1,5 @@
+import { initLogger } from './utils/logger.js';
+initLogger();
 import express from 'express';
 import cors from 'cors';
 import { initPagePool, closeAllBrowsers } from './puppeteer/pool.js';
