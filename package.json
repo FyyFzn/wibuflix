@@ -7,7 +7,10 @@
     "start": "node index.js",
     "start:prod": "node server-prod.js",
     "sync:nimegami": "node src/scripts/init-nimegami-sync.js",
+    "check:webs": "node src/scripts/check_provider_accessibility.js",
+    "check:deep": "node src/scripts/check_provider_deep_extraction.js",
     "test": "node --test src/tests/*.test.js",
+    "test:webs": "node --test src/tests/provider_accessibility_contract.test.js",
     "test:nimegami": "node scratch/test-nimegami-ep.js"
   },
   "keywords": [],

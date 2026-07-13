@@ -101,7 +101,7 @@ async function resolveOtakuServers($) {
     const promises = [];
     const allowedHosts = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
 
-    $('.download ul li').each((i, el) => {
+    $('.download ul li, .batchlink ul li, .siap ul li').each((i, el) => {
         const resText = $(el).find('strong').text().trim(); // e.g. "Mp4 360p"
         $(el).find('a').each((j, a) => {
             const hostRaw = $(a).text().trim();
@@ -184,6 +184,14 @@ async function resolveOtakuServers($) {
 }
 
 export async function getServersInternal(url) {
+    if (!url) return { judul: '', servers: [], nav_prev: null, nav_next: null };
+    if (url.startsWith('/api/otakudesu/servers') || url.includes('/api/otakudesu/servers?url=')) {
+        try {
+            const parsed = new URL(url.startsWith('http') ? url : 'http://localhost' + url);
+            url = parsed.searchParams.get('url') || url;
+        } catch (e) {}
+    }
+
     const cacheKey = `otaku_servers_${url}`;
     const cachedData = cache.get(cacheKey);
     if (cachedData) {
