@@ -53,7 +53,9 @@ export async function syncNeosatsu() {
                             "sources.neosatsu": {
                                 url: toku.endpoint,
                                 last_updated: new Date()
-                            },
+                            }
+                        },
+                        $setOnInsert: {
                             lastUpdated: new Date()
                         }
                     },

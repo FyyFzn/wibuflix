@@ -4,6 +4,7 @@ import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import Anime from '../models/Anime.js';
 import { fetchNanimeInertia } from '../controllers/nanimeController.js';
+import { cache as katalogCache } from '../controllers/katalogController.js';
 
 let isLatestSyncing = false;
 
@@ -409,6 +410,9 @@ async function processLatestUpdatesWithGuard(updates, providerName) {
 
     if (bulkOps.length > 0) {
         await Anime.bulkWrite(bulkOps);
+        if (katalogCache && typeof katalogCache.flushAll === 'function') {
+            katalogCache.flushAll();
+        }
     }
     return updatedCount;
 }

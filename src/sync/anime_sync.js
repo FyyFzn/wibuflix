@@ -206,9 +206,11 @@ export async function runSync(isInitial = false) {
                     if (existing) {
                         if (!existing.isLocked) {
                             const updateFields = {
-                                'sources.samehadaku': { url: anime.url },
-                                'lastUpdated': new Date(now - index * 1000)
+                                'sources.samehadaku': { url: anime.url }
                             };
+                            if (!existing.lastUpdated) {
+                                updateFields.lastUpdated = new Date(now - index * 1000);
+                            }
                             if (anime.status) updateFields.status = anime.status;
                             if (!existing.image || existing.image.includes('placehold')) {
                                 updateFields.image = anime.gambarScraper;
@@ -221,10 +223,12 @@ export async function runSync(isInitial = false) {
                                 }
                             });
                         } else {
+                            const updateFields = { 'sources.samehadaku': { url: anime.url } };
+                            if (!existing.lastUpdated) updateFields.lastUpdated = new Date(now - index * 1000);
                             bulkOperations.push({
                                 updateOne: {
                                     filter: { _id: existing._id },
-                                    update: { $set: { 'sources.samehadaku': { url: anime.url }, 'lastUpdated': new Date(now - index * 1000) } }
+                                    update: { $set: updateFields }
                                 }
                             });
                         }
@@ -244,10 +248,12 @@ export async function runSync(isInitial = false) {
                                 if (existingByMal) malIdMap.set(metadata.malId, existingByMal);
                             }
                             if (existingByMal) {
+                                const updateFields = { 'sources.samehadaku': { url: anime.url } };
+                                if (!existingByMal.lastUpdated) updateFields.lastUpdated = new Date(now - index * 1000);
                                 bulkOperations.push({
                                     updateOne: {
                                         filter: { _id: existingByMal._id },
-                                        update: { $set: { 'sources.samehadaku': { url: anime.url }, 'lastUpdated': new Date(now - index * 1000) } }
+                                        update: { $set: updateFields }
                                     }
                                 });
                                 updatedCount++;

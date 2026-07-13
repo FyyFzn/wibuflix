@@ -107,18 +107,14 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
             ];
             results = await Anime.aggregate(pipeline);
         } else {
-            // Jika bukan pencarian, gunakan query reguler dan sorting
             let dbQuery = Anime.find(query).select('title image type score status sources');
             if (sortParam === 'latest') {
                 // Urutkan berdasarkan yang paling baru diupdate (episode baru rilis)
-                dbQuery = dbQuery.sort({ lastUpdated: -1, _id: -1 });
+                results = await dbQuery.sort({ lastUpdated: -1, _id: -1 }).skip(skip).limit(limit + 1).lean();
             } else {
                 // Urutkan A-Z secara alfabetis dengan case-insensitive & numeric ordering (#/0-9 paling depan)
-                dbQuery = dbQuery.sort({ title: 1 }).collation({ locale: 'en', strength: 2, numericOrdering: true });
+                results = await dbQuery.sort({ title: 1 }).collation({ locale: 'en', strength: 2, numericOrdering: true }).skip(skip).limit(limit + 1).lean();
             }
-
-            // Ambil data + 1 untuk mengetahui apakah masih ada halaman selanjutnya
-            results = await dbQuery.skip(skip).limit(limit + 1).lean(); 
         }
 
         const hasNext = results.length > limit;

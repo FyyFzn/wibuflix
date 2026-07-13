@@ -368,7 +368,9 @@ async function finalizeScrapedData(data, dbAnime) {
         const oldEpsCount = dbAnime.episodesList ? dbAnime.episodesList.length : 0;
         const newEpsCount = data.daftar_episode.length;
         dbAnime.episodesList = data.daftar_episode;
-        if (newEpsCount > oldEpsCount) {
+        // Hanya update lastUpdated jika anime tersebut Ongoing DAN sebelumnya sudah punya episode di DB (bukan sync awal / 0 episode)
+        // Mencegah anime lama yang dibuka/ditonton pengguna melompat ke Carousel Anime Terbaru!
+        if (newEpsCount > oldEpsCount && oldEpsCount > 0 && dbAnime.status && dbAnime.status.toLowerCase().includes('ongoing')) {
             dbAnime.lastUpdated = new Date();
         }
         try {
