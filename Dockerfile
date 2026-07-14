@@ -71,5 +71,5 @@ EXPOSE 3000 80 8080 5000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || wget --no-verbose --tries=1 --spider http://localhost:80/ || wget --no-verbose --tries=1 --spider http://localhost:8080/ || wget --no-verbose --tries=1 --spider http://localhost:5000/ || exit 1
 
-# Start server in production mode
-CMD ["npm", "run", "start:prod"]
+# Start server directly via Node.js
+CMD ["node", "src/server.js"]
