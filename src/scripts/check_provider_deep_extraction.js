@@ -11,6 +11,7 @@ import { releaseToPool } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import Anime from '../models/Anime.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 // Mencegah Mongoose buffering timeout jika database tidak terhubung di CLI script ini
 if (mongoose.connection.readyState === 0) {
@@ -36,7 +37,7 @@ async function getSampleAnimeUrl(providerName) {
     if (providerName === 'Samehadaku') {
         let res;
         try {
-            res = await fetchWithCF('https://v2.samehadaku.how/daftar-anime-2/');
+            res = await fetchWithCF(PROVIDER_URLS.SAMEHADAKU.CATALOG_URL);
             if (res?.html && res.html !== '404_NOT_FOUND') {
                 const $ = cheerio.load(res.html);
                 const firstUrl = $('.animepost a').first().attr('href');
@@ -45,11 +46,11 @@ async function getSampleAnimeUrl(providerName) {
         } finally {
             if (res?.slot) releaseToPool(res.slot);
         }
-        return 'https://v2.samehadaku.how/anime/naruto-shippuden/';
+        return `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/naruto-shippuden/`;
     } else if (providerName === 'Otakudesu') {
         let res;
         try {
-            res = await fetchWithCF('https://otakudesu.blog/anime-list/');
+            res = await fetchWithCF(PROVIDER_URLS.OTAKUDESU.CATALOG_URL);
             if (res?.html && res.html !== '404_NOT_FOUND') {
                 const $ = cheerio.load(res.html);
                 const firstUrl = $('.jdlbar ul li a').first().attr('href') || $('#daftaranime ul li a').first().attr('href');
@@ -58,11 +59,11 @@ async function getSampleAnimeUrl(providerName) {
         } finally {
             if (res?.slot) releaseToPool(res.slot);
         }
-        return 'https://otakudesu.blog/anime/nru-shp-sub-indo/';
+        return `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/nru-shp-sub-indo/`;
     } else if (providerName === 'Kuronime') {
         let res;
         try {
-            res = await fetchWithCF('https://kuronime.sbs/anime/?list');
+            res = await fetchWithCF(PROVIDER_URLS.KURONIME.CATALOG_URL);
             if (res?.html && res.html !== '404_NOT_FOUND') {
                 const $ = cheerio.load(res.html);
                 const firstUrl = $('.soralist ul li a').first().attr('href');
@@ -71,20 +72,19 @@ async function getSampleAnimeUrl(providerName) {
         } finally {
             if (res?.slot) releaseToPool(res.slot);
         }
-        return 'https://kuronime.sbs/anime/bleach-thousand-year-blood-war-sub-indo/';
+        return `${PROVIDER_URLS.KURONIME.BASE_URL}/anime/bleach-thousand-year-blood-war-sub-indo/`;
     } else if (providerName === 'Nanime ID') {
-        return 'https://nanimeid.net/anime/one-piece';
+        return `${PROVIDER_URLS.NANIME.BASE_URL}/anime/one-piece`;
     } else if (providerName === 'Nimegami') {
-        return 'https://nimegami.id/dr-stone-new-world-sub-indo/';
+        return `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/dr-stone-new-world-sub-indo/`;
     } else if (providerName === 'Oploverz') {
-        return 'https://idn.oploverz.site/series/one-piece';
+        return `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/one-piece`;
     } else if (providerName === 'Neosatsu') {
-
         try {
             const data = await getNeosatsuCatalog(1, '', '');
             if (data?.anime?.length > 0) return data.anime[0].endpoint;
         } catch (e) {}
-        return 'https://www.neosatsu.com/2024/09/kamen-rider-gavv-sub-indo.html';
+        return `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/09/kamen-rider-gavv-sub-indo.html`;
     }
     return null;
 }

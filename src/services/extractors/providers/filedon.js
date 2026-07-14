@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { PROVIDER_URLS } from '../../../config/providerUrls.js';
 
 export const name = 'filedon';
 
@@ -30,7 +31,7 @@ export async function extract(embedUrl, req) {
                 timeout: 8000,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': 'https://v2.samehadaku.how/'
+                    'Referer': `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`
                 }
             });
             

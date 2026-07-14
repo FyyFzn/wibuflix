@@ -2,6 +2,9 @@ import { acquireFromPool, releaseToPool, getCfCookie, getCfCookiesArray, globalU
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { circuitBreaker } from './circuitBreaker.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
+
+const DEFAULT_HOSTNAME = new URL(PROVIDER_URLS.SAMEHADAKU.BASE_URL).hostname;
 
 /**
  * Cek apakah HTML adalah halaman Cloudflare challenge.
@@ -75,7 +78,7 @@ export async function fetchWithCF(url, options = {}) {
     let html = '';
     if (!isCloudflareStrict) {
         try {
-            let hostname = 'v2.samehadaku.how';
+            let hostname = DEFAULT_HOSTNAME;
             try { hostname = new URL(url).hostname; } catch (e) {}
             const cookieStr = getCfCookie(hostname);
 
@@ -106,7 +109,7 @@ export async function fetchWithCF(url, options = {}) {
     }
 
     let slot = null;
-    let hostname = 'v2.samehadaku.how';
+    let hostname = DEFAULT_HOSTNAME;
     try { hostname = new URL(url).hostname; } catch (e) {}
 
     try {

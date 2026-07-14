@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { decryptNeosatsuLink, normalizeGDriveUrl } from '../../../utils/neosatsuUtils.js';
 import { cache, IGNORED_CATS, cleanTitle } from './neosatsuShared.js';
+import { PROVIDER_URLS } from '../../../config/providerUrls.js';
 
 /**
  * [TAHAP 2 & 3] Mengambil daftar episode DAN server.
@@ -37,9 +38,9 @@ export async function getNeosatsuEpisodes(targetUrl) {
             judulSeri = cleanTitle(targetTitle);
 
             if (label) {
-                feedUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(label)}?alt=json&max-results=500`;
+                feedUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(label)}?alt=json&max-results=500`;
             } else {
-                feedUrl = `https://www.neosatsu.com/feeds/posts/default?q=${encodeURIComponent(targetTitle)}&alt=json&max-results=500`;
+                feedUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default?q=${encodeURIComponent(targetTitle)}&alt=json&max-results=500`;
             }
 
             console.info(`[Neosatsu Scraper] Fetching Label/Search Feed: ${feedUrl}`);
@@ -76,7 +77,7 @@ export async function getNeosatsuEpisodes(targetUrl) {
             });
 
             if (seriesLabel) {
-                feedUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(seriesLabel)}?alt=json&max-results=500`;
+                feedUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(seriesLabel)}?alt=json&max-results=500`;
                 console.info(`[Neosatsu Scraper] Fallback Merging via Label: ${feedUrl}`);
                 const { data } = await axios.get(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                 if (data && data.feed && data.feed.entry) {

@@ -5,6 +5,7 @@ import axios from 'axios';
 import { extractIframeSrc, namaServer } from './providers/utils.js';
 import { resolveExtractor } from './providers/index.js';
 import * as genericExtractor from './providers/generic.js';
+import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 export { extractIframeSrc, namaServer };
 
@@ -12,14 +13,15 @@ async function resolveServerIframe(page, { post, nume, type, episodeUrl }, req) 
     try {
         const result = await page.evaluate(async ({ post, nume, type, episodeUrl }) => {
             try {
-                const response = await fetch('https://v2.samehadaku.how/wp-admin/admin-ajax.php', {
+                const SAMA_BASE = '${PROVIDER_URLS.SAMEHADAKU.BASE_URL}';
+                const response = await fetch(`${SAMA_BASE}/wp-admin/admin-ajax.php`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': '*/*',
                         'Referer': episodeUrl,
-                        'Origin': 'https://v2.samehadaku.how'
+                        'Origin': SAMA_BASE
                     },
                     credentials: 'include',
                     body: `action=player_ajax&post=${post}&nume=${nume}&type=${type}`
@@ -358,7 +360,7 @@ export async function extractVideoUrl(embedUrl, req) {
         return { 
             url: embedUrl,
             headers: {
-                'Referer': 'https://v2.samehadaku.how/',
+                'Referer': `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`,
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         };

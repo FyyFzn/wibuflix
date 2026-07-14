@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import { acquireFromPool, releaseToPool, getCfCookie, globalUserAgent, waitForCloudflare } from '../puppeteer/pool.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
 
@@ -80,8 +81,8 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Referer': 'https://kuronime.sbs/',
-                    'Origin': 'https://kuronime.sbs',
+                    'Referer': `${PROVIDER_URLS.KURONIME.BASE_URL}/`,
+                    'Origin': `${PROVIDER_URLS.KURONIME.BASE_URL}`,
                     'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Cookie': getCfCookie('animeku.org') || ''
                 },

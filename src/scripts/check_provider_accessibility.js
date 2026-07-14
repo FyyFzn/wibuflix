@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchNanimeInertia } from '../controllers/nanimeController.js';
+import { PROVIDER_LIST } from '../config/providerUrls.js';
 
 /**
  * Diagnostic Script: check_provider_accessibility.js
@@ -12,58 +13,19 @@ import { fetchNanimeInertia } from '../controllers/nanimeController.js';
  * (serta mendeteksi jika terjadi redirect ke domain/mirror baru).
  */
 
-const PROVIDERS = [
-    {
-        name: 'Samehadaku',
-        baseUrl: 'https://v2.samehadaku.how/',
-        catalogUrl: 'https://v2.samehadaku.how/daftar-anime-2/',
-        type: 'html-cf',
-        expectedKeyword: 'samehadaku'
-    },
-    {
-        name: 'Otakudesu',
-        baseUrl: 'https://otakudesu.blog/',
-        catalogUrl: 'https://otakudesu.blog/anime-list/',
-        type: 'html-cf',
-        expectedKeyword: 'otakudesu'
-    },
-    {
-        name: 'Kuronime',
-        baseUrl: 'https://kuronime.sbs/',
-        catalogUrl: 'https://kuronime.sbs/anime/?list',
-        type: 'html-cf',
-        expectedKeyword: 'kuronime'
-    },
-    {
-        name: 'Nanime ID',
-        baseUrl: 'https://nanimeid.net/',
-        catalogUrl: 'https://nanimeid.net/explore?page=1',
-        type: 'inertia-json',
-        expectedKeyword: 'nanime'
-    },
-    {
-        name: 'Nimegami',
-        baseUrl: 'https://nimegami.id/',
-        catalogUrl: 'https://nimegami.id/anime-list/',
-        type: 'html-cf',
-        expectedKeyword: 'nimegami'
-    },
-    {
-        name: 'Oploverz',
-        baseUrl: 'https://idn.oploverz.site/',
-        catalogUrl: 'https://idn.oploverz.site/series',
+const NANIME_NAME = 'Nanime ID';
+const NEOSATSU_NAME = 'Neosatsu';
 
-        type: 'html-cf',
-        expectedKeyword: 'oploverz'
-    },
-    {
-        name: 'Neosatsu (Tokusatsu)',
-        baseUrl: 'https://www.neosatsu.com/',
-        catalogUrl: 'https://www.neosatsu.com/p/kamen-rider-series.html',
-        type: 'axios-direct',
-        expectedKeyword: 'neosatsu'
-    }
-];
+const PROVIDERS = PROVIDER_LIST.map(p => ({
+    name: p.NAME,
+    baseUrl: p.BASE_URL.endsWith('/') ? p.BASE_URL : `${p.BASE_URL}/`,
+    catalogUrl: p.CATALOG_URL,
+    expectedKeyword: p.DOMAIN_KEYWORDS[0],
+    type: p.NAME === NANIME_NAME ? 'inertia-json'
+        : p.NAME === NEOSATSU_NAME ? 'axios-direct'
+        : 'html-cf'
+}));
+
 
 export async function checkAllProvidersAccessibility() {
     console.log('\n================================================================================');

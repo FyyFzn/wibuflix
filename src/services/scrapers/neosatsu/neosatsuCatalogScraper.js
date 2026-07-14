@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { searchTokusatsu } from '../../metadata/tmdb.js';
 import { filterByTokuType } from '../../../utils/neosatsuUtils.js';
 import { cache, IGNORED_CATS, cleanTitle } from './neosatsuShared.js';
+import { PROVIDER_URLS } from '../../../config/providerUrls.js';
 
 /**
  * [TAHAP 1] Mengambil katalog dari Neosatsu. 
@@ -22,14 +23,15 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             staticAnimeList = cachedData;
         } else {
             console.info(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
+            const neosatsuBase = PROVIDER_URLS.NEOSATSU.BASE_URL;
             const staticPages = [
-                'https://www.neosatsu.com/p/kamen-rider-series.html',
-                'https://www.neosatsu.com/p/kamen-rider-movie.html',
-                'https://www.neosatsu.com/p/super-sentai-series.html',
-                'https://www.neosatsu.com/p/super-sentai-movie.html',
-                'https://www.neosatsu.com/p/ultraman-series.html',
-                'https://www.neosatsu.com/p/ultraman-movie.html',
-                'https://www.neosatsu.com/p/power-rangers-series.html'
+                `${neosatsuBase}/p/kamen-rider-series.html`,
+                `${neosatsuBase}/p/kamen-rider-movie.html`,
+                `${neosatsuBase}/p/super-sentai-series.html`,
+                `${neosatsuBase}/p/super-sentai-movie.html`,
+                `${neosatsuBase}/p/ultraman-series.html`,
+                `${neosatsuBase}/p/ultraman-movie.html`,
+                `${neosatsuBase}/p/power-rangers-series.html`
             ];
 
             const uniqueCheck = new Set();
@@ -70,7 +72,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                                     }
                                     status = 'Ongoing';
                                 } else if (href.startsWith('/')) {
-                                    endpoint = `https://www.neosatsu.com${href}`;
+                                    endpoint = `${PROVIDER_URLS.NEOSATSU.BASE_URL}${href}`;
                                 }
 
                                 img = img.replace(/\/s\d+(-c)?\//, '/s1600/');
@@ -104,7 +106,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             for (const feed of labelFeeds) {
                 try {
                     console.info(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
-                    const fUrl = `https://www.neosatsu.com/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
+                    const fUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
                     const { data } = await axios.get(fUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                     
                     if (data && data.feed && data.feed.entry) {
@@ -187,7 +189,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             }
 
             // Jika tidak ada di lokal (misal cari Metal Hero), Fallback ke Pencarian Website (Blogger Feed)
-            const feedUrl = `https://www.neosatsu.com/feeds/posts/default?q=${encodeURIComponent(searchParam)}&alt=json&max-results=${maxResults}&start-index=${startIndex}`;
+            const feedUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default?q=${encodeURIComponent(searchParam)}&alt=json&max-results=${maxResults}&start-index=${startIndex}`;
             console.info(`[Neosatsu Scraper] Local Miss. Fallback API (Search): ${feedUrl}`);
 
             const { data } = await axios.get(feedUrl, {
