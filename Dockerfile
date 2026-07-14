@@ -62,6 +62,7 @@ RUN npm ci --omit=dev
 
 # Copy source code
 COPY src/ ./src/
+COPY server-prod.js ./
 
 
 # Expose port
@@ -72,4 +73,4 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || wget --no-verbose --tries=1 --spider http://localhost:80/ || wget --no-verbose --tries=1 --spider http://localhost:8080/ || wget --no-verbose --tries=1 --spider http://localhost:5000/ || exit 1
 
 # Start server directly via Node.js
-CMD ["node", "src/server.js"]
+CMD ["node", "server-prod.js"]

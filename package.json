@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "start:prod": "node src/server.js",
+    "start:prod": "node server-prod.js",
 
 
     "sync:nimegami": "node src/scripts/init-nimegami-sync.js",

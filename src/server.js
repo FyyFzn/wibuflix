@@ -105,7 +105,10 @@ app.use(adminRouter);
 // Global Error Handler Middleware (Harus diletakkan setelah semua router)
 app.use(errorHandler);
 
+let isServerStarted = false;
 function startServer() {
+    if (isServerStarted) return;
+    isServerStarted = true;
     sweepOrphanedTempFiles();
     // 1. Hubungkan ke MongoDB terlebih dahulu
     connectDB().then(() => {
@@ -152,6 +155,8 @@ function startServer() {
 
 export { startServer };
 
-startServer();
+if (!process.argv[1]?.endsWith('server-prod.js')) {
+    startServer();
+}
 
 
