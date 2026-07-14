@@ -182,8 +182,10 @@ export function extractEpNumStrict(title) {
     let clean = str.replace(/\b(1080p|720p|480p|360p|240p|x264|x265|mkv|mp4|avi|bd|bluray|web-dl|aac|h264)\b/gi, ' ');
     clean = clean.replace(/\b(mal-\d+|db-[a-f0-9]+)\b/gi, ' ');
 
-    // Hindari deteksi angka pada OVA / OAD / Special / SP / Movie / Film / Batch agar tidak bentrok dengan episode standar
-    if (/(?:ova|oad|special|sp|movie|film)[\s-_]*\d+/i.test(clean) || /\b(movie|film|batch)\b/i.test(clean)) {
+    // Hindari deteksi angka pada OVA / OAD / Special / SP / EX / Movie / Film / Batch agar tidak bentrok dengan episode standar
+    if (/\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(clean) || 
+        /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(clean) ||
+        /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(clean)) {
         return null;
     }
 
@@ -212,8 +214,10 @@ export function extractEpNumStrict(title) {
 export function extractEpNum(title) {
     if (!title) return null;
     const clean = String(title).trim();
-    // Hindari deteksi angka pada OVA / OAD / Special / SP / Movie / Film / Batch
-    if (/(?:ova|oad|special|sp|movie|film)[\s-_]*\d+/i.test(clean) || /\b(movie|film|batch)\b/i.test(clean)) {
+    // Hindari deteksi angka pada OVA / OAD / Special / SP / EX / Movie / Film / Batch
+    if (/\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(clean) || 
+        /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(clean) ||
+        /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(clean)) {
         return null;
     }
     const strictNum = extractEpNumStrict(title);

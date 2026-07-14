@@ -175,3 +175,42 @@ test('Tahap 5: Actual Source Provider Tracking - reportBrokenV2 reads actual sou
     assert.strictEqual(isSamehadakuBlacklisted, true, 'Samehadaku should be blacklisted as the actual source provider');
     assert.strictEqual(isOtakudesuBlacklisted, false, 'Otakudesu should not be blacklisted since it was not the actual source');
 });
+
+test('Tahap 6: OVA/Special Contamination Sanitization & Strict Number Extraction', async () => {
+    const { extractEpNumStrict } = await import('../utils/stringUtils.js');
+    const { sanitizeContaminatedEpisodeCards } = await import('../services/episodeService.js');
+
+    // 1. Verify strict number extraction rejects EX and parenthesized OVA
+    assert.strictEqual(extractEpNumStrict('Accel World - EX 1'), null, 'EX episode should return null');
+    assert.strictEqual(extractEpNumStrict('Accel World - 01 (OVA)'), null, 'Parenthesized OVA should return null');
+    assert.strictEqual(extractEpNumStrict('Accel World Episode 1'), 1, 'Normal episode should return 1');
+
+    // 2. Verify sanitizeContaminatedEpisodeCards cleans up contaminated episode cards
+    const contaminatedList = [
+        {
+            judul: 'Accel World Episode 1',
+            num: 1,
+            urls: {
+                samehadaku: 'https://samehadaku.email/accel-world-episode-1/',
+                otakudesu: 'https://otakudesu.cloud/accel-world-ova-1/' // Contaminated URL inside normal card!
+            }
+        },
+        {
+            judul: 'Accel World OVA 1',
+            num: 1, // Contaminated num assigned to OVA card!
+            urls: {
+                otakudesu: 'https://otakudesu.cloud/accel-world-ova-1/'
+            }
+        }
+    ];
+
+    const cleanedList = sanitizeContaminatedEpisodeCards(contaminatedList);
+
+    // Normal card should have otakudesu OVA url stripped out
+    assert.strictEqual(cleanedList[0].urls.samehadaku, 'https://samehadaku.email/accel-world-episode-1/');
+    assert.strictEqual(cleanedList[0].urls.otakudesu, undefined, 'Contaminated OVA url should be removed from normal Ep 1 card');
+
+    // OVA card should have num reset to null
+    assert.strictEqual(cleanedList[1].num, null, 'OVA card with contaminated num: 1 should be reset to num: null');
+});
+

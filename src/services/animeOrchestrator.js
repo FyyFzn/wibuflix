@@ -1,4 +1,4 @@
-import { getEpisodeServiceData } from './episodeService.js';
+import { getEpisodeServiceData, sanitizeContaminatedEpisodeCards } from './episodeService.js';
 import Anime from '../models/Anime.js';
 import { cleanSeriesTitle, formatEpisodeTitle, extractEpNum } from '../utils/stringUtils.js';
 
@@ -130,10 +130,15 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
 
     const rawData = rawResult.data || {};
     const daftarEpisode = rawData.daftar_episode || [];
+    const sanitizedDaftarEpisode = sanitizeContaminatedEpisodeCards(daftarEpisode);
 
     // 4. Transformasi ke format Unified Thin Client
-    const unifiedEpisodes = daftarEpisode.map((ep, idx) => {
-        const epNum = ep.num != null ? ep.num : extractEpNum(ep.judul);
+    const unifiedEpisodes = sanitizedDaftarEpisode.map((ep, idx) => {
+        const titleLower = (ep.judul || '').toLowerCase().trim();
+        const isOvaTitle = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(titleLower) || 
+                           /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(titleLower) ||
+                           /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(titleLower);
+        const epNum = isOvaTitle ? null : (ep.num != null ? ep.num : extractEpNum(ep.judul));
         const epId = epNum != null ? `ep_${epNum}` : `idx_${idx}`;
         
         const urlsObj = (ep.urls && (ep.urls instanceof Map || typeof ep.urls.entries === 'function'))

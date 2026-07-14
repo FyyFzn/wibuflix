@@ -15,20 +15,83 @@ const activeScrapeLocks = new Map();
 /**
  * Mencegah episode ganda berdasarkan nomor atau judul episode dan me-merge URL dari berbagai provider.
  */
+/**
+ * Membersihkan kartu episode yang tercemar OVA / Special (Ova Contamination Sanitizer).
+ * Memeriksa jika ada kartu episode normal (misal Episode 1) namun memiliki URL dari provider lain
+ * yang mengarah ke OVA/Special, atau judul OVA yang keliru dilabeli sebagai nomor episode normal.
+ */
+export function sanitizeContaminatedEpisodeCards(episodesList) {
+    if (!episodesList || !Array.isArray(episodesList)) return [];
+    
+    const ovaTitleRegex = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
+    const ovaWordRegex = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
+    const ovaParenthesisRegex = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
+    const ovaUrlRegex = /(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i;
+
+    return episodesList.map(ep => {
+        const epObj = ep && typeof ep === 'object' ? { ...ep } : {};
+        if (epObj.urls && typeof epObj.urls === 'object') {
+            epObj.urls = { ...epObj.urls };
+        } else {
+            epObj.urls = {};
+        }
+
+        const title = (epObj.judul || epObj.title || '').trim();
+        const isOvaTitle = ovaTitleRegex.test(title) || ovaWordRegex.test(title) || ovaParenthesisRegex.test(title);
+
+        // 1. Jika judul kartu itu sendiri adalah OVA / Special, pastikan num adalah null agar tidak keliru sebagai episode reguler
+        if (isOvaTitle) {
+            epObj.num = null;
+        } else if (epObj.num != null && typeof epObj.num === 'number' && !isNaN(epObj.num)) {
+            // 2. Jika kartu adalah episode reguler (misal num: 1), periksa seluruh URL provider di dalamnya.
+            // Jika ada provider yang URL-nya secara jelas adalah OVA/Special, hapus URL tercemar tersebut dari kartu episode reguler ini!
+            for (const [provKey, provUrl] of Object.entries(epObj.urls)) {
+                if (typeof provUrl === 'string' && ovaUrlRegex.test(provUrl)) {
+                    console.warn(`[Sanitizer] 🛡️ Menghapus URL tercemar OVA (${provKey}: ${provUrl}) dari kartu episode normal "${title}" (Ep ${epObj.num})`);
+                    delete epObj.urls[provKey];
+                }
+            }
+        }
+
+        return epObj;
+    });
+}
+
 export function deduplicateEpisodes(episodes) {
     if (!episodes || !Array.isArray(episodes) || episodes.length === 0) return [];
+    
+    // Step 1: Bersihkan kontaminasi awal sebelum penggabungan
+    const sanitized = sanitizeContaminatedEpisodeCards(episodes);
     const dedupeMap = new Map();
-    for (const ep of episodes) {
+
+    const ovaTitleRegex = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
+    const ovaWordRegex = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
+    const ovaParenthesisRegex = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
+
+    for (const ep of sanitized) {
         const titleLower = (ep.judul || '').toLowerCase().trim();
-        const epNum = extractEpNum(ep.judul);
+        const isOvaCandidate = ovaTitleRegex.test(titleLower) || ovaWordRegex.test(titleLower) || ovaParenthesisRegex.test(titleLower);
+        const epNum = isOvaCandidate ? null : extractEpNum(ep.judul);
         const key = typeof epNum === 'number' && !isNaN(epNum) ? `ep_${epNum}` : titleLower;
         
         if (!dedupeMap.has(key)) {
             dedupeMap.set(key, { ...ep });
         } else {
             const existing = dedupeMap.get(key);
+            const isExistingNormal = existing.num != null && !ovaTitleRegex.test(existing.judul || '') && !ovaWordRegex.test(existing.judul || '') && !ovaParenthesisRegex.test(existing.judul || '');
+
+            if (isExistingNormal && isOvaCandidate) {
+                // Jangan merge URL OVA/Special ke dalam kartu episode normal
+                continue;
+            }
+            if (!isExistingNormal && epNum != null && !isOvaCandidate) {
+                // Timpa kartu existing yang keliru/tercemar dengan kartu episode normal yang bersih
+                dedupeMap.set(key, { ...ep });
+                continue;
+            }
+
             existing.urls = { ...existing.urls, ...ep.urls };
-            if (existing.num == null && ep.num != null) {
+            if (existing.num == null && ep.num != null && !isOvaCandidate) {
                 existing.num = ep.num;
             }
         }
@@ -306,23 +369,35 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
 
     for (const res of allResults) {
         for (const ep of res.daftar_episode) {
-            if (ep.num != null && typeof ep.num === 'number' && !isNaN(ep.num)) {
-                if (epMap.has(ep.num)) {
-                    const existing = epMap.get(ep.num);
-                    existing.urls = { ...existing.urls, ...ep.urls };
-                    if (!existing.judul || existing.judul === 'Episode ?') {
+            const titleLower = (ep.judul || '').toLowerCase().trim();
+            const isOvaTitle = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(titleLower) || 
+                               /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(titleLower) ||
+                               /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(titleLower);
+            const actualNum = isOvaTitle ? null : ep.num;
+
+            if (actualNum != null && typeof actualNum === 'number' && !isNaN(actualNum)) {
+                if (epMap.has(actualNum)) {
+                    const existing = epMap.get(actualNum);
+                    // Hanya merge URL yang tidak tercemar pola OVA
+                    const cleanIncomingUrls = {};
+                    for (const [prov, provUrl] of Object.entries(ep.urls || {})) {
+                        if (typeof provUrl === 'string' && !/(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i.test(provUrl)) {
+                            cleanIncomingUrls[prov] = provUrl;
+                        }
+                    }
+                    existing.urls = { ...existing.urls, ...cleanIncomingUrls };
+                    if (!existing.judul || existing.judul === 'Episode ?' || (!existing.judul.toLowerCase().includes('episode') && ep.judul.toLowerCase().includes('episode'))) {
                         existing.judul = ep.judul;
                     }
                 } else {
-                    epMap.set(ep.num, {
-                        judul: ep.judul || `Episode ${ep.num}`,
+                    epMap.set(actualNum, {
+                        judul: ep.judul || `Episode ${actualNum}`,
                         urls: { ...ep.urls },
-                        num: ep.num
+                        num: actualNum
                     });
                 }
             } else {
                 // Untuk Movie / Batch / OVA / Special yang tidak memiliki nomor (num === null)
-                const titleLower = (ep.judul || '').toLowerCase().trim();
                 const existingNoNum = noNumEps.find(item => (item.judul || '').toLowerCase().trim() === titleLower);
                 if (existingNoNum) {
                     existingNoNum.urls = { ...existingNoNum.urls, ...ep.urls };
@@ -412,13 +487,14 @@ export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtaku
         
         if (cacheAge <= 3600000) {
             console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
-            const cleanEpsList = dbAnime.episodesList.map(ep => {
+            const rawCleanEpsList = dbAnime.episodesList.map(ep => {
                 const epObj = ep.toObject ? ep.toObject({ flattenMaps: true }) : { ...ep };
                 if (epObj.urls && (epObj.urls instanceof Map || typeof epObj.urls.entries === 'function')) {
                     epObj.urls = Object.fromEntries(epObj.urls);
                 }
                 return epObj;
             });
+            const cleanEpsList = sanitizeContaminatedEpisodeCards(rawCleanEpsList);
             const data = {
                 judul_seri: dbAnime.title,
                 daftar_episode: cleanEpsList,
