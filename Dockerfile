@@ -65,12 +65,16 @@ COPY src/ ./src/
 COPY server-prod.js ./
 
 
-# Expose port
-EXPOSE 3000 80 8080 5000
+# Environment variables
+ENV PORT=3000
+ENV NODE_ENV=production
+
+# Expose single port supported by Azure Web App for Containers
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || wget --no-verbose --tries=1 --spider http://localhost:80/ || wget --no-verbose --tries=1 --spider http://localhost:8080/ || wget --no-verbose --tries=1 --spider http://localhost:5000/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 # Start server directly via Node.js
 CMD ["node", "server-prod.js"]
