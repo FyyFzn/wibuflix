@@ -250,3 +250,28 @@ export async function getServersInternal(url) {
         if (slot) releaseToPool(slot);
     }
 }
+
+export async function getOtakudesuLatestUpdates() {
+    const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const url = `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/`;
+    let fetchRes, slot;
+    const updates = [];
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
+        const $ = fetchRes.$;
+        $('.venz ul li').each((_, el) => {
+            const title = $(el).find('.jdlflm').text().trim();
+            const ep = $(el).find('.epz').text().trim();
+            if (title && ep) {
+                updates.push({ title, status: ep });
+            }
+        });
+    } catch (e) {
+        console.error(`[Otakudesu Scraper] Gagal memuat updates:`, e.message);
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+    return updates;
+}

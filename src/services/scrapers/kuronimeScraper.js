@@ -324,3 +324,33 @@ export async function handleGetServers(req, res) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+export async function getKuronimeLatestUpdates() {
+    const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
+    const { releaseToPool } = await import('../../puppeteer/pool.js');
+    const url = `${PROVIDER_URLS.KURONIME.BASE_URL}/`;
+    let fetchRes, slot;
+    const updates = [];
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
+        const $ = fetchRes.$;
+        const seenUrls = new Set();
+        $('.bixbox').first().find('article.bsu').each((_, el) => {
+            const title = $(el).find('.bsuxtt h2').text().trim();
+            const ep = $(el).find('.bt .ep').text().trim();
+            const href = $(el).find('a').attr('href');
+            if (title && ep && href && !seenUrls.has(href)) {
+                seenUrls.add(href);
+                updates.push({ title, status: ep, url: href });
+            }
+        });
+    } catch (e) {
+        console.error(`[Kuronime Scraper] Gagal memuat updates:`, e.message);
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+    return updates;
+}

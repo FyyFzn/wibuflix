@@ -279,3 +279,39 @@ export async function handleGetServers(req, res) {
         res.status(500).json({ error: err.message });
     }
 }
+
+export async function getNanimeLatestUpdates() {
+    const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const url = `${PROVIDER_URLS.NANIME.BASE_URL}/`;
+    const updates = [];
+    try {
+        const data = await fetchNanimeInertia(url);
+        const props = data?.props || {};
+        const latestList = props.latestUpdates || props.latest_episodes || props.recent_episodes || props.latest_series || props.latest || props.updates || props.recent || props.new_episodes || [];
+        for (const item of latestList) {
+            const epNumRaw = item.number || item.episode || item.episode_number || item.ep || (item.latest_episode ? item.latest_episode.number : null);
+            const isEpisodeUpdate = (epNumRaw !== undefined && epNumRaw !== null && epNumRaw !== '') || item.anime !== undefined || item.series !== undefined || (item.title && typeof item.title === 'string' && item.title.toLowerCase().includes('episode'));
+            if (!isEpisodeUpdate) continue;
+            const timeStr = (item.time_ago || item.diff_for_humans || item.date || item.time || item.created_at || item.updated_at || '').toString().toLowerCase();
+            if (timeStr.includes('minggu') || timeStr.includes('bulan') || timeStr.includes('tahun')) continue;
+            if (timeStr.includes('hari')) {
+                const matchDays = timeStr.match(/(\d+)\s*hari/);
+                if (matchDays && parseInt(matchDays[1], 10) >= 3) continue;
+            }
+            const animeObj = item.anime || item.series || item.show || item;
+            const rawType = (animeObj.type || item.type || '').toString().toUpperCase();
+            const comicTypes = ['MANGA', 'MANHWA', 'MANHUA', 'COMIC', 'NOVEL', 'DOUJIN', 'ONE-SHOT'];
+            if (comicTypes.includes(rawType) || animeObj.chapters !== undefined || item.chapters !== undefined) continue;
+            const title = animeObj.title || animeObj.name || item.title || item.name;
+            const slug = animeObj.slug || item.slug || item.url || '';
+            if (!title) continue;
+            if (slug && (slug.includes('/manga/') || slug.includes('/read/'))) continue;
+            let statusText = typeof epNumRaw === 'number' || /^\d+$/.test(epNumRaw) ? `Eps ${epNumRaw}` : (item.status || item.title || `Eps ${epNumRaw}`);
+            if (!statusText.toLowerCase().includes('eps')) statusText = `Eps ${epNumRaw || '-'}`;
+            updates.push({ title: title.trim(), status: statusText });
+        }
+    } catch (e) {
+        console.error(`[Nanime Scraper] Gagal memuat updates:`, e.message);
+    }
+    return updates;
+}

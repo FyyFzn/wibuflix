@@ -48,3 +48,19 @@ export async function getNeosatsuServers(fakeUrl) {
 
     return { judul: titleTarget, servers: [], nav_prev: null, nav_next: null };
 }
+
+export async function getNeosatsuLatestUpdates() {
+    try {
+        const catalog = await getNeosatsuCatalog(1);
+        const updates = [];
+        for (const item of catalog) {
+            if (item.judul && item.url) {
+                updates.push({ title: item.judul, status: item.episode_terbaru || 'Completed', url: item.url });
+            }
+        }
+        return updates;
+    } catch (e) {
+        console.error(`[Neosatsu Scraper] Gagal memuat updates:`, e.message);
+        return [];
+    }
+}

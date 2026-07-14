@@ -350,4 +350,48 @@ export async function getServers(req, res) {
     }
 }
 
+export async function getNimegamiLatestUpdates() {
+    const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
+    const { releaseToPool } = await import('../../puppeteer/pool.js');
+    const { cleanSeriesTitle } = await import('../../utils/stringUtils.js');
+    const url = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/anime-terbaru-sub-indo/`;
+    let fetchRes, slot;
+    const updatesMap = new Map();
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
+        const $ = fetchRes.$;
+        const ignoreWords = ['/category/', '/tag/', '/list', '/jadwal', '/genre', 'wp-content', 'javascript:', 'telegram', 'facebook', 'twitter', 'instagram', 'discord', '/page/', '/anime-terbaru', '/live-action', '/drama-jepang', '/dorama', '/jdrama', '/j-drama', '/type', '/seasons', '/streaming', '/ongoing', '/completed', '/movie-list', '/author/', '/about', '/contact', '/privacy', '/disclaimer', '/dmca', '/donasi'];
+        const ignoreTitles = ['anime list', 'live action', 'j-drama', 'jdrama', 'drama jepang', 'anime terbaru', 'jadwal rilis', 'streaming list', 'baca komik', 'type', 'seasons', 'genre', 'home', 'beranda', 'ongoing', 'completed', 'next', 'prev', 'previous', 'dramaid'];
+        $('.content, #main, .main, .post, article, .list-anime').find('a').each((_, el) => {
+            if ($(el).closest('nav, header, footer, .sidebar, .menu, .nav, ul.menu, li.menu-item').length > 0) return;
+            const href = $(el).attr('href');
+            let text = $(el).text().replace(/\s+/g, ' ').trim();
+            if (!href || !href.startsWith('http') || ignoreWords.some(w => href.toLowerCase().includes(w)) || href === `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/`) return;
+            if (ignoreTitles.some(t => text.toLowerCase() === t || text.toLowerCase().includes(t))) return;
+            if (href.includes(new URL(PROVIDER_URLS.NIMEGAMI.BASE_URL).hostname + '/')) {
+                if (!updatesMap.has(href)) updatesMap.set(href, { title: null, status: null });
+                const entry = updatesMap.get(href);
+                if (/eps?\.?\s*\d+/i.test(text)) {
+                    const match = text.match(/eps?\.?\s*(\d+)/i);
+                    if (match) entry.status = `Eps ${match[1]}`;
+                } else if (text.length > 2 && !text.toLowerCase().includes('belum update')) {
+                    entry.title = cleanSeriesTitle(text);
+                }
+            }
+        });
+    } catch (e) {
+        console.error(`[Nimegami Scraper] Gagal memuat updates:`, e.message);
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+    const updates = [];
+    for (const [url, data] of updatesMap.entries()) {
+        if (data.title && data.status) updates.push({ title: data.title, status: data.status, url });
+    }
+    return updates;
+}
+
 export { cache };

@@ -1,11 +1,11 @@
-import { getSamehadakuEpisodes } from './scrapers/samehadakuScraper.js';
+import { getSamehadakuEpisodes, getSamehadakuLatestUpdates } from './scrapers/samehadakuScraper.js';
 import { scrapeVideoServers } from './extractors/videoExtractor.js';
 import * as otakudesu from './scrapers/otakudesuScraper.js';
-import { getKuronimeEpisodes, getKuronimeServers } from './scrapers/kuronimeScraper.js';
-import { getNanimeEpisodes, getNanimeServers } from './scrapers/nanimeScraper.js';
-import { getNimegamiEpisodes, getNimegamiServers } from './scrapers/nimegamiScraper.js';
+import { getKuronimeEpisodes, getKuronimeServers, getKuronimeLatestUpdates } from './scrapers/kuronimeScraper.js';
+import { getNanimeEpisodes, getNanimeServers, getNanimeLatestUpdates } from './scrapers/nanimeScraper.js';
+import { getNimegamiEpisodes, getNimegamiServers, getNimegamiLatestUpdates } from './scrapers/nimegamiScraper.js';
 import * as oploverz from './scrapers/oploverzScraper.js';
-import { getNeosatsuEpisodes, getNeosatsuServers } from './scrapers/neosatsuScraperService.js';
+import { getNeosatsuEpisodes, getNeosatsuServers, getNeosatsuLatestUpdates } from './scrapers/neosatsuScraperService.js';
 import { extractOtakuSlug } from '../utils/stringUtils.js';
 
 /**
@@ -63,7 +63,8 @@ const providers = [
                 judul_seri: neoData?.judul_seri || neoData?.judul || 'Tokusatsu',
                 servers: standardizeServers(neoData?.servers || [], 'Neosatsu')
             };
-        }
+        },
+        getLatestUpdates: async () => await getNeosatsuLatestUpdates()
     },
     // 2. Otakudesu
     {
@@ -84,7 +85,8 @@ const providers = [
                 ...data,
                 servers: standardizeServers(data?.servers || [], 'Otakudesu')
             };
-        }
+        },
+        getLatestUpdates: async () => await otakudesu.getOtakudesuLatestUpdates()
     },
     // 3. Kuronime
     {
@@ -102,7 +104,8 @@ const providers = [
                 ...data,
                 servers: standardizeServers(data?.servers || [], 'Kuronime')
             };
-        }
+        },
+        getLatestUpdates: async () => await getKuronimeLatestUpdates()
     },
     // 4. Nanime
     {
@@ -120,7 +123,8 @@ const providers = [
                 ...data,
                 servers: standardizeServers(data?.servers || [], 'Nanime')
             };
-        }
+        },
+        getLatestUpdates: async () => await getNanimeLatestUpdates()
     },
     // 5. Nimegami
     {
@@ -138,7 +142,8 @@ const providers = [
                 ...data,
                 servers: standardizeServers(data?.servers || [], 'Nimegami')
             };
-        }
+        },
+        getLatestUpdates: async () => await getNimegamiLatestUpdates()
     },
     // 6. Oploverz
     {
@@ -156,7 +161,8 @@ const providers = [
                 ...data,
                 servers: standardizeServers(data?.servers || [], 'Oploverz')
             };
-        }
+        },
+        getLatestUpdates: async () => await oploverz.getOploverzLatestUpdates()
     },
     // 7. Samehadaku (Default/Primary)
     {
@@ -170,7 +176,8 @@ const providers = [
                 ...data,
                 servers: standardizeServers(data?.servers || [], 'Samehadaku')
             };
-        }
+        },
+        getLatestUpdates: async () => await getSamehadakuLatestUpdates()
     }
 ];
 
@@ -210,6 +217,17 @@ export class ProviderRegistry {
     static async fetchServers(url) {
         const provider = this.getProviderForUrl(url);
         return await provider.getServers(url);
+    }
+
+    /**
+     * Eksekusi getLatestUpdates untuk provider tertentu dengan skema DTO standar.
+     */
+    static async fetchLatestUpdates(providerId) {
+        const provider = this.getProviderById(providerId);
+        if (provider && typeof provider.getLatestUpdates === 'function') {
+            return await provider.getLatestUpdates();
+        }
+        return [];
     }
 
     /**

@@ -252,3 +252,35 @@ export async function handleGetServers(req, res) {
         res.status(500).json({ error: err.message });
     }
 }
+
+export async function getOploverzLatestUpdates() {
+    const { PROVIDER_URLS, getOploverzSeriesUrl } = await import('../../config/providerUrls.js');
+    const { acquireFromPool, releaseToPool } = await import('../../puppeteer/pool.js');
+    const cheerio = await import('cheerio');
+    const url = PROVIDER_URLS.OPLOVERZ.BASE_URL;
+    let slot;
+    const updates = [];
+    try {
+        slot = await acquireFromPool();
+        const page = slot.page;
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+        const html = await page.content();
+        const $ = cheerio.load(html);
+        $('.bgwhite div, .post-item, .item').each((_, el) => {
+            const titleNode = $(el).find('.title, h2, h3').first();
+            const epNode = $(el).find('.ep, .episode').first();
+            if (titleNode.length && epNode.length) {
+                const title = titleNode.text().trim();
+                const status = epNode.text().trim();
+                if (title && status) {
+                    updates.push({ title, status: status.toLowerCase().includes('eps') ? status : `Eps ${status}` });
+                }
+            }
+        });
+    } catch (e) {
+        console.error(`[Oploverz Scraper] Gagal memuat updates:`, e.message);
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+    return updates;
+}

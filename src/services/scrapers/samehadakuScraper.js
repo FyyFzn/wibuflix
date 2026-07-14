@@ -124,4 +124,32 @@ export async function getSamehadakuEpisodes(targetUrl) {
     }
 }
 
+export async function getSamehadakuLatestUpdates() {
+    const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const url = `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`;
+    let fetchRes, slot;
+    const updates = [];
+    try {
+        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        slot = fetchRes?.slot;
+        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
+        const $ = fetchRes.$;
+        $('.post-show ul li, .animepost').each((_, el) => {
+            const titleNode = $(el).find('.title, .entry-title, .tt h2').first();
+            const epNode = $(el).find('author[itemprop="name"], .epx').first();
+            if (titleNode.length && epNode.length) {
+                const judul = titleNode.text().trim();
+                const epsText = epNode.text().trim();
+                const status = epsText.toLowerCase().includes('eps') ? epsText : `Eps ${epsText}`;
+                updates.push({ judul, status });
+            }
+        });
+    } catch (e) {
+        console.error(`[Samehadaku Scraper] Gagal memuat updates:`, e.message);
+    } finally {
+        if (slot) releaseToPool(slot);
+    }
+    return updates;
+}
+
 export { cache };
