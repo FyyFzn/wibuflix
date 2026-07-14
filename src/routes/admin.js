@@ -22,5 +22,7 @@ router.get('/api/factory-reset', adminCtrl.triggerFactoryReset);
 router.get('/api/admin/catalog-search', adminCtrl.searchCatalogCards);
 router.post('/api/admin/merge-anime', adminCtrl.mergeAnimeCards);
 router.post('/api/admin/force-mal-id', adminCtrl.forceMalIdOnCard);
+router.post('/api/admin/rename-anime', adminCtrl.renameAnimeCard);
+router.post('/api/admin/force-enrich-card', adminCtrl.forceEnrichCards);
 
 export default router;

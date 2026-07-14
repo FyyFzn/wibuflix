@@ -301,7 +301,28 @@
         </div>
     </div>
 
+    <div class="tool-section">
+        <div class="tool-title">✏️ Rename / Edit Judul Kartu Anime (title)</div>
+        <p style="font-size: 13px; color: var(--text-muted);">Ubah judul resmi kartu anime di database dan otomatis mengunci kartu (<code>isLocked: true</code>) agar judul baru tidak tertimpa ulang oleh Scraper saat sinkronisasi. Judul lama otomatis disimpan ke dalam daftar alias (<code>aliases</code>).</p>
+        <div class="form-row">
+            <input type="text" id="renameAnimeId" placeholder="ID Kartu Anime di MongoDB (misal: 66a...)" />
+            <input type="text" id="renameNewTitle" placeholder="Judul Baru (misal: One Piece (2024))" />
+            <button class="primary" onclick="executeRenameAnime()">✏️ Simpan & Kunci Judul</button>
+        </div>
+    </div>
+
+    <div class="tool-section">
+        <div class="tool-title">⚡ Force Enrich Metadata Card (Single / Bulk)</div>
+        <p style="font-size: 13px; color: var(--text-muted);">Paksa peremajaan data metadata (Cover, Skor, Sinopsis, Genre) dari TMDB/AniList pada 1 atau lebih kartu anime secara instan langsung dari server. Masukkan ID kartu (jika banyak, pisahkan dengan koma).</p>
+        <div class="form-row">
+            <input type="text" id="enrichAnimeIds" placeholder="ID Kartu Anime (misal: 66a..., 66b...)" style="width:350px;" />
+            <label style="color:#fff;font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="enrichOverwriteImg" /> Timpa Gambar/Cover</label>
+            <button class="success" onclick="executeForceEnrich()">⚡ Force Enrich Sekarang</button>
+        </div>
+    </div>
+
     <div id="toast">Notifikasi</div>
+
 
     <script>
         function showToast(msg, isError = false) {
@@ -368,10 +389,12 @@
                         const sources = item.sources ? Object.keys(item.sources).join(', ') : 'None';
                         return '<div class="search-item">' +
                             '<div><b style="color:#fff;">' + item.title + '</b> <span style="color:#8b949e;">(' + item.type + ' | MAL: ' + (item.malId || '-') + ')</span><br/>' +
-                            '<span style="font-size:11px;color:#58a6ff;">Sources: [' + sources + '] | Locked: ' + item.isLocked + '</span></div>' +
-                            '<div><code style="background:#21262d;padding:2px 6px;border-radius:4px;user-select:all;">' + item._id + '</code></div>' +
+                            '<span style="font-size:11px;color:#58a6ff;">Sources: [' + sources + '] | Locked: ' + item.isLocked + ' | Enriched: ' + (item.tmdbEnriched || false) + '</span></div>' +
+                            '<div style="display:flex;gap:6px;align-items:center;"><code style="background:#21262d;padding:2px 6px;border-radius:4px;user-select:all;">' + item._id + '</code>' +
+                            '<button class="success" style="padding:4px 8px;font-size:11px;" onclick="quickForceEnrich(\'' + item._id + '\')">⚡ Enrich</button></div>' +
                             '</div>';
                     }).join('');
+
                 } else {
                     container.style.display = 'block';
                     container.innerHTML = '<div style="padding:8px;color:#8b949e;">Tidak ada kartu ditemukan.</div>';
@@ -424,6 +447,73 @@
                 showToast('❌ Error saat mengunci MAL ID: ' + e.message, true);
             }
         }
+
+        async function executeRenameAnime() {
+            const animeId = document.getElementById('renameAnimeId').value.trim();
+            const newTitle = document.getElementById('renameNewTitle').value.trim();
+            if (!animeId || !newTitle) return showToast('❌ Isi ID Anime dan Judul Baru!', true);
+            try {
+                const res = await fetch('/api/admin/rename-anime', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ animeId, newTitle })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    showToast('✅ ' + json.message);
+                    searchForMerge();
+                } else {
+                    showToast('❌ ' + json.message, true);
+                }
+            } catch (e) {
+                showToast('❌ Error saat mengubah judul: ' + e.message, true);
+            }
+        }
+
+        async function quickForceEnrich(animeId) {
+            showToast('⏳ Memproses Force Enrich untuk kartu ' + animeId + '...');
+            try {
+                const res = await fetch('/api/admin/force-enrich-card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ animeIds: [animeId], forceOverwriteImage: false })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    showToast('✅ ' + json.message);
+                    searchForMerge();
+                } else {
+                    showToast('❌ ' + json.message, true);
+                }
+            } catch (e) {
+                showToast('❌ Error saat Force Enrich: ' + e.message, true);
+            }
+        }
+
+        async function executeForceEnrich() {
+            const idsInput = document.getElementById('enrichAnimeIds').value.trim();
+            const forceOverwriteImage = document.getElementById('enrichOverwriteImg').checked;
+            if (!idsInput) return showToast('❌ Masukkan ID Kartu Anime yang ingin diperkaya!', true);
+            const animeIds = idsInput.split(',').map(id => id.trim()).filter(Boolean);
+            showToast('⏳ Memproses Force Enrich untuk ' + animeIds.length + ' kartu...');
+            try {
+                const res = await fetch('/api/admin/force-enrich-card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ animeIds, forceOverwriteImage })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    showToast('✅ ' + json.message);
+                    searchForMerge();
+                } else {
+                    showToast('❌ ' + json.message, true);
+                }
+            } catch (e) {
+                showToast('❌ Error saat Force Enrich: ' + e.message, true);
+            }
+        }
     </script>
 </body>
 </html>
+

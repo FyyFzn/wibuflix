@@ -239,3 +239,128 @@ export async function forceMalIdOnCard(req, res) {
         res.status(500).json({ status: 'error', message: error.message });
     }
 }
+
+// 11. Rename / Edit Anime Card Title (`POST /api/admin/rename-anime`)
+export async function renameAnimeCard(req, res) {
+    try {
+        const { animeId, newTitle } = req.body;
+        if (!animeId || !newTitle || !newTitle.trim()) {
+            return res.status(400).json({ status: 'error', message: 'animeId dan newTitle wajib diisi!' });
+        }
+
+        const Anime = (await import('../models/Anime.js')).default;
+        const anime = await Anime.findById(animeId);
+        if (!anime) {
+            return res.status(404).json({ status: 'error', message: 'Kartu anime tidak ditemukan.' });
+        }
+
+        const cleanNewTitle = newTitle.trim();
+        const oldTitle = anime.title;
+
+        // Simpan judul lama ke dalam aliases agar pencarian dengan judul lama tetap bekerja
+        const aliasesSet = new Set([
+            ...(anime.aliases || []),
+            oldTitle,
+            cleanNewTitle
+        ].filter(Boolean));
+        anime.aliases = Array.from(aliasesSet);
+
+        anime.title = cleanNewTitle;
+        anime.isLocked = true; // Kunci agar tidak tertimpa ulang oleh Scraper
+        await anime.save();
+
+        flushAll();
+        if (global.anime_db_cache) global.anime_db_cache = null;
+        if (global.otaku_db_cache) global.otaku_db_cache = null;
+
+        res.json({
+            status: 'ok',
+            message: `Berhasil mengubah judul kartu dari "${oldTitle}" menjadi "${cleanNewTitle}" dan mengunci metadatanya!`,
+            data: anime
+        });
+    } catch (error) {
+        console.error('[Admin RenameAnime] Error:', error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+}
+
+// 12. Force Enrich Specific Card(s) immediately (`POST /api/admin/force-enrich-card`)
+export async function forceEnrichCards(req, res) {
+    try {
+        const rawIds = req.body.animeIds || (req.body.animeId ? [req.body.animeId] : []);
+        const targetIds = rawIds.filter(Boolean);
+        if (targetIds.length === 0) {
+            return res.status(400).json({ status: 'error', message: 'animeId atau animeIds wajib diisi!' });
+        }
+
+        const Anime = (await import('../models/Anime.js')).default;
+        const TMDBCache = (await import('../models/TMDBCache.js')).default;
+        const { searchTMDB, normalizeTitle } = await import('../services/metadata/tmdb.js');
+
+        const cards = await Anime.find({ _id: { $in: targetIds } });
+        if (cards.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Kartu anime tidak ditemukan di database.' });
+        }
+
+        let successCount = 0;
+        for (const anime of cards) {
+            try {
+                const isToku = anime.type === 'Toku';
+                let cleanTitle = anime.title.replace(/[\[\]【】()]/g, '').replace(/[-:]\s*$/, '').trim();
+                const norm = normalizeTitle(cleanTitle, isToku);
+                const cacheKey = `meta_${norm}_${isToku ? 'toku' : 'anime'}`;
+
+                // Hapus cache MongoDB lama agar benar-benar force fetch data terbaru dari AniList/TMDB
+                await TMDBCache.deleteOne({ key: cacheKey });
+
+                const tmdbData = await searchTMDB(cleanTitle, isToku);
+                if (tmdbData) {
+                    if (!anime.image || anime.image.includes('placehold') || req.body.forceOverwriteImage) {
+                        anime.image = tmdbData.image || anime.image;
+                    }
+                    anime.score = tmdbData.score && tmdbData.score !== '-' ? tmdbData.score : anime.score;
+                    if (!isToku && anime.type !== 'Toku') {
+                        anime.type = tmdbData.type || anime.type;
+                        if (!anime.isLocked) anime.malId = tmdbData.malId || anime.malId;
+                    }
+                    anime.status = tmdbData.status && anime.status === '-' ? tmdbData.status : anime.status;
+                    if (tmdbData.synopsis && !tmdbData.synopsis.includes('tidak tersedia')) {
+                        anime.synopsis = tmdbData.synopsis;
+                    }
+                    if (tmdbData.genres && tmdbData.genres.length > 0) {
+                        anime.genres = tmdbData.genres;
+                    }
+                    anime.episodesCount = tmdbData.episodesCount || anime.episodesCount;
+                    anime.year = tmdbData.year || anime.year;
+
+                    const mergedAliases = new Set([...(anime.aliases || []), ...(tmdbData.aliases || [])]);
+                    anime.aliases = Array.from(mergedAliases).filter(Boolean);
+
+                    anime.tmdbEnriched = true;
+                    await anime.save();
+                    successCount++;
+                } else {
+                    anime.tmdbEnriched = false;
+                    await anime.save();
+                }
+            } catch (cardErr) {
+                console.error(`[ForceEnrichCard] Error pada kartu "${anime.title}":`, cardErr.message);
+            }
+        }
+
+        flushAll();
+        if (global.anime_db_cache) global.anime_db_cache = null;
+        if (global.otaku_db_cache) global.otaku_db_cache = null;
+
+        res.json({
+            status: 'ok',
+            message: `Berhasil melakukan Force Enrich pada ${successCount} dari ${cards.length} kartu anime yang dipilih!`,
+            data: cards
+        });
+    } catch (error) {
+        console.error('[Admin ForceEnrichCard] Error:', error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+}
+
+
