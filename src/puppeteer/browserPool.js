@@ -1,0 +1,248 @@
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { globalUserAgent, getCfCookiesArray, setCfCookie } from './cookieSessionStore.js';
+
+puppeteer.use(StealthPlugin());
+
+let browserInstance = null;
+let browserLaunchPromise = null;
+let poolReady = false;
+const activeRefreshLocks = new Map(); // domain -> Promise
+
+const EXTENDED_BLACKLIST_DOMAINS = [
+    'googlesyndication.com', 'doubleclick.net', 'dtscout.com', 'facebook.com',
+    'google-analytics.com', 'googletagmanager.com', 'yandex.ru', 'mc.yandex.ru',
+    'histats.com', 'popads.net', 'popcash.net', 'adsterra.com', 'exoclick.com',
+    'propellerads.com', 'onclickmax.com', 'sentry.io', 'hotjar.com', 'clarity.ms'
+];
+
+async function configureOptimizedPage(page) {
+    await page.setUserAgent(globalUserAgent);
+    await page.setRequestInterception(true);
+    page.on('request', req => {
+        if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
+        const type = req.resourceType();
+        const urlLower = req.url().toLowerCase();
+        if (['font', 'image', 'stylesheet', 'media', 'manifest', 'other'].includes(type)) {
+            return req.abort().catch(() => {});
+        }
+        if (EXTENDED_BLACKLIST_DOMAINS.some(domain => urlLower.includes(domain))) {
+            return req.abort().catch(() => {});
+        }
+        req.continue().catch(() => {});
+    });
+    return page;
+}
+
+export async function createPage(targetContextOrBrowser) {
+    const page = await targetContextOrBrowser.newPage();
+    return await configureOptimizedPage(page);
+}
+
+export async function createExtractorPage(targetContextOrBrowser) {
+    const page = await targetContextOrBrowser.newPage();
+    return await configureOptimizedPage(page);
+}
+
+export async function getBrowser() {
+    if (browserInstance) {
+        try {
+            await browserInstance.version();
+            return browserInstance;
+        } catch {
+            console.log('[Browser] Instance lama mati, membuka yang baru...');
+            try { browserInstance.close().catch(() => {}); } catch(e){}
+            browserInstance = null;
+        }
+    }
+
+    if (browserLaunchPromise) {
+        console.log('[Browser] Menunggu instance browser yang sedang dibuka...');
+        return await browserLaunchPromise;
+    }
+
+    console.log('[Browser] Membuka instance baru...');
+    browserLaunchPromise = (async () => {
+        try {
+            const launchOptions = {
+                headless: true,
+                protocolTimeout: 120000,
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--password-store=basic',
+                    '--use-mock-keychain',
+                    '--disable-software-rasterizer',
+                    '--disable-extensions',
+                    '--disable-background-networking',
+                    '--disable-default-apps',
+                    '--disable-sync',
+                    '--disable-translate',
+                    '--metrics-recording-only',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--safebrowsing-disable-auto-update',
+                    '--disable-breakpad',
+                    '--disable-crash-reporter',
+                    '--no-zygote',
+                    '--disable-gpu-sandbox',
+                    '--disable-seccomp-filter-sandbox',
+                    '--disable-namespace-sandbox',
+                    '--disable-gpu-compositing',
+                    '--disable-vulkan',
+                    '--disable-gl-extensions',
+                    '--use-gl=disabled',
+                    '--js-flags=--max-old-space-size=256',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-renderer-backgrounding',
+                    '--enable-features=NetworkService,NetworkServiceInProcess',
+                    '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,CalculateNativeWinOcclusion,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,AutofillServerCommunication,UniversalFederatedAnalytics'
+                ]
+            };
+            
+            console.log('[Browser] Menggunakan official Chrome for Testing (CfT) bawaan Puppeteer...');
+            
+            let browser = null;
+            const maxRetries = 3;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    browser = await puppeteer.launch(launchOptions);
+                    break;
+                } catch (err) {
+                    console.warn(`[Browser] ⚠️ Percobaan ${attempt}/${maxRetries} gagal membuka browser (${err.message})...`);
+                    if (attempt === maxRetries) throw err;
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+            }
+            browserInstance = browser;
+            
+            const version = await browser.version().catch(() => 'unknown');
+            console.log(`[Browser] ✅ Browser berhasil dibuka! Versi: ${version}`);
+            
+            browser.on('disconnected', () => {
+                if (browserInstance === browser) {
+                    console.error(`[Browser] ⚠️ BROWSER MATI TIBA-TIBA! (disconnected event) — Kemungkinan OOM Killer atau crash.`);
+                    browserInstance = null;
+                }
+            });
+            
+            return browser;
+        } finally {
+            browserLaunchPromise = null;
+        }
+    })();
+
+    return await browserLaunchPromise;
+}
+
+export async function waitForCloudflare(page) {
+    const MAX_WAIT = 12000;
+    const INTERVAL = 400;
+    let elapsed = 0;
+    while (elapsed < MAX_WAIT) {
+        if (page.isClosed()) return;
+        const judul = await Promise.race([
+            page.title().catch(() => ''),
+            new Promise(r => setTimeout(() => r(''), 2000))
+        ]);
+        const titleLower = judul.toLowerCase();
+        if (!titleLower.includes('just a moment') && !titleLower.includes('please wait')) return;
+        await new Promise(r => setTimeout(r, INTERVAL));
+        elapsed += INTERVAL;
+    }
+    if (!page.isClosed()) {
+        const finalTitle = await Promise.race([
+            page.title().catch(() => ''),
+            new Promise(r => setTimeout(() => r(''), 2000))
+        ]);
+        if (finalTitle.toLowerCase().includes('just a moment')) {
+            console.warn('[waitForCloudflare] Timeout menunggu CF challenge selesai!');
+        }
+    }
+}
+
+export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') {
+    let domain = 'v2.samehadaku.how';
+    try {
+        domain = new URL(targetUrl).hostname;
+    } catch (e) {}
+
+    if (activeRefreshLocks.has(domain)) {
+        console.log(`[PagePool] Menunggu proses refresh CF cookie yang sedang berlangsung untuk ${domain}...`);
+        return activeRefreshLocks.get(domain);
+    }
+
+    const refreshTask = (async () => {
+        const browser = await getBrowser();
+        const context = await browser.createBrowserContext();
+        const page = await createPage(context);
+        try {
+            console.log(`[PagePool] Me-refresh CF cookie untuk ${domain}...`);
+            await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() =>
+                page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
+            );
+            await waitForCloudflare(page);
+            await new Promise(r => setTimeout(r, 2000));
+            const cookies = await context.cookies().catch(async () => await page.cookies());
+            if (cookies && cookies.length > 0) {
+                const cfClearance = cookies.find(c => c.name === 'cf_clearance');
+                const cookieString = cfClearance
+                    ? `cf_clearance=${cfClearance.value};`
+                    : cookies.map(c => `${c.name}=${c.value}`).join('; ');
+                setCfCookie(domain, cookieString, cookies);
+                const label = cfClearance ? 'cf_clearance' : `session (${cookies.length} cookies)`;
+                console.log(`[PagePool] Cookie berhasil diperbarui untuk ${domain} ✓ [${label}]`);
+            } else {
+                const title = await page.title().catch(() => '');
+                if (!title.toLowerCase().includes('just a moment') && !title.toLowerCase().includes('please wait')) {
+                    setCfCookie(domain, '', []);
+                    console.log(`[PagePool] ${domain} merespons normal tanpa cookie tantangan Cloudflare (Public Edge CDN) ✓`);
+                } else {
+                    console.warn(`[PagePool] ⚠️ Tantangan Cloudflare masih aktif namun tidak ada cookie yang didapat untuk ${domain}.`);
+                }
+            }
+        } catch (e) {
+            console.warn(`[PagePool] Gagal me-refresh CF cookie untuk ${domain}:`, e.message);
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            activeRefreshLocks.delete(domain);
+        }
+    })();
+
+    activeRefreshLocks.set(domain, refreshTask);
+    return refreshTask;
+}
+
+export async function initPagePool() {
+    if (poolReady) return;
+    poolReady = true;
+    
+    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie untuk Samehadaku, Kuronime, & Animeku...');
+    await getBrowser().catch(e => console.error('[PagePool] Gagal membuka browser awal:', e.message));
+    await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up Samehadaku gagal:', e.message));
+    await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Warm-up Kuronime gagal:', e.message));
+    await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Warm-up Animeku gagal:', e.message));
+
+    setInterval(async () => {
+        console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
+        await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh Samehadaku gagal:', e.message));
+        await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Auto-refresh Kuronime gagal:', e.message));
+        await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Auto-refresh Animeku gagal:', e.message));
+    }, 30 * 60 * 1000);
+}
+
+export async function closeAllBrowsers() {
+    console.log('[PagePool] Menutup semua instance browser...');
+    if (browserInstance) {
+        const instanceToClose = browserInstance;
+        browserInstance = null;
+        try {
+            await instanceToClose.close();
+        } catch (e) {
+            console.warn('[PagePool] Error menutup browser:', e.message);
+        }
+    }
+}

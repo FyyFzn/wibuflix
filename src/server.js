@@ -32,23 +32,9 @@ import v2Router from './routes/v2.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const APP_TMP_DIR = path.join(os.tmpdir(), 'wibuflix_temp');
-if (!fs.existsSync(APP_TMP_DIR)) {
-    fs.mkdirSync(APP_TMP_DIR, { recursive: true });
-}
-
-export function sweepOrphanedTempFiles() {
-    console.log('[System] Menyapu file sampah dari sesi sebelumnya...');
-    fs.readdir(APP_TMP_DIR, (err, files) => {
-        if (err) return console.warn('[System] Gagal memindai direktori temp:', err.message);
-        files.forEach(file => {
-            const fullPath = path.join(APP_TMP_DIR, file);
-            fs.rm(fullPath, { recursive: true, force: true }, err => {
-                if (err && err.code !== 'ENOENT') console.warn(`Gagal menghapus: ${file}`);
-            });
-        });
-    });
-}
+import { sweepOrphanedTempFiles, ensureAppTmpDir } from './utils/tempFileCleanupWorker.js';
+export { sweepOrphanedTempFiles };
+ensureAppTmpDir();
 
 async function gracefulShutdown(signal) {
     console.warn(`[System] Menerima ${signal}. Memulai Graceful Shutdown...`);

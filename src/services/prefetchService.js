@@ -12,19 +12,47 @@ import { backgroundQueue } from '../utils/queueManager.js';
 
 export const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 export const activeExtractions = new Set();
+export const prefetchControllersMap = new Map();
 export let prefetchAbortController = new AbortController();
 
-export function resetPrefetchAbortController() {
-    prefetchAbortController = new AbortController();
-    return prefetchAbortController;
+export function getPrefetchController(seriesSlug) {
+    if (!seriesSlug) return prefetchAbortController;
+    const cleanSlug = seriesSlug.toString().replace(/^(mal-\d+_|db-[0-9a-fA-F]{24}_)/, '');
+    if (!prefetchControllersMap.has(cleanSlug)) {
+        prefetchControllersMap.set(cleanSlug, new AbortController());
+    }
+    return prefetchControllersMap.get(cleanSlug);
 }
 
-export function abortAndResetPrefetch() {
-    if (prefetchAbortController) {
-        prefetchAbortController.abort();
+export function resetPrefetchAbortController(seriesSlug = null) {
+    if (!seriesSlug) {
+        prefetchAbortController = new AbortController();
+        return prefetchAbortController;
     }
-    prefetchAbortController = new AbortController();
-    return prefetchAbortController;
+    const cleanSlug = seriesSlug.toString().replace(/^(mal-\d+_|db-[0-9a-fA-F]{24}_)/, '');
+    const ctrl = new AbortController();
+    prefetchControllersMap.set(cleanSlug, ctrl);
+    return ctrl;
+}
+
+export function abortAndResetPrefetch(slugsToCheck = null) {
+    if (!slugsToCheck) {
+        if (prefetchAbortController) {
+            prefetchAbortController.abort();
+        }
+        prefetchAbortController = new AbortController();
+        return prefetchAbortController;
+    }
+    const sList = Array.isArray(slugsToCheck) ? slugsToCheck : [slugsToCheck].filter(Boolean);
+    for (const s of sList) {
+        if (!s) continue;
+        const cleanSlug = s.toString().replace(/^(mal-\d+_|db-[0-9a-fA-F]{24}_)/, '');
+        if (prefetchControllersMap.has(cleanSlug)) {
+            const ctrl = prefetchControllersMap.get(cleanSlug);
+            if (ctrl && typeof ctrl.abort === 'function') ctrl.abort();
+            prefetchControllersMap.delete(cleanSlug);
+        }
+    }
 }
 
 export async function waitForUploadCompletion(slugsToCheck, episodeSlugsToCheck, item) {
@@ -134,7 +162,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     const activeEpSlug = checkInfo.activeEpisodeSlug || episodeSlug;
     
     const logPrefix = source === 'queue' ? '[Queue]' : (source === 'player' ? '[Player Stream]' : '[Prefetch]');
-    const activeSignal = customSignal || (source === 'prefetch' ? prefetchAbortController.signal : null);
+    const activeSignal = customSignal || (source === 'prefetch' ? getPrefetchController(activeSlug || seriesSlug).signal : null);
     
     // Jika lewat queue, kita abaikan status FAILED agar bisa di-retry
     if (status === 'READY' || status === 'UPLOADING' || (status === 'FAILED' && source !== 'queue')) {
@@ -278,7 +306,7 @@ export async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitl
     if (activePrefetchLoops.has(loopKey)) return;
     activePrefetchLoops.add(loopKey);
 
-    const activeSignal = prefetchAbortController.signal;
+    const activeSignal = getPrefetchController(seriesSlug).signal;
 
     try {
         for (const epUrl of validUrls) {

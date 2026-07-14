@@ -1,241 +1,22 @@
-import axios from 'axios';
+// ── Facade Orchestrator: ffmpegStreamService.js ──
+// Sesuai SRP, modul raksasa telah dipecah menjadi 3 modul spesifik:
+// 1. downloaderClient.js: Pengecekan Range support, download multi-jalur (chunked), dan unduhan Mega.
+// 2. hlsTranscoder.js: Pembentukan child process FFmpeg dan pengawasan pemotongan segmen HLS lokal.
+// 3. azureSegmentUploader.js: Pengiriman segmen .ts dan playlist secara estafet ke Azure Blob Storage.
+
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import ffmpegPath from 'ffmpeg-static';
-import { spawn } from 'child_process';
-import pLimit from 'p-limit';
+import axios from 'axios';
 import { setMaxListeners } from 'events';
 import { uploadCache, globalBlacklistCache, uploadProgressCache, activeUploadControllers, failureCountCache } from './streamStateStore.js';
-import { getBlobPath, containerClient, ensureContainerExists, deleteBlobFromAzure } from './blobStorageService.js';
-import { markUploadFailed } from './uploadProgressService.js';
+import { getBlobPath, containerClient, ensureContainerExists } from './blobStorageService.js';
+import { markUploadFailed, cleanTempFilesAsync } from './uploadProgressService.js';
+import { checkRangeSupport, downloadChunked, downloadFromMega } from './downloaderClient.js';
+import { transcodeAndMonitorHLS } from './hlsTranscoder.js';
 
-// --- FUNGSI JDOWNLOADER & STREAM VALIDATOR ---
-export async function checkRangeSupport(url, headers) {
-    try {
-        if (url.includes('/api/proxy/mega')) {
-            return { supported: false, totalSize: 0 };
-        }
-        if (url.includes('.m3u8') || url.includes('/hls/')) {
-            console.log(`[Ping] Memeriksa ketersediaan playlist M3U8: ${url.substring(0, 150)}`);
-            const axiosConfig = {
-                method: 'get',
-                url: url,
-                headers: headers,
-                timeout: 8000
-            };
-            if (url.includes('127.0.0.1') || url.includes('localhost')) {
-                axiosConfig.proxy = false;
-            }
-            const res = await axios(axiosConfig);
-            if (res.status !== 200 && res.status !== 206) {
-                throw new Error(`HTTP_${res.status}_M3U8_ERROR`);
-            }
-            if (!res.data || (typeof res.data === 'string' && !res.data.includes('#EXTM3U'))) {
-                throw new Error('INVALID_M3U8_PLAYLIST');
-            }
-            return { supported: false, totalSize: 0 };
-        }
-        
-        console.log(`[Ping] Memeriksa Range Support untuk URL: ${url.substring(0, 150)}`);
-        const axiosConfig = {
-            method: 'get',
-            url: url,
-            headers: { ...headers, 'Range': 'bytes=0-0' },
-            timeout: 10000
-        };
-        // Bypass global proxy (seperti SOCKS/WARP) untuk koneksi internal
-        if (url.includes('127.0.0.1') || url.includes('localhost')) {
-            axiosConfig.proxy = false;
-        }
-        
-        const res = await axios(axiosConfig);
-        if (res.status === 206) {
-            const contentRange = res.headers['content-range'];
-            if (contentRange) {
-                const match = contentRange.match(/\/(\d+)$/);
-                if (match) return { supported: true, totalSize: parseInt(match[1], 10) };
-            }
-        }
-        // Jika status 200 OK, berarti file ada tapi tidak support resume
-        return { supported: false, totalSize: 0 };
-    } catch (e) {
-        if (e.response) {
-            if (e.response.status === 429) throw new Error('HTTP_429_LIMIT');
-            if (e.response.status === 404) throw new Error('HTTP_404_NOT_FOUND');
-            if (e.response.status === 403) throw new Error('HTTP_403_FORBIDDEN');
-            if (e.response.status >= 500) throw new Error(`HTTP_${e.response.status}_SERVER_ERROR`);
-        }
-        throw new Error('NETWORK_ERROR: ' + e.message);
-    }
-}
-
-async function downloadChunked(url, headers, tempFilePath, totalSize, numThreads, globalAbort, blobPath) {
-    const chunkSize = Math.ceil(totalSize / numThreads);
-    const chunkFiles = [];
-    let downloadedBytes = 0;
-    let nextLogThreshold = 5 * 1024 * 1024;
-    // Batasi concurrency maksimal 8 agar aman dari error 429 (Too Many Requests), tapi tetap cepat (~1 MB/s)
-    const limit = pLimit(Math.min(numThreads, 8)); 
-    const promises = [];
-    
-    // Gunakan satu event listener terpusat untuk menghindari MaxListenersExceededWarning
-    const abortCallbacks = new Set();
-    const handleGlobalAbort = () => {
-        for (const cb of abortCallbacks) {
-            try { cb(); } catch (e) {}
-        }
-    };
-    globalAbort.signal.addEventListener('abort', handleGlobalAbort);
-    
-    for (let i = 0; i < numThreads; i++) {
-        const start = i * chunkSize;
-        const end = Math.min((i + 1) * chunkSize - 1, totalSize - 1);
-        if (start > end) break;
-        
-        const chunkPath = `${tempFilePath}.part${i}`;
-        chunkFiles.push(chunkPath);
-        
-        promises.push(limit(async () => {
-            // Trik Anti-DDoS: Beri jeda acak 0.5 - 2.5 detik sebelum memulai tiap thread baru
-            // Mencegah tembakan request serentak di milidetik yang sama agar tidak dianggap serangan bot
-            const staggerDelay = 500 + Math.random() * 2000;
-            await new Promise(r => setTimeout(r, staggerDelay));
-
-            let attempt = 0;
-            const maxAttempts = 3;
-            
-            while (attempt < maxAttempts) {
-                attempt++;
-                let chunkDownloadedBytes = 0;
-                
-                try {
-                    const localAbort = new AbortController();
-                    
-                    const axiosConfig = {
-                        method: 'get',
-                        url: url,
-                        responseType: 'stream',
-                        headers: { ...headers, 'Range': `bytes=${start}-${end}` },
-                        signal: localAbort.signal,
-                        timeout: 30000
-                    };
-                    if (url.includes('127.0.0.1') || url.includes('localhost')) {
-                        axiosConfig.proxy = false;
-                    }
-                    const res = await axios(axiosConfig);
-                    const contentType = (res.headers['content-type'] || '').toLowerCase();
-                    if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('manifest')) {
-                        if (res.data && typeof res.data.destroy === 'function') res.data.destroy();
-                        throw new Error(`[Stream Validator] Gagal. URL ini bukan video! Content-Type yang didapat: ${contentType}`);
-                    }
-                    
-                    const writer = fs.createWriteStream(chunkPath);
-                    let idleTimeout;
-                    
-                    const resetIdleTimeout = () => {
-                        clearTimeout(idleTimeout);
-                        idleTimeout = setTimeout(() => {
-                            if (res.data && typeof res.data.destroy === 'function') {
-                                res.data.destroy(new Error('STREAM_IDLE_TIMEOUT'));
-                            }
-                        }, 20000); // 20 detik tanpa data = timeout
-                    };
-                    
-                    resetIdleTimeout();
-
-                    res.data.on('data', (chunk) => {
-                        resetIdleTimeout();
-                        chunkDownloadedBytes += chunk.length;
-                        downloadedBytes += chunk.length;
-                        if (downloadedBytes >= nextLogThreshold) {
-                            const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
-                            const msg = `Mengunduh (${numThreads} Jalur): ${Math.round((downloadedBytes / totalSize) * 100)}% (${downloadedMB}MB / ${Math.round(totalSize / 1024 / 1024)}MB)`;
-                            console.info(`[FFmpegStream] ${blobPath} - ${msg}`);
-                            uploadProgressCache.set(blobPath, msg);
-                            nextLogThreshold += 25 * 1024 * 1024;
-                        }
-                    });
-                    
-                    res.data.pipe(writer);
-                    
-                    await new Promise((resolve, reject) => {
-                        const onAbort = () => {
-                            clearTimeout(idleTimeout);
-                            localAbort.abort();
-                            writer.destroy(new Error('UPLOAD_CANCELLED'));
-                            reject(new Error('UPLOAD_CANCELLED'));
-                        };
-                        
-                        abortCallbacks.add(onAbort);
-                        
-                        writer.on('finish', () => {
-                            clearTimeout(idleTimeout);
-                            abortCallbacks.delete(onAbort);
-                            const expectedSize = end - start + 1;
-                            if (chunkDownloadedBytes < expectedSize && attempt < maxAttempts) {
-                                reject(new Error(`INCOMPLETE_CHUNK: Expected ${expectedSize}, got ${chunkDownloadedBytes}`));
-                            } else {
-                                resolve();
-                            }
-                        });
-                        writer.on('error', (err) => {
-                            clearTimeout(idleTimeout);
-                            abortCallbacks.delete(onAbort);
-                            reject(err);
-                        });
-                        res.data.on('error', (err) => {
-                            clearTimeout(idleTimeout);
-                            abortCallbacks.delete(onAbort);
-                            reject(err);
-                        });
-                    });
-                    
-                    // Jika sukses, keluar dari loop retry
-                    break;
-                } catch (err) {
-                    // Kurangi bytes yang sudah terhitung agar progress bar tidak rusak
-                    downloadedBytes -= chunkDownloadedBytes;
-                    
-                    if (err.message === 'UPLOAD_CANCELLED' || globalAbort.signal.aborted) {
-                        throw err;
-                    }
-                    
-                    if (attempt >= maxAttempts) {
-                        console.error(`[FFmpegStream] Chunk ${i} gagal setelah ${maxAttempts} percobaan: ${err.message}`);
-                        throw err;
-                    }
-                    
-                    console.warn(`[FFmpegStream] Chunk ${i} gagal/stuck, mengulang (${attempt}/${maxAttempts})... Error: ${err.message}`);
-                    await new Promise(r => setTimeout(r, 2000)); // jeda sebelum retry
-                }
-            }
-        }));
-    }
-    
-    await Promise.all(promises);
-    globalAbort.signal.removeEventListener('abort', handleGlobalAbort);
-    
-    console.info(`[FFmpegStream] Pengunduhan multi-jalur selesai. Menggabungkan ${chunkFiles.length} file...`);
-    uploadProgressCache.set(blobPath, 'Menggabungkan potongan file...');
-    
-    if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-    for (const chunkPath of chunkFiles) {
-        if (!fs.existsSync(chunkPath)) throw new Error(`Chunk hilang: ${chunkPath}`);
-        await new Promise((resolve, reject) => {
-            const reader = fs.createReadStream(chunkPath);
-            const writer = fs.createWriteStream(tempFilePath, { flags: 'a' });
-            reader.pipe(writer);
-            reader.on('end', () => {
-                fs.unlinkSync(chunkPath);
-                resolve();
-            });
-            reader.on('error', reject);
-            writer.on('error', reject);
-        });
-    }
-}
+export { checkRangeSupport, downloadChunked, downloadFromMega };
 
 /**
  * Melakukan download multi-thread (jika didukung) atau single-stream, lalu upload ke Azure Blob Storage
@@ -263,7 +44,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
         const tempFilePath = path.join(appTmpDir, tempFileName);
         const hlsOutputDir = path.join(appTmpDir, `hls_${crypto.randomUUID()}`);
         
-        activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath, source });
+        activeUploadControllers.set(blobPath, { abortController: globalAbort, tempFilePath, hlsOutputDir, source });
         
         try {
             if (fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
@@ -297,7 +78,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     hostLow.includes('wibufile') ||
                     (rangeCheck.supported && rangeCheck.totalSize > 0)
                 ) {
-                    numThreads = 2; // Gunakan 2 jalur untuk semua server direct video yang mendukung Range / resume agar stabil dan tidak mudah putus di tengah jalan
+                    numThreads = 2;
                 }
                 
                 if (rangeCheck.supported && numThreads > 1) {
@@ -308,67 +89,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     console.info(`[FFmpegStream] Mode Mega: Mengunduh file penuh terlebih dahulu ke lokal (maxConnections: 4)...`);
                     isPipeMode = false;
                     ffmpegInputSource = tempFilePath;
-                    uploadProgressCache.set(blobPath, 'Menyiapkan unduhan Mega...');
-                    
-                    const megaUrl = new URL(videoUrl).searchParams.get('url');
-                    const { File } = await import('megajs');
-                    const file = File.fromURL(megaUrl);
-                    await file.loadAttributes();
-                    
-                    const totalMegaSize = file.size || 0;
-                    const totalMegaMB = Math.round(totalMegaSize / 1024 / 1024);
-                    let downloadedMegaBytes = 0;
-                    let nextMegaLogThreshold = 5 * 1024 * 1024;
-
-                    await new Promise((resolve, reject) => {
-                        const megaStream = file.download({ maxConnections: 4 });
-                        const writer = fs.createWriteStream(tempFilePath);
-                        
-                        const onAbort = () => {
-                            try { megaStream.destroy(); } catch (e) {}
-                            writer.destroy(new Error('UPLOAD_CANCELLED'));
-                            reject(new Error('UPLOAD_CANCELLED'));
-                        };
-                        globalAbort.signal.addEventListener('abort', onAbort, { once: true });
-
-                        megaStream.on('data', (chunk) => {
-                            downloadedMegaBytes += chunk.length;
-                            if (totalMegaSize > 0 && downloadedMegaBytes >= nextMegaLogThreshold) {
-                                const downloadedMB = Math.round(downloadedMegaBytes / 1024 / 1024);
-                                const msg = `Mengunduh dari Mega: ${Math.round((downloadedMegaBytes / totalMegaSize) * 100)}% (${downloadedMB}MB / ${totalMegaMB}MB)`;
-                                console.info(`[FFmpegStream] ${blobPath} - ${msg}`);
-                                uploadProgressCache.set(blobPath, msg);
-                                nextMegaLogThreshold += 25 * 1024 * 1024;
-                            } else if (totalMegaSize === 0 && downloadedMegaBytes >= nextMegaLogThreshold) {
-                                const downloadedMB = Math.round(downloadedMegaBytes / 1024 / 1024);
-                                const msg = `Mengunduh dari Mega: ${downloadedMB}MB...`;
-                                console.info(`[FFmpegStream] ${blobPath} - ${msg}`);
-                                uploadProgressCache.set(blobPath, msg);
-                                nextMegaLogThreshold += 25 * 1024 * 1024;
-                            }
-                        });
-
-                        megaStream.pipe(writer);
-
-                        writer.on('finish', () => {
-                            globalAbort.signal.removeEventListener('abort', onAbort);
-                            console.info(`[FFmpegStream] ✓ Unduhan Mega selesai (${Math.round(downloadedMegaBytes / 1024 / 1024)}MB). Memulai pemotongan HLS lokal...`);
-                            resolve();
-                        });
-
-                        writer.on('error', (err) => {
-                            globalAbort.signal.removeEventListener('abort', onAbort);
-                            reject(err);
-                        });
-
-                        megaStream.on('error', (err) => {
-                            globalAbort.signal.removeEventListener('abort', onAbort);
-                            console.error('[FFmpegStream] Mega Download Error:', err.message);
-                            console.warn('[FFmpegStream] Mega limit/blocked/disconnected hit. Blacklisting Mega for 10 minutes.');
-                            globalBlacklistCache.set('mega_blacklist', true, 600);
-                            reject(err);
-                        });
-                    });
+                    await downloadFromMega(videoUrl, tempFilePath, globalAbort, blobPath);
                 } else {
                     console.info(`[FFmpegStream] Mode Single Stream: Mengalirkan data (Pipe)...`);
                     isPipeMode = true;
@@ -393,7 +114,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                         throw new Error(`[Stream Error] HTTP Status ${response.status} tidak valid untuk stream video`);
                     }
                     if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('manifest')) {
-                        if (response.data && typeof response.data.destroy === 'function') response.data.destroy(); // Bunuh stream-nya segera
+                        if (response.data && typeof response.data.destroy === 'function') response.data.destroy();
                         throw new Error(`[Stream Validator] Gagal. URL ini bukan video! Content-Type yang didapat: ${contentType}`);
                     }
                     streamSource = response.data;
@@ -406,203 +127,18 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
             uploadProgressCache.set(blobPath, 'Memproses video & Mengunggah cicilan HLS...');
             
             const baseAzurePath = `${seriesSlug}/${episodeSlug}`;
-            const m3u8Path = path.join(hlsOutputDir, 'playlist.m3u8');
-            
-            let ffmpegArgs = ['-y'];
-            if (isM3u8Input) {
-                ffmpegArgs.push(
-                    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
-                    '-reconnect', '1', 
-                    '-reconnect_streamed', '1', 
-                    '-reconnect_delay_max', '10'
-                );
-                if (requestHeaders['User-Agent']) ffmpegArgs.push('-user_agent', requestHeaders['User-Agent']);
-                if (requestHeaders['Referer']) ffmpegArgs.push('-referer', requestHeaders['Referer']);
-                const headersArray = [];
-                if (requestHeaders['Origin']) headersArray.push(`Origin: ${requestHeaders['Origin']}`);
-                if (headersArray.length > 0) ffmpegArgs.push('-headers', headersArray.join('\r\n') + '\r\n');
-            }
 
-            ffmpegArgs.push(
-                '-fflags', '+genpts',
-                '-i', isPipeMode ? 'pipe:0' : ffmpegInputSource,
-                '-map', '0:v?',
-                '-map', '0:a?',
-                '-c', 'copy',
-                '-max_muxing_queue_size', '1024',
-                '-f', 'hls',
-                '-hls_time', '10',
-                '-hls_playlist_type', 'vod',
-                '-hls_flags', 'independent_segments+temp_file',
-                '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
-                m3u8Path
-            );
-
-            await new Promise((resolve, reject) => {
-                let isFfmpegDone = false;
-                let isUploadError = false;
-                const uploadLimit = pLimit(3);
-                let ffmpegProcess;
-                
-                const onAbort = () => {
-                    isUploadError = true;
-                    if (ffmpegProcess) {
-                        try { ffmpegProcess.kill(); } catch(e){}
-                    }
-                    reject(new Error('UPLOAD_CANCELLED'));
-                };
-                globalAbort.signal.addEventListener('abort', onAbort);
-
-                // Jalankan FFmpeg dengan prioritas rendah (nice -n 15) agar CPU VPS
-                // selalu memprioritaskan Puppeteer/scraper (interaksi user) di atas pemotongan HLS latar belakang
-                ffmpegProcess = spawn('nice', ['-n', '15', ffmpegPath, ...ffmpegArgs], {
-                    stdio: isPipeMode ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']
-                });
-
-                let ffmpegStderr = '';
-                ffmpegProcess.stderr.on('data', (chunk) => { ffmpegStderr += chunk.toString(); });
-
-                ffmpegProcess.on('error', (error) => {
-                    globalAbort.signal.removeEventListener('abort', onAbort);
-                    if (!isUploadError) {
-                        reject(new Error(`FFmpeg Gagal: ${error.message}`));
-                    }
-                });
-
-                ffmpegProcess.on('close', (code) => {
-                    globalAbort.signal.removeEventListener('abort', onAbort);
-                    if (code !== 0 && !isUploadError) {
-                        if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
-                            console.warn('[FFmpegStream] Mega FFmpeg error. Blacklisting Mega for 10 minutes.');
-                            globalBlacklistCache.set('mega_blacklist', true, 600);
-                        }
-                        reject(new Error(`FFmpeg Gagal (exit code ${code}):\n${ffmpegStderr}`));
-                        return;
-                    }
-                    isFfmpegDone = true;
-                });
-
-                if (isPipeMode && streamSource) {
-                    streamSource.pipe(ffmpegProcess.stdin);
-                    streamSource.on('error', (err) => {
-                        isUploadError = true;
-                        try { ffmpegProcess.kill(); } catch(e){}
-                        if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
-                            console.warn('[FFmpegStream] Mega stream putus. Blacklisting Mega for 10 minutes.');
-                            globalBlacklistCache.set('mega_blacklist', true, 600);
-                        }
-                        reject(new Error(`Stream putus: ${err.message}`));
-                    });
-                }
-
-                let totalUploadedChunks = 0;
-                let finalSweepTriggered = false; // Mencegah double resolve
-                let isProcessingInterval = false; // Mencegah overlap interval
-                
-                const intervalId = setInterval(async () => {
-                    if (isProcessingInterval) return;
-                    isProcessingInterval = true;
-                    try {
-                        if (isUploadError) {
-                            clearInterval(intervalId);
-                            return;
-                        }
-                        
-                        if (isFfmpegDone && !finalSweepTriggered) {
-                            finalSweepTriggered = true;
-                            clearInterval(intervalId);
-                            uploadProgressCache.set(blobPath, 'Menyelesaikan playlist akhir...');
-                            
-                            const remainingFiles = fs.readdirSync(hlsOutputDir);
-                            const finalTsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
-                            
-                            const totalTsCount = totalUploadedChunks + finalTsFiles.length;
-                            if (totalTsCount <= 2 && !blobPath.includes('trailer')) {
-                                if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
-                                    console.warn('[FFmpegStream] Mega failed to provide segments. Blacklisting Mega for 10 minutes.');
-                                    globalBlacklistCache.set('mega_blacklist', true, 600);
-                                }
-                                reject(new Error('Koneksi terputus di tengah jalan: Hanya mendapatkan 1-2 segmen video. Silakan coba server lain.'));
-                                return;
-                            }
-
-                            await Promise.all(remainingFiles.map(file => uploadLimit(async () => {
-                                const localPath = path.join(hlsOutputDir, file);
-                                if (file.endsWith('.tmp') || file.endsWith('.uploading')) return;
-                                
-                                const azureDest = `${baseAzurePath}/${file}`;
-                                const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
-                                
-                                if (!fs.existsSync(localPath)) return;
-                                const stats = fs.statSync(localPath);
-                                if (stats.size === 0) return;
-
-                                const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
-                                await blockBlobClient.uploadFile(localPath, {
-                                    blobHTTPHeaders: { 
-                                        blobContentType: type, 
-                                        blobCacheControl: 'public, max-age=31536000' 
-                                    },
-                                    abortSignal: globalAbort.signal
-                                });
-                                try { fs.unlinkSync(localPath); } catch (e) {}
-                            })));
-
-                            resolve();
-                            return;
-                        }
-                        
-                        const files = fs.readdirSync(hlsOutputDir);
-                        // HANYA ambil file .ts, ABAIKAN file .tmp (karena temp_file flag)
-                        const validTsFiles = files.filter(f => f.endsWith('.ts')).sort();
-                        
-                        // Tidak perlu lagi membuang file terakhir (pop) karena dijamin sudah selesai ditulis oleh FFmpeg temp_file flag
-                        if (validTsFiles.length === 0) {
-                            isProcessingInterval = false;
-                            return;
-                        }
-
-                        await Promise.all(validTsFiles.map(file => uploadLimit(async () => {
-                            if (isUploadError) return;
-                            const localPath = path.join(hlsOutputDir, file);
-                            const azureDest = `${baseAzurePath}/${file}`;
-                            
-                            if (!fs.existsSync(localPath)) return;
-                            
-                            const stats = fs.statSync(localPath);
-                            if (stats.size === 0) return;
-
-                            // Pindahkan file ke direktori staging sebelum upload untuk mencegah lock conflict & race condition
-                            const stagingPath = localPath + '.uploading';
-                            try {
-                                fs.renameSync(localPath, stagingPath);
-                            } catch (renameErr) {
-                                return;
-                            }
-
-                            const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
-                            await blockBlobClient.uploadFile(stagingPath, {
-                                blobHTTPHeaders: { 
-                                    blobContentType: 'video/mp2t', 
-                                    blobCacheControl: 'public, max-age=31536000' 
-                                },
-                                abortSignal: globalAbort.signal
-                            });
-                            
-                            try { fs.unlinkSync(stagingPath); } catch (e) {}
-                            totalUploadedChunks++;
-                            uploadProgressCache.set(blobPath, `Mencicil unggahan pecahan video... (${totalUploadedChunks} pecahan terkirim)`);
-                        })));
-
-                    } catch (err) {
-                        isUploadError = true;
-                        clearInterval(intervalId);
-                        try { ffmpegProcess.kill(); } catch(e){}
-                        reject(new Error('Gagal mencicil ke Azure: ' + err.message));
-                    } finally {
-                        isProcessingInterval = false;
-                    }
-                }, 4000);
+            await transcodeAndMonitorHLS({
+                videoUrl,
+                requestHeaders,
+                isM3u8Input,
+                isPipeMode,
+                ffmpegInputSource,
+                streamSource,
+                hlsOutputDir,
+                baseAzurePath,
+                globalAbort,
+                blobPath
             });
 
             console.info(`[FFmpegStream] Berhasil mengunggah versi HLS ke Azure secara Estafet: ${blobPath}`);
@@ -625,7 +161,6 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 markUploadFailed(seriesSlug, episodeSlug);
                 uploadProgressCache.delete(blobPath);
             }
-            // Hapus playlist.m3u8 parsial dari Azure jika upload gagal atau dibatalkan agar tidak dianggap READY oleh checkUploadStatus
             if (containerClient) {
                 try {
                     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
@@ -639,15 +174,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 if (!globalAbort.signal.aborted) {
                     globalAbort.abort();
                 }
-                
-                if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-                
-                for (let i = 0; i < 32; i++) {
-                    const chunkPath = `${tempFilePath}.part${i}`;
-                    if (fs.existsSync(chunkPath)) fs.unlinkSync(chunkPath);
-                }
-                
-                if (hlsOutputDir && fs.existsSync(hlsOutputDir)) fs.rmSync(hlsOutputDir, { recursive: true, force: true });
+                cleanTempFilesAsync(tempFilePath, hlsOutputDir);
             } catch (fsErr) {
                 // Abaikan
             }

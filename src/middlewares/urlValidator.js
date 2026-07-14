@@ -13,7 +13,9 @@ const BLOCKED_IP_PATTERNS = [
     /^192\.168\./,            // RFC 1918 Class C (192.168.0.0/16)
     /^169\.254\./,            // Link-local & AWS/Azure Cloud Metadata (169.254.0.0/16)
     /^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\./, // Carrier-grade NAT (100.64.0.0/10)
-    /^(::1$|fe80:|fc00:|fd00:)/i, // IPv6 Loopback & Private
+    /^(::1$|fe80:|fc00:|fd00:|::ffff:127\.|::ffff:169\.254\.|::ffff:10\.|::ffff:192\.168\.)/i, // IPv6 Loopback, Private & Mapped IPv4
+    /^[0-9]+$/,               // Pure decimal IP representation (e.g. 2130706433 -> 127.0.0.1)
+    /^0x[0-9a-f]+/i,          // Hex IP representation (e.g. 0x7f000001 -> 127.0.0.1)
     /^localhost$/i
 ];
 

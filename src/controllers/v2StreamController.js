@@ -1,124 +1,20 @@
+// ── Facade & Pure Controller: v2StreamController.js ──
+// Sesuai dengan Single Responsibility Principle (SRP), pengayaan metadata dan pencarian failover
+// telah dipisahkan ke dalam modul spesifik:
+// 1. streamMetadataEnricher.js: Memperkaya metadata navigasi (prev/next) dan daftar server cloud.
+// 2. streamFailoverService.js: Resolusi server alternatif dari Orchestrator saat provider utama blacklisted/rusak.
+
 import { resolveCanonicalUniqueId } from '../services/canonicalService.js';
 import { extractSlugs } from '../services/slugService.js';
 import { prefetchOneEpisode, triggerPrefetchWindow } from '../services/prefetchService.js';
 import { checkUploadStatusWithFallback, getBlobPath, getBlobUrl } from '../services/stream/blobStorageService.js';
 import { getUploadProgress, invalidateAndDeleteBlob } from '../services/stream/uploadProgressService.js';
-import { getUnifiedAnimeEpisodes } from '../services/animeOrchestrator.js';
-import { extractEpNum } from '../utils/stringUtils.js';
 import { globalBlacklistCache } from '../services/stream/streamStateStore.js';
-import { isEpisodeProviderBlacklisted, getProviderKey, blacklistEpisodeProvider, checkUrlBlacklisted } from '../services/streamRankingService.js';
+import { getProviderKey, blacklistEpisodeProvider, checkUrlBlacklisted } from '../services/streamRankingService.js';
+import { enrichStreamMetadata } from '../services/stream/streamMetadataEnricher.js';
+import { findAlternativeProviderCandidate, resolveInitialAlternative } from '../services/stream/streamFailoverService.js';
 
-/**
- * Helper: Memperkaya data stream dengan metadata (nav_prev, nav_next, servers, judul)
- * dari cache/orchestrator sehingga frontend (Thin Client) tidak perlu memanggil /api/scrape di background.
- */
-async function enrichStreamMetadata(data, targetUrl, seriesTitle, episodeTitle, uniqueId) {
-    const enriched = { ...data };
-    try {
-        const epNum = extractEpNum(episodeTitle || targetUrl);
-        let targetEp = null;
-        let prevEp = null;
-        let nextEp = null;
-
-        // Fast-path untuk unit test agar tidak memicu query MongoDB / scraping 30s
-        if (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT || (targetUrl && targetUrl.includes('samehadaku.email/naruto-shippuden-episode-1'))) {
-            targetEp = {
-                num: 1,
-                judul: episodeTitle || 'Naruto Shippuden Episode 1',
-                url: targetUrl,
-                urls: {
-                    samehadaku: targetUrl,
-                    otakudesu: 'https://otakudesu.cloud/naruto-1'
-                }
-            };
-        } else if (epNum != null || seriesTitle || uniqueId) {
-            const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
-            let animeData = null;
-            if (orchSlug || seriesTitle) {
-                animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: false }).catch(() => null);
-            }
-            if (!animeData?.daftar_episode?.length && !animeData?.episodes?.length) {
-                animeData = await getUnifiedAnimeEpisodes({ targetUrl, forceRefresh: false }).catch(() => null);
-            }
-
-            const epList = animeData?.daftar_episode || animeData?.episodes || [];
-            if (epList.length > 0) {
-                let idx = epList.findIndex(e => (epNum != null && e.num === epNum) || (e.url && e.url === targetUrl));
-                if (idx !== -1) {
-                    targetEp = epList[idx];
-                    const isDesc = epList.length > 1 && (epList[0].num || 0) > (epList[epList.length - 1].num || 0);
-                    if (isDesc) {
-                        nextEp = idx > 0 ? epList[idx - 1] : null;
-                        prevEp = idx < epList.length - 1 ? epList[idx + 1] : null;
-                    } else {
-                        prevEp = idx > 0 ? epList[idx - 1] : null;
-                        nextEp = idx < epList.length - 1 ? epList[idx + 1] : null;
-                    }
-                }
-            }
-        }
-
-        if (targetEp?.judul || episodeTitle) {
-            enriched.judul = targetEp?.judul || episodeTitle;
-        }
-        if (prevEp) {
-            enriched.nav_prev = prevEp.url || prevEp.urls?.samehadaku || prevEp.urls?.otakudesu || prevEp.urls?.kuronime || null;
-        }
-        if (nextEp) {
-            enriched.nav_next = nextEp.url || nextEp.urls?.samehadaku || nextEp.urls?.otakudesu || nextEp.urls?.kuronime || null;
-            if (enriched.nav_next && typeof enriched.nav_next === 'string' && enriched.nav_next !== targetUrl) {
-                const { seriesSlug: sSlug } = extractSlugs(targetUrl, null, seriesTitle, uniqueId, null);
-                if (sSlug && typeof triggerPrefetchWindow === 'function') {
-                    triggerPrefetchWindow(sSlug, [enriched.nav_next], seriesTitle, null, uniqueId);
-                }
-            }
-        }
-
-        const servers = [
-            {
-                nama: '1080p · Cloud CDN',
-                post: '',
-                nume: 'cloud-1080',
-                type: 'direct',
-                aktif: true,
-                iframeUrl: enriched.url || '',
-                namaHost: 'Azure Cloud',
-                source: 'Azure Cloud'
-            },
-            {
-                nama: '720p · Cloud CDN',
-                post: '',
-                nume: 'cloud-720',
-                type: 'direct',
-                aktif: true,
-                iframeUrl: enriched.url || '',
-                namaHost: 'Azure Cloud',
-                source: 'Azure Cloud'
-            }
-        ];
-
-        if (targetEp?.urls) {
-            for (const [prov, pUrl] of Object.entries(targetEp.urls)) {
-                if (pUrl) {
-                    servers.push({
-                        nama: `${prov.toUpperCase()} · Mirror`,
-                        post: '',
-                        nume: `mirror-${prov}`,
-                        type: 'direct',
-                        aktif: true,
-                        iframeUrl: pUrl,
-                        namaHost: prov.toUpperCase(),
-                        source: prov.charAt(0).toUpperCase() + prov.slice(1)
-                    });
-                }
-            }
-        }
-        enriched.servers = servers;
-    } catch (e) {
-        console.warn('[API v2 Stream] Gagal enrich metadata stream context:', e.message);
-    }
-    return enriched;
-}
+export { enrichStreamMetadata };
 
 /**
  * Controller V2 Stream:
@@ -147,7 +43,6 @@ export async function getV2Stream(req, res) {
 
         const forceRefresh = req.query.force === 'true' || req.query.refresh === 'true';
 
-        // 1. JIKA SUDAH READY DI AZURE BLOB -> KEMBALIKAN URL BLOB (Kecuali forceRefresh = true)
         if (status === 'READY' && !forceRefresh) {
             if (nextEpisodeUrl && nextEpisodeUrl !== targetUrl && nextEpisodeUrl !== episodeUrl && nextEpisodeUrl !== url) {
                 triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
@@ -166,7 +61,6 @@ export async function getV2Stream(req, res) {
             console.info(`[API v2 Stream] Force Refresh diminta! Mengabaikan cache Azure Blob dan melakukan ekstraksi ulang untuk: ${targetUrl}`);
         }
 
-        // 2. JIKA SEDANG UPLOAD -> KEMBALIKAN PROGRESS (Tanpa fallback proxy/webview!)
         if (status === 'UPLOADING') {
             if (nextEpisodeUrl && nextEpisodeUrl !== targetUrl && nextEpisodeUrl !== episodeUrl && nextEpisodeUrl !== url) {
                 triggerPrefetchWindow(seriesSlug, [nextEpisodeUrl], seriesTitle, slugsToCheck, uniqueId);
@@ -183,45 +77,20 @@ export async function getV2Stream(req, res) {
             });
         }
 
-        // 3. JIKA BELUM ADA ATAU FAILED -> MULAI EKSTRAKSI KE AZURE BLOB DI BACKGROUND
         let urlsObj = null;
         if (urls) {
             try { urlsObj = typeof urls === 'string' ? JSON.parse(urls) : urls; } catch (e) {}
         }
 
-        // BLACKLIST CHECK: Jika URL utama atau provider sudah dilaporkan rusak untuk episode ini, cari alternatif SEBELUM mulai ekstraksi
         let extractionUrl = targetUrl;
         const currentProv = getProviderKey(targetUrl);
         const isMainUrlOrProvBroken = checkUrlBlacklisted(targetUrl, { seriesSlug, episodeSlug, oldSeriesSlug });
 
         if (isMainUrlOrProvBroken) {
             console.info(`[API v2 Stream] URL/Provider ${currentProv || targetUrl} terdeteksi blacklisted/rusak untuk episode ini. Mencari provider alternatif...`);
-            try {
-                const epNum = extractEpNum(episodeTitle || targetUrl);
-                if (epNum != null) {
-                    const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
-                    let animeData = null;
-                    if (orchSlug || seriesTitle) {
-                        animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: false }).catch(() => null);
-                    }
-                    if (!animeData?.episodes?.length) {
-                        animeData = await getUnifiedAnimeEpisodes({ targetUrl, forceRefresh: false }).catch(() => null);
-                    }
-                    const ep = animeData?.episodes?.find(e => e.num === epNum);
-                    if (ep?.urls) {
-                        urlsObj = { ...(urlsObj || {}), ...ep.urls };
-                        for (const [prov, pUrl] of Object.entries(ep.urls)) {
-                            if (pUrl && pUrl !== targetUrl && prov !== currentProv && !checkUrlBlacklisted(pUrl, { seriesSlug, episodeSlug, oldSeriesSlug })) {
-                                extractionUrl = pUrl;
-                                console.info(`[API v2 Stream] ✓ Mengalihkan ekstraksi ke provider alternatif: [${prov.toUpperCase()}] ${extractionUrl}`);
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn('[API v2 Stream] Gagal mencari alternatif saat blacklist check:', e.message);
-            }
+            const altRes = await resolveInitialAlternative({ targetUrl, seriesTitle, episodeTitle, uniqueId, currentProv, seriesSlug, episodeSlug, oldSeriesSlug, urlsObj });
+            extractionUrl = altRes.extractionUrl;
+            urlsObj = altRes.updatedUrlsObj;
         }
 
         if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
@@ -261,6 +130,17 @@ export async function getV2Stream(req, res) {
  * Rute: POST /api/v2/stream/report-broken
  */
 export async function reportBrokenV2(req, res) {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown_ip';
+    const ipRateKey = `rate_report_${clientIp}`;
+    const currentReports = (globalBlacklistCache.get(ipRateKey) || 0) + 1;
+    if (currentReports > 10) {
+        return res.status(429).json({
+            status: 'error',
+            message: 'Terlalu banyak laporan dari IP Anda. Silakan coba beberapa saat lagi.'
+        });
+    }
+    globalBlacklistCache.set(ipRateKey, currentReports, 600);
+
     const targetUrl = req.body?.episodeUrl || req.body?.url || req.query?.episodeUrl || req.query?.url;
     const { seriesUrl, seriesTitle, episodeTitle } = req.body || req.query || {};
     let uniqueId = req.body?.uniqueId || req.query?.uniqueId;
@@ -284,70 +164,22 @@ export async function reportBrokenV2(req, res) {
 
         const brokenProv = getProviderKey(targetUrl);
         if (targetUrl) {
-            globalBlacklistCache.set(`broken_url_${targetUrl}`, true);
+            globalBlacklistCache.set(`broken_url_${targetUrl}`, true, 1800);
             if (targetUrl.includes('?url=')) {
                 try {
                     const dec = decodeURIComponent(targetUrl.split('?url=')[1]);
-                    if (dec) globalBlacklistCache.set(`broken_url_${dec}`, true);
+                    if (dec) globalBlacklistCache.set(`broken_url_${dec}`, true, 1800);
                 } catch(e) {}
             }
         }
         if (brokenProv) {
             blacklistEpisodeProvider(brokenProv, { seriesSlug, episodeSlug, oldSeriesSlug });
             console.info(`[API v2 Failover] Deprioritizing provider [${brokenProv.toUpperCase()}] untuk episode ini (${seriesSlug}/${episodeSlug}) agar failover mencoba web lain lebih dulu.`);
-            const failCount = (globalBlacklistCache.get(`fail_count_${brokenProv}`) || 0) + 1;
-            globalBlacklistCache.set(`fail_count_${brokenProv}`, failCount);
-            if (failCount >= 5) {
-                globalBlacklistCache.set(`broken_provider_${brokenProv}`, true);
-                console.warn(`[API v2 Failover] Provider [${brokenProv.toUpperCase()}] gagal ${failCount}x berturut-turut. Blacklist sementara 15 menit.`);
-            } else {
-                console.info(`[API v2 Failover] Blacklist URL rusak (${targetUrl}). Provider [${brokenProv.toUpperCase()}] fail count: ${failCount}/5`);
-            }
         }
 
-        // SMART SERVER-SIDE FAILOVER: Cari URL provider alternatif dari Orchestrator (force refresh jika perlu)
-        let fallbackUrl = null;
-        let targetEpUrls = null;
-        try {
-            const epNum = extractEpNum(episodeTitle || targetUrl);
-            if (epNum != null) {
-                const orchQuerySlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
-                let animeData = null;
-                if (orchQuerySlug || seriesTitle) {
-                    animeData = await getUnifiedAnimeEpisodes({ slug: orchQuerySlug || seriesTitle, forceRefresh: true }).catch(() => null);
-                }
-                if (!animeData || !animeData.episodes || animeData.episodes.length === 0) {
-                    animeData = await getUnifiedAnimeEpisodes({ targetUrl: targetUrl, forceRefresh: true }).catch(() => null);
-                }
-                if (animeData && animeData.episodes) {
-                    const targetEp = animeData.episodes.find(e => e.num === epNum);
-                    if (targetEp && targetEp.urls) {
-                        targetEpUrls = targetEp.urls;
-                        // Prioritas failover ke provider yang TIDAK rusak dan TIDAK diblacklist
-                        const candidates = [
-                            targetEp.urls.samehadaku,
-                            targetEp.urls.otakudesu,
-                            targetEp.urls.nanime,
-                            targetEp.urls.neosatsu,
-                            targetEp.urls.nimegami,
-                            targetEp.urls.kuronime
-                        ].filter(Boolean);
-
-                        for (const cand of candidates) {
-                            if (cand && cand !== targetUrl) {
-                                const candProv = getProviderKey(cand);
-                                if (candProv && candProv === brokenProv) continue; // Jangan pakai provider yang sama jika rusak total
-                                if (checkUrlBlacklisted(cand, { seriesSlug, episodeSlug, oldSeriesSlug })) continue;
-                                fallbackUrl = cand;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('[API v2 Failover] Gagal mencari alternatif provider dari orchestrator:', e.message);
-        }
+        const altRes = await findAlternativeProviderCandidate({ targetUrl, seriesTitle, episodeTitle, uniqueId, brokenProv, seriesSlug, episodeSlug, oldSeriesSlug });
+        const fallbackUrl = altRes.fallbackUrl;
+        const targetEpUrls = altRes.targetEpUrls;
 
         const nextUrlToExtract = fallbackUrl || targetUrl;
         if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {

@@ -32,6 +32,30 @@ export function cancelAllUploads(source = 'player') {
 }
 
 /**
+ * Cancels active uploads specifically targeting a specific series or episode slugs.
+ */
+export function cancelUploadsForSeries(slugsToCheck, source = null) {
+    if (!slugsToCheck) return 0;
+    const sList = Array.isArray(slugsToCheck) ? slugsToCheck : [slugsToCheck].filter(Boolean);
+    let count = 0;
+    for (const [blobPath, data] of activeUploadControllers.entries()) {
+        const matchesSeries = sList.some(s => {
+            if (!s) return false;
+            const prefix = s.toString().replace(/^(mal-\d+_|db-[0-9a-fA-F]{24}_)/, '');
+            return blobPath.includes(prefix);
+        });
+        if (matchesSeries && (!source || data.source === source)) {
+            const controller = data.abortController || data;
+            if (typeof controller.abort === 'function') controller.abort();
+            console.info(`[UploadProgress] Cancelled targeted upload for ${blobPath} (source: ${data.source})`);
+            activeUploadControllers.delete(blobPath);
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
  * Marks the upload as failed in the cache, allowing up to 3 retries before permanent failure.
  */
 export function markUploadFailed(seriesSlug, episodeSlug) {
@@ -85,6 +109,22 @@ export function getActiveUploadCount() {
 }
 
 /**
+ * Membersihkan file sementara secara asinkron tanpa memblokir Event Loop Node.js (Asynchronous Disk Cleanup).
+ */
+export async function cleanTempFilesAsync(tempFilePath, hlsOutputDir = null) {
+    if (tempFilePath) {
+        fs.promises.unlink(tempFilePath).catch(() => {});
+        for (let i = 0; i < 32; i++) {
+            const chunkPath = `${tempFilePath}.part${i}`;
+            fs.promises.unlink(chunkPath).catch(() => {});
+        }
+    }
+    if (hlsOutputDir) {
+        fs.promises.rm(hlsOutputDir, { recursive: true, force: true }).catch(() => {});
+    }
+}
+
+/**
  * Membatalkan proses upload yang sedang berjalan
  */
 export function cancelUpload(seriesSlug, episodeSlug) {
@@ -95,15 +135,8 @@ export function cancelUpload(seriesSlug, episodeSlug) {
         const controller = data.abortController || data;
         if (typeof controller.abort === 'function') controller.abort();
         
-        if (data.tempFilePath) {
-            // Sapu bersih file sementara
-            try {
-                if (fs.existsSync(data.tempFilePath)) fs.unlinkSync(data.tempFilePath);
-                for (let i = 0; i < 32; i++) {
-                    const chunkPath = `${data.tempFilePath}.part${i}`;
-                    if (fs.existsSync(chunkPath)) fs.unlinkSync(chunkPath);
-                }
-            } catch(e) { }
+        if (data.tempFilePath || data.hlsOutputDir) {
+            cleanTempFilesAsync(data.tempFilePath, data.hlsOutputDir);
         }
 
         activeUploadControllers.delete(blobPath);
