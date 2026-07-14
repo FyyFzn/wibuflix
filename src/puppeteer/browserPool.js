@@ -229,14 +229,14 @@ export async function initPagePool() {
     await getBrowser().catch(e => console.error('[PagePool] Gagal membuka browser awal:', e.message));
     await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up Samehadaku gagal:', e.message));
     await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Warm-up Kuronime gagal:', e.message));
-    await refreshCfCookie('https://otakudesu.io/').catch(e => console.warn('[PagePool] Warm-up Otakudesu gagal:', e.message));
+    await refreshCfCookie('https://otakudesu.blog/').catch(e => console.warn('[PagePool] Warm-up Otakudesu gagal:', e.message));
     await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Warm-up Animeku gagal:', e.message));
 
     setInterval(async () => {
         console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
         await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh Samehadaku gagal:', e.message));
         await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Auto-refresh Kuronime gagal:', e.message));
-        await refreshCfCookie('https://otakudesu.io/').catch(e => console.warn('[PagePool] Auto-refresh Otakudesu gagal:', e.message));
+        await refreshCfCookie('https://otakudesu.blog/').catch(e => console.warn('[PagePool] Auto-refresh Otakudesu gagal:', e.message));
         await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Auto-refresh Animeku gagal:', e.message));
     }, 30 * 60 * 1000);
 }

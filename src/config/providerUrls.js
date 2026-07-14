@@ -14,8 +14,8 @@ export const PROVIDER_URLS = {
     },
     OTAKUDESU: {
         NAME: 'Otakudesu',
-        BASE_URL: 'https://otakudesu.io',
-        CATALOG_URL: 'https://otakudesu.io/anime-list/',
+        BASE_URL: 'https://otakudesu.blog',
+        CATALOG_URL: 'https://otakudesu.blog/anime-list/',
         DOMAIN_KEYWORDS: ['otakudesu']
     },
     KURONIME: {
