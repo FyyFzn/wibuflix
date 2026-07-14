@@ -45,6 +45,50 @@ test('Tahap 1: Slug Service - extractSlugs URL normalization', () => {
     assert.strictEqual(resNoId.episodeSlug, 'episode-1');
 });
 
+test('Tahap 1: OVA/Special Episode - stringUtils and slugService separation', async () => {
+    const { extractEpNumStrict, extractEpNum } = await import('../utils/stringUtils.js');
+
+    assert.strictEqual(extractEpNumStrict('Accel World OVA 1'), null);
+    assert.strictEqual(extractEpNumStrict('Accel World Special 2'), null);
+    assert.strictEqual(extractEpNumStrict('Accel World SP 1'), null);
+    assert.strictEqual(extractEpNumStrict('Accel World Episode 1'), 1);
+
+    assert.strictEqual(extractEpNum('Accel World OVA 1'), null);
+    assert.strictEqual(extractEpNum('Accel World Special 2'), null);
+    assert.strictEqual(extractEpNum('Accel World SP 1'), null);
+    assert.strictEqual(extractEpNum('Accel World Episode 1'), 1);
+
+    // Check extractSlugs for OVA/Special/SP/OAD
+    const resOva = extractSlugs(
+        'https://samehadaku.email/accel-world-ova-01',
+        'https://samehadaku.email/anime/accel-world',
+        'Accel World',
+        'mal-11759',
+        'Episode OVA 1'
+    );
+    assert.strictEqual(resOva.episodeSlug, 'ova-1');
+    assert.ok(resOva.episodeSlugsToCheck.includes('ova-1'));
+
+    const resOvaSlug = extractSlugs(
+        'https://samehadaku.email/accel-world-ova-02-sub-indo',
+        'https://samehadaku.email/anime/accel-world',
+        'Accel World',
+        'mal-11759',
+        ''
+    );
+    assert.strictEqual(resOvaSlug.episodeSlug, 'ova-2');
+    assert.ok(resOvaSlug.episodeSlugsToCheck.includes('ova-2'));
+
+    const resSpecial = extractSlugs(
+        'https://samehadaku.email/accel-world-special-1',
+        'https://samehadaku.email/anime/accel-world',
+        'Accel World',
+        'mal-11759',
+        'Special 1'
+    );
+    assert.strictEqual(resSpecial.episodeSlug, 'special-1');
+});
+
 test('Tahap 1: Stream Ranking Service - resolution grouping and server scoring', () => {
     // Resolution grouping check
     assert.strictEqual(getResolutionGroup('Full HD 1080p'), 1080);
@@ -86,4 +130,48 @@ test('Tahap 1-3: Clean Layered Architecture - Single Responsibility verification
     assert.strictEqual(typeof neosatsuScraperService.getNeosatsuCatalog, 'function');
     assert.strictEqual(typeof neosatsuScraperService.getNeosatsuEpisodes, 'function');
     assert.strictEqual(typeof neosatsuScraperService.getNeosatsuServers, 'function');
+});
+
+test('Tahap 5: Actual Source Provider Tracking - reportBrokenV2 reads actual source from uploadCache', async () => {
+    const { uploadCache } = await import('../services/stream/streamStateStore.js');
+    const { reportBrokenV2 } = await import('../controllers/v2StreamController.js');
+    const { isEpisodeProviderBlacklisted } = await import('../services/streamRankingService.js');
+
+    // 1. Seed uploadCache with actual video source provider for a specific episode
+    const seriesSlug = 'mal-11759_accel-world';
+    const episodeSlug = 'episode-1';
+    uploadCache.set(`blob_source_prov_${seriesSlug}_${episodeSlug}`, 'samehadaku');
+
+    // 2. Mock Express Request & Response for reportBrokenV2
+    // Even if targetUrl points to otakudesu, it should blacklist samehadaku because that is the actual source stored in uploadCache!
+    let responsePayload = null;
+    const mockReq = {
+        query: {
+            url: 'https://otakudesu.cloud/accel-world-episode-1/',
+            seriesUrl: 'https://otakudesu.cloud/anime/accel-world',
+            seriesTitle: 'Accel World',
+            episodeTitle: 'Accel World Episode 1',
+            uniqueId: 'mal-11759'
+        },
+        headers: {},
+        socket: {}
+    };
+    const mockRes = {
+        json(payload) {
+            responsePayload = payload;
+            return this;
+        },
+        status(code) {
+            return this;
+        }
+    };
+
+    await reportBrokenV2(mockReq, mockRes);
+
+    // 3. Verify that samehadaku (not otakudesu) is blacklisted for this episode
+    const isSamehadakuBlacklisted = isEpisodeProviderBlacklisted('samehadaku', { seriesSlug, episodeSlug });
+    const isOtakudesuBlacklisted = isEpisodeProviderBlacklisted('otakudesu', { seriesSlug, episodeSlug });
+
+    assert.strictEqual(isSamehadakuBlacklisted, true, 'Samehadaku should be blacklisted as the actual source provider');
+    assert.strictEqual(isOtakudesuBlacklisted, false, 'Otakudesu should not be blacklisted since it was not the actual source');
 });

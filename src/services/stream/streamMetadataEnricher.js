@@ -37,7 +37,11 @@ export async function enrichStreamMetadata(data, targetUrl, seriesTitle, episode
 
             const epList = animeData?.daftar_episode || animeData?.episodes || [];
             if (epList.length > 0) {
-                let idx = epList.findIndex(e => (epNum != null && e.num === epNum) || (e.url && e.url === targetUrl));
+                let idx = epList.findIndex(e => 
+                    (epNum != null && e.num === epNum) || 
+                    (e.url && e.url === targetUrl) || 
+                    (e.urls && Object.values(e.urls).includes(targetUrl))
+                );
                 if (idx !== -1) {
                     targetEp = epList[idx];
                     const isDesc = epList.length > 1 && (epList[0].num || 0) > (epList[epList.length - 1].num || 0);

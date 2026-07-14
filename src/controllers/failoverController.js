@@ -1,6 +1,6 @@
 import { resolveCanonicalUniqueId } from '../services/canonicalService.js';
 import { extractSlugs } from '../services/slugService.js';
-import { globalBlacklistCache } from '../services/stream/streamStateStore.js';
+import { globalBlacklistCache, uploadCache } from '../services/stream/streamStateStore.js';
 import { getProviderKey, blacklistEpisodeProvider } from '../services/streamRankingService.js';
 import { invalidateAndDeleteBlob, cancelAllUploads } from '../services/stream/uploadProgressService.js';
 import { prefetchOneEpisode, abortAndResetPrefetch, removeActiveExtractions } from '../services/prefetchService.js';
@@ -27,7 +27,8 @@ export async function reportBrokenHandler(req, res) {
         
         console.warn(`[Report Broken] ⚠️ Laporan dari pengguna untuk video: "${episodeTitle || url}" (Server: ${currentServer || 'Unknown'})`);
         
-        const brokenProv = getProviderKey(url);
+        const actualSourceProv = uploadCache.get(`blob_source_prov_${seriesSlug}_${episodeSlug}`);
+        const brokenProv = actualSourceProv || getProviderKey(url);
         if (url) {
             globalBlacklistCache.set(`broken_url_${url}`, true);
             if (url.includes('?url=')) {
@@ -39,7 +40,7 @@ export async function reportBrokenHandler(req, res) {
         }
         if (brokenProv) {
             blacklistEpisodeProvider(brokenProv, { seriesSlug, episodeSlug, oldSeriesSlug });
-            console.info(`[Report Broken] Deprioritizing/Blacklisting provider [${brokenProv.toUpperCase()}] untuk episode (${seriesSlug}/${episodeSlug}).`);
+            console.info(`[Report Broken] Deprioritizing/Blacklisting provider [${brokenProv.toUpperCase()}] (actual source: ${actualSourceProv || 'default'}) untuk episode (${seriesSlug}/${episodeSlug}).`);
         }
 
         await invalidateAndDeleteBlob(slugsToCheck, episodeSlugsToCheck);

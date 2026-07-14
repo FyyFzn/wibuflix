@@ -60,8 +60,30 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
     if (episodeTitle) epNum = extractEpNumStrict(episodeTitle);
     if (epNum === null) epNum = extractEpNumStrict(rawEpSlug.replace(/-/g, ' '));
     
+    let specialEpSlug = null;
+    const specialMatch = (episodeTitle || '').match(/(ova|oad|special|sp|movie|film)[\s-_]*(\d+(?:\.\d+)?)/i);
+    if (specialMatch) {
+        let type = specialMatch[1].toLowerCase();
+        if (type === 'sp') type = 'special';
+        if (type === 'film') type = 'movie';
+        specialEpSlug = `${type}-${parseFloat(specialMatch[2])}`;
+    } else {
+        const slugSpecialMatch = rawEpSlug.replace(/-/g, ' ').match(/(ova|oad|special|sp|movie|film)[\s-_]*(\d+(?:\.\d+)?)/i);
+        if (slugSpecialMatch) {
+            let type = slugSpecialMatch[1].toLowerCase();
+            if (type === 'sp') type = 'special';
+            if (type === 'film') type = 'movie';
+            specialEpSlug = `${type}-${parseFloat(slugSpecialMatch[2])}`;
+        }
+    }
+
     if (epNum !== null) {
         unifiedEpSlug = `episode-${epNum}`;
+    } else if (specialEpSlug !== null) {
+        unifiedEpSlug = specialEpSlug;
+    }
+    
+    if (unifiedEpSlug !== null) {
         if (!episodeSlugsToCheck.includes(unifiedEpSlug)) {
             episodeSlugsToCheck.push(unifiedEpSlug);
         }

@@ -10,7 +10,7 @@ export async function findAlternativeProviderCandidate({ targetUrl, seriesTitle,
     let targetEpUrls = null;
     try {
         const epNum = extractEpNum(episodeTitle || targetUrl);
-        if (epNum != null) {
+        if (epNum != null || targetUrl || episodeTitle) {
             const orchQuerySlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
             let animeData = null;
             if (orchQuerySlug || seriesTitle) {
@@ -20,7 +20,11 @@ export async function findAlternativeProviderCandidate({ targetUrl, seriesTitle,
                 animeData = await getUnifiedAnimeEpisodes({ targetUrl: targetUrl, forceRefresh: true }).catch(() => null);
             }
             if (animeData && animeData.episodes) {
-                const targetEp = animeData.episodes.find(e => e.num === epNum);
+                const targetEp = animeData.episodes.find(e => 
+                    (epNum != null && e.num === epNum) || 
+                    (e.url && e.url === targetUrl) || 
+                    (e.urls && Object.values(e.urls).includes(targetUrl))
+                );
                 if (targetEp && targetEp.urls) {
                     targetEpUrls = targetEp.urls;
                     const candidates = [
@@ -58,7 +62,7 @@ export async function resolveInitialAlternative({ targetUrl, seriesTitle, episod
     let updatedUrlsObj = urlsObj;
     try {
         const epNum = extractEpNum(episodeTitle || targetUrl);
-        if (epNum != null) {
+        if (epNum != null || targetUrl || episodeTitle) {
             const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
             let animeData = null;
             if (orchSlug || seriesTitle) {
@@ -67,7 +71,11 @@ export async function resolveInitialAlternative({ targetUrl, seriesTitle, episod
             if (!animeData?.episodes?.length) {
                 animeData = await getUnifiedAnimeEpisodes({ targetUrl, forceRefresh: false }).catch(() => null);
             }
-            const ep = animeData?.episodes?.find(e => e.num === epNum);
+            const ep = animeData?.episodes?.find(e => 
+                (epNum != null && e.num === epNum) || 
+                (e.url && e.url === targetUrl) || 
+                (e.urls && Object.values(e.urls).includes(targetUrl))
+            );
             if (ep?.urls) {
                 updatedUrlsObj = { ...(updatedUrlsObj || {}), ...ep.urls };
                 for (const [prov, pUrl] of Object.entries(ep.urls)) {

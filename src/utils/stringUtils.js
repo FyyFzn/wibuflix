@@ -182,8 +182,13 @@ export function extractEpNumStrict(title) {
     let clean = str.replace(/\b(1080p|720p|480p|360p|240p|x264|x265|mkv|mp4|avi|bd|bluray|web-dl|aac|h264)\b/gi, ' ');
     clean = clean.replace(/\b(mal-\d+|db-[a-f0-9]+)\b/gi, ' ');
 
-    // 3. Pola standar: Episode / Ep / Eps / E / OVA / Special / SP dengan fleksibel pemisah [\s-_]*
-    const stdMatch = clean.match(/(?:episode|eps|ep|ova|special|sp)[\s-_]*0*(\d+(?:\.\d+)?)/i);
+    // Hindari deteksi angka pada OVA / OAD / Special / SP / Movie / Film / Batch agar tidak bentrok dengan episode standar
+    if (/(?:ova|oad|special|sp|movie|film)[\s-_]*\d+/i.test(clean) || /\b(movie|film|batch)\b/i.test(clean)) {
+        return null;
+    }
+
+    // 3. Pola standar: Episode / Ep / Eps / E dengan fleksibel pemisah [\s-_]* (OVA/Special dkk. dikecualikan agar num === null)
+    const stdMatch = clean.match(/(?:episode|eps|ep)[\s-_]*0*(\d+(?:\.\d+)?)/i);
     if (stdMatch) return parseFloat(stdMatch[1]);
 
     // 4. Pola pemisah ganda khas Otakudesu / Fansub (misal: "Otakudesu_Baki--01_", "Baki - 01 -", "[01]", "-10-")
@@ -205,12 +210,17 @@ export function extractEpNumStrict(title) {
 }
 
 export function extractEpNum(title) {
-    if (!title) return title;
+    if (!title) return null;
+    const clean = String(title).trim();
+    // Hindari deteksi angka pada OVA / OAD / Special / SP / Movie / Film / Batch
+    if (/(?:ova|oad|special|sp|movie|film)[\s-_]*\d+/i.test(clean) || /\b(movie|film|batch)\b/i.test(clean)) {
+        return null;
+    }
     const strictNum = extractEpNumStrict(title);
     if (strictNum !== null) return strictNum;
-    const pureNumMatch = title.match(/^\s*0*(\d+(?:\.\d+)?)\s*$/);
+    const pureNumMatch = clean.match(/^\s*0*(\d+(?:\.\d+)?)\s*$/);
     if (pureNumMatch) return parseFloat(pureNumMatch[1]);
-    return title;
+    return null;
 }
 
 export function adjustTitleEpisodeNumber(title, offset) {

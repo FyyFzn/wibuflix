@@ -9,7 +9,7 @@ import { extractSlugs } from '../services/slugService.js';
 import { prefetchOneEpisode, triggerPrefetchWindow } from '../services/prefetchService.js';
 import { checkUploadStatusWithFallback, getBlobPath, getBlobUrl } from '../services/stream/blobStorageService.js';
 import { getUploadProgress, invalidateAndDeleteBlob } from '../services/stream/uploadProgressService.js';
-import { globalBlacklistCache } from '../services/stream/streamStateStore.js';
+import { globalBlacklistCache, uploadCache } from '../services/stream/streamStateStore.js';
 import { getProviderKey, blacklistEpisodeProvider, checkUrlBlacklisted } from '../services/streamRankingService.js';
 import { enrichStreamMetadata } from '../services/stream/streamMetadataEnricher.js';
 import { findAlternativeProviderCandidate, resolveInitialAlternative } from '../services/stream/streamFailoverService.js';
@@ -162,7 +162,8 @@ export async function reportBrokenV2(req, res) {
             await invalidateAndDeleteBlob(oldSeriesSlug, episodeSlug);
         }
 
-        const brokenProv = getProviderKey(targetUrl);
+        const actualSourceProv = uploadCache.get(`blob_source_prov_${seriesSlug}_${episodeSlug}`);
+        const brokenProv = actualSourceProv || getProviderKey(targetUrl);
         if (targetUrl) {
             globalBlacklistCache.set(`broken_url_${targetUrl}`, true, 1800);
             if (targetUrl.includes('?url=')) {
@@ -174,12 +175,19 @@ export async function reportBrokenV2(req, res) {
         }
         if (brokenProv) {
             blacklistEpisodeProvider(brokenProv, { seriesSlug, episodeSlug, oldSeriesSlug });
-            console.info(`[API v2 Failover] Deprioritizing provider [${brokenProv.toUpperCase()}] untuk episode ini (${seriesSlug}/${episodeSlug}) agar failover mencoba web lain lebih dulu.`);
+            console.info(`[API v2 Failover] Deprioritizing provider [${brokenProv.toUpperCase()}] (actual source: ${actualSourceProv || 'default'}) untuk episode ini (${seriesSlug}/${episodeSlug}) agar failover mencoba web lain lebih dulu.`);
         }
 
         const altRes = await findAlternativeProviderCandidate({ targetUrl, seriesTitle, episodeTitle, uniqueId, brokenProv, seriesSlug, episodeSlug, oldSeriesSlug });
         const fallbackUrl = altRes.fallbackUrl;
         const targetEpUrls = altRes.targetEpUrls;
+
+        if (targetUrl && actualSourceProv && actualSourceProv !== getProviderKey(targetUrl)) {
+            const actualUrl = targetEpUrls?.[actualSourceProv];
+            if (actualUrl) {
+                globalBlacklistCache.set(`broken_url_${actualUrl}`, true, 1800);
+            }
+        }
 
         const nextUrlToExtract = fallbackUrl || targetUrl;
         if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {

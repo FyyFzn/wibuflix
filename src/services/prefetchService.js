@@ -4,7 +4,7 @@ import { findBestVideoSource } from './streamRankingService.js';
 import { checkUploadStatusWithFallback, getBlobPath } from './stream/blobStorageService.js';
 import { markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount } from './stream/uploadProgressService.js';
 import { uploadStream } from './stream/ffmpegStreamService.js';
-import { globalBlacklistCache } from './stream/streamStateStore.js';
+import { globalBlacklistCache, uploadCache } from './stream/streamStateStore.js';
 import { getCache } from '../utils/cacheManager.js';
 import { getUnifiedAnimeEpisodes } from './animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
@@ -201,7 +201,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                     hasFetchedOrch = true;
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
-                        if (epNum != null) {
+                        if (epNum != null || episodeUrl || episodeTitle) {
                             const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
                             const forceRefreshOrch = attempt > 1; // Jika retry attempt > 1, minta force refresh dari Orchestrator
                             let animeData = null;
@@ -217,7 +217,11 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             if (!animeData || !animeData.episodes || animeData.episodes.length === 0) {
                                 animeData = await getUnifiedAnimeEpisodes({ targetUrl: episodeUrl, forceRefresh: forceRefreshOrch }).catch(() => null);
                             }
-                            const targetEp = animeData?.episodes?.find(e => e.num === epNum);
+                            const targetEp = animeData?.episodes?.find(e => 
+                                (epNum != null && e.num === epNum) || 
+                                (e.url && e.url === episodeUrl) || 
+                                (e.urls && Object.values(e.urls).includes(episodeUrl))
+                            );
                             if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
                                 urlsObjForAttempt = { ...(urlsObjForAttempt || {}), ...targetEp.urls };
                                 console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${Object.keys(urlsObjForAttempt).length} provider (${Object.keys(urlsObjForAttempt).join(', ')}) untuk multi-source fetch persis seperti Smart Play (ep ${epNum}).`);
@@ -249,6 +253,9 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 proxyCache.set(`prefetch_src_${activeSlug}_${episodeSlug}`, matchedSource);
                 await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
+                if (matchedSource && matchedSource.source) {
+                    uploadCache.set(`blob_source_prov_${activeSlug}_${episodeSlug}`, matchedSource.source.toLowerCase().trim());
+                }
                 proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
                 removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
                 return { success: true };
