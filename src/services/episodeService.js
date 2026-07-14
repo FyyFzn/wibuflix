@@ -7,6 +7,8 @@ import { getNimegamiEpisodes } from '../controllers/nimegamiController.js';
 import * as oploverz from '../controllers/oploverzController.js';
 import Anime from '../models/Anime.js';
 import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle } from '../utils/stringUtils.js';
+import { getOploverzSeriesUrl, getKuronimeSeriesUrl, getNanimeSeriesUrl, getNimegamiSeriesUrl } from '../config/providerUrls.js';
+
 
 const activeScrapeLocks = new Map();
 
@@ -256,10 +258,11 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
     // TAHAP 1: Source Resolution (Ambil URL seri resmi dari database atau parameter input)
     let cleanSamehadaku = urlSamehadaku || dbAnime?.sources?.samehadaku?.url;
     let cleanOtakudesu = urlOtakudesu || dbAnime?.sources?.otakudesu?.url || (dbAnime?.sources?.otakudesu?.id ? `/anime/${dbAnime.sources.otakudesu.id.replace(/^otakudesu:/, '')}` : null);
-    let cleanKuronime = urlKuronime || dbAnime?.sources?.kuronime?.url || (dbAnime?.sources?.kuronime?.id ? `https://kuronime.sbs/anime/${dbAnime.sources.kuronime.id.replace(/^kuronime:/, '')}/` : null);
-    let cleanNanime = urlNanime || dbAnime?.sources?.nanime?.url || (dbAnime?.sources?.nanime?.id ? `https://nanimeid.net/anime/${dbAnime.sources.nanime.id}` : null);
-    let cleanNimegami = urlNimegami || dbAnime?.sources?.nimegami?.url || (dbAnime?.sources?.nimegami?.id ? `https://nimegami.id/${dbAnime.sources.nimegami.id.replace(/^nimegami:/, '')}/` : null);
-    let cleanOploverz = urlOploverz || dbAnime?.sources?.oploverz?.url || (dbAnime?.sources?.oploverz?.id ? `https://idn.oploverz.site/series/${dbAnime.sources.oploverz.id}` : null);
+    let cleanKuronime = urlKuronime || dbAnime?.sources?.kuronime?.url || (dbAnime?.sources?.kuronime?.id ? getKuronimeSeriesUrl(dbAnime.sources.kuronime.id.replace(/^kuronime:/, '')) : null);
+    let cleanNanime = urlNanime || dbAnime?.sources?.nanime?.url || (dbAnime?.sources?.nanime?.id ? getNanimeSeriesUrl(dbAnime.sources.nanime.id) : null);
+    let cleanNimegami = urlNimegami || dbAnime?.sources?.nimegami?.url || (dbAnime?.sources?.nimegami?.id ? getNimegamiSeriesUrl(dbAnime.sources.nimegami.id.replace(/^nimegami:/, '')) : null);
+    let cleanOploverz = urlOploverz || dbAnime?.sources?.oploverz?.url || (dbAnime?.sources?.oploverz?.id ? getOploverzSeriesUrl(dbAnime.sources.oploverz.id) : null);
+
 
     let cleanNeosatsu = dbAnime?.sources?.neosatsu?.url || (typeof targetUrl === 'string' && targetUrl.includes('neosatsu') ? (targetUrl.includes('___neosatsu_ep___') ? targetUrl.split('___neosatsu_ep___')[0] : targetUrl) : null);
 

@@ -4,13 +4,15 @@ import fs from 'fs';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
+import { PROVIDER_URLS, getOploverzSeriesUrl } from '../config/providerUrls.js';
 
 const log = (...args) => {
     if (global.forceLog) global.forceLog(...args);
     else console.log(...args);
 };
 
-const OPLOVERZ_SERIES_URL = 'https://idn.oploverz.site/series';
+const OPLOVERZ_SERIES_URL = PROVIDER_URLS.OPLOVERZ.CATALOG_URL;
+
 
 /**
  * Sinkronisasi katalog anime dari Oploverz (idn.oploverz.site/series).
@@ -92,10 +94,11 @@ export async function syncOploverz() {
             if (title && slug) {
                 animeMap.set(slug, {
                     title: title,
-                    url: `https://idn.oploverz.site/series/${slug}`,
+                    url: getOploverzSeriesUrl(slug),
                     id: slug
                 });
             }
+
 
         }
 

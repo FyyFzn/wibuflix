@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const cache = getCache('oploverz', 3600);
 
@@ -40,8 +41,9 @@ export async function getOploverzEpisodes(targetUrl) {
             const epHref = $(el).attr('href');
             
             if (epHref && !epTitleRaw.toLowerCase().includes('batch')) {
-                const epUrl = `https://idn.oploverz.site${epHref}`;
+                const epUrl = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}${epHref}`;
                 // Coba ekstrak episode dari URL jika teks tidak mengandung angka jelas
+
 
                 const epNumFromUrlMatch = epHref.match(/\/episode\/(\d+(\.\d+)?)/i);
                 const epNum = extractEpNumStrict(epTitleRaw) || (epNumFromUrlMatch ? parseFloat(epNumFromUrlMatch[1]) : null);

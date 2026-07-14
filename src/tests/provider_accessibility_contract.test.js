@@ -8,6 +8,7 @@ import {
     ScraperContractError,
     SilentFailureError
 } from '../utils/contractValidator.js';
+import { PROVIDER_LIST } from '../config/providerUrls.js';
 
 /**
  * Provider Accessibility & Contract Verification Suite
@@ -17,16 +18,12 @@ import {
  * 2. Menghasilkan model data yang sesuai dengan kontrak formal (episode catalog & server stream).
  */
 
-const CONFIGURED_PROVIDERS = [
-    { name: 'Samehadaku', baseUrl: 'https://v2.samehadaku.how/', expectedProtocol: 'https:' },
-    { name: 'Otakudesu', baseUrl: 'https://otakudesu.blog/', expectedProtocol: 'https:' },
-    { name: 'Kuronime', baseUrl: 'https://kuronime.sbs/', expectedProtocol: 'https:' },
-    { name: 'Nanime ID', baseUrl: 'https://nanimeid.net/', expectedProtocol: 'https:' },
-    { name: 'Nimegami', baseUrl: 'https://nimegami.id/', expectedProtocol: 'https:' },
-    { name: 'Oploverz', baseUrl: 'https://idn.oploverz.site/', expectedProtocol: 'https:' },
+const CONFIGURED_PROVIDERS = PROVIDER_LIST.map(prov => ({
+    name: prov.NAME,
+    baseUrl: prov.BASE_URL.endsWith('/') ? prov.BASE_URL : `${prov.BASE_URL}/`,
+    expectedProtocol: 'https:'
+}));
 
-    { name: 'Neosatsu', baseUrl: 'https://www.neosatsu.com/', expectedProtocol: 'https:' }
-];
 
 test('Web Provider URL Integrity Check: Semua web penyedia memiliki format URL base yang valid dan aman (HTTPS)', () => {
     assert.strictEqual(CONFIGURED_PROVIDERS.length, 7, 'Harus terkonfigurasi tepat 7 web provider utama');
