@@ -72,8 +72,8 @@ export async function fetchWithCF(url, options = {}) {
 
     const timeout = options.timeout || 60000;
     
-    // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku)
-    const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku');
+    // Coba Axios terlebih dahulu untuk semua domain (termasuk Samehadaku & Otakudesu) kecuali jika forcePuppeteer=true diminta secara spesifik
+    const isCloudflareStrict = Boolean(options.forcePuppeteer);
     
     let html = '';
     if (!isCloudflareStrict) {
