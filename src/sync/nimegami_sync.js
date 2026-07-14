@@ -5,6 +5,7 @@ import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const log = (...args) => {
     if (global.forceLog) global.forceLog(...args);
@@ -27,7 +28,7 @@ export async function syncNimegami() {
         let hasNextPage = true;
 
         while (hasNextPage && page <= 20) {
-            const url = page === 1 ? 'https://nimegami.id/anime-list/' : `https://nimegami.id/anime-list/page/${page}/`;
+            const url = page === 1 ? PROVIDER_URLS.NIMEGAMI.CATALOG_URL : `${PROVIDER_URLS.NIMEGAMI.CATALOG_URL}page/${page}/`;
             log(`[NimegamiSync] Mengambil halaman ${page}: ${url}...`);
 
             let fetchRes, currentSlot;
@@ -54,7 +55,7 @@ export async function syncNimegami() {
                 const link = $(el).attr('href');
                 if (!title || !link || !link.startsWith('http')) return;
 
-                if (ignoreWords.some(w => link.toLowerCase().includes(w)) || link === 'https://nimegami.id/' || link.endsWith('.id')) {
+                if (ignoreWords.some(w => link.toLowerCase().includes(w)) || link === `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/` || link.endsWith('.id')) {
                     return;
                 }
 
@@ -62,7 +63,8 @@ export async function syncNimegami() {
                     return;
                 }
 
-                if (link.includes('nimegami.id/') && title.length > 2 && !seenUrls.has(link)) {
+                if (link.includes(new URL(PROVIDER_URLS.NIMEGAMI.BASE_URL).hostname + '/') && title.length > 2 && !seenUrls.has(link)) {
+
                     seenUrls.add(link);
                     addedCount++;
 

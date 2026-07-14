@@ -3,6 +3,7 @@ import axios from 'axios';
 import { fileURLToPath } from 'url';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const log = (...args) => {
     if (global.forceLog) global.forceLog(...args);
@@ -19,7 +20,8 @@ export async function syncKuronime() {
 
     try {
         // URL list A-Z yang menampilkan semua anime dalam satu halaman (tidak perlu pagination)
-        const { data } = await axios.get('https://kuronime.sbs/anime/?list', {
+        const { data } = await axios.get(PROVIDER_URLS.KURONIME.CATALOG_URL, {
+
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
             timeout: 15000
         });

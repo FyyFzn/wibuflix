@@ -3,6 +3,7 @@ import { fetchWithCF } from '../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import { cleanSeriesTitle } from '../utils/stringUtils.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const cache = getCache('hot', 3600);
 
@@ -15,7 +16,8 @@ export async function getHotAnime() {
         return cachedData;
     }
 
-    const url = 'https://v2.samehadaku.how/';
+    const url = `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`;
+
     console.log(`\n[HotAnime Fetch] ${url}`);
 
     let slot;

@@ -2,6 +2,7 @@ import axios from 'axios';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 import { fetchNanimeInertia } from '../controllers/nanimeController.js';
+import { PROVIDER_URLS, getNanimeSeriesUrl } from '../config/providerUrls.js';
 
 let isNanimeSyncing = false;
 
@@ -32,7 +33,7 @@ export async function syncNanimeCatalog() {
 
         do {
             log(`[NanimeSync] Mengambil halaman explore ${currentPage}/${lastPage}...`);
-            const url = `https://nanimeid.net/explore?page=${currentPage}`;
+            const url = `${PROVIDER_URLS.NANIME.BASE_URL}/explore?page=${currentPage}`;
 
             try {
                 const data = await fetchNanimeInertia(url);
@@ -63,7 +64,8 @@ export async function syncNanimeCatalog() {
                     const slug = item.slug;
                     if (!title || !slug) continue;
 
-                    const animeUrl = `https://nanimeid.net/anime/${slug}`;
+                    const animeUrl = getNanimeSeriesUrl(slug);
+
 
                     allAnimes.push({
                         title: title.trim(),

@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { fileURLToPath } from 'url';
 import Anime from '../models/Anime.js'; // Model MongoDB
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const log = (...args) => {
     if (global.forceLog) {
@@ -14,8 +15,9 @@ const log = (...args) => {
 export async function syncOtakudesu() {
     log('[OtakuSync] Memulai sinkronisasi katalog Otakudesu...');
     try {
-        const { data } = await axios.get('https://otakudesu.blog/anime-list/', {
+        const { data } = await axios.get(PROVIDER_URLS.OTAKUDESU.CATALOG_URL, {
             headers: {
+
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             },
             timeout: 15000

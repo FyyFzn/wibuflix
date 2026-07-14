@@ -8,13 +8,15 @@ import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const cache = getCache('otakudesu', 3600);
 const resolveLimit = pLimit(3); // Maksimal 3 request serentak untuk mencegah Self-DDoS
 const badHosts = new Map(); // Simpan host yang sedang cooldown
 const hostFailCounts = new Map();
 
-const otaku = new OtakudesuInstance('https://otakudesu.blog');
+const otaku = new OtakudesuInstance(PROVIDER_URLS.OTAKUDESU.BASE_URL);
+
 
 export async function getEpisodes(req, res) {
     try {

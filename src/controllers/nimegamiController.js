@@ -5,6 +5,7 @@ import { getCache } from '../utils/cacheManager.js';
 import Anime from '../models/Anime.js';
 import { cleanSeriesTitle } from '../utils/stringUtils.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const cache = getCache('nimegami', 3600);
 
@@ -78,7 +79,7 @@ export async function getNimegamiEpisodes(targetUrl) {
                 }
 
                 if (link.startsWith('/')) {
-                    link = `https://nimegami.id${link}`;
+                    link = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}${link}`;
                 } else if (!link.startsWith('http')) {
                     link = `${baseSlugUrl}/${link}`;
                 }
@@ -244,7 +245,7 @@ export async function getNimegamiServers(episodeUrl) {
                     // Decode base64 shortlink if nimegami uses ?url=
                     if (href.includes('url=')) {
                         try {
-                            const urlParam = new URL(href.startsWith('http') ? href : `https://nimegami.id${href}`).searchParams.get('url');
+                            const urlParam = new URL(href.startsWith('http') ? href : `${PROVIDER_URLS.NIMEGAMI.BASE_URL}${href}`).searchParams.get('url');
                             if (urlParam) {
                                 const decoded = Buffer.from(urlParam, 'base64').toString('utf8');
                                 if (decoded.startsWith('http')) {

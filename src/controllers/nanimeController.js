@@ -3,6 +3,7 @@ import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
 import Anime from '../models/Anime.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
+import { PROVIDER_URLS, getNanimeSeriesUrl } from '../config/providerUrls.js';
 
 const cache = getCache('nanime', 3600);
 
@@ -20,7 +21,7 @@ export async function fetchNanimeInertia(url) {
         'Cookie': cookie,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Referer': 'https://nanimeid.net/'
+        'Referer': `${PROVIDER_URLS.NANIME.BASE_URL}/`
     };
     if (globalInertiaVersion) {
         headers['X-Inertia-Version'] = globalInertiaVersion;
@@ -41,7 +42,7 @@ export async function fetchNanimeInertia(url) {
                     'Cookie': cookie,
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Referer': 'https://nanimeid.net/'
+                    'Referer': `${PROVIDER_URLS.NANIME.BASE_URL}/`
                 },
                 timeout: 20000
             });
@@ -116,9 +117,9 @@ export async function getNanimeEpisodes(animeUrl) {
             let epUrl = ep.url || ep.link;
             if (!epUrl) {
                 if (ep.slug) {
-                    epUrl = `https://nanimeid.net/anime/${anime.slug || ''}/${ep.slug}`;
+                    epUrl = `${getNanimeSeriesUrl(anime.slug || '')}/${ep.slug}`;
                 } else if (epNum !== undefined) {
-                    epUrl = `https://nanimeid.net/anime/${anime.slug || ''}/episode/${epNum}`;
+                    epUrl = `${getNanimeSeriesUrl(anime.slug || '')}/episode/${epNum}`;
                 }
             }
 
@@ -228,11 +229,11 @@ export async function getNanimeServers(episodeUrl) {
         let nav_next = null;
         if (episode.prev_episode || props.prev_episode) {
             const prev = episode.prev_episode || props.prev_episode;
-            nav_prev = prev.url || (prev.slug ? `https://nanimeid.net/anime/${anime.slug}/${prev.slug}` : null);
+            nav_prev = prev.url || (prev.slug ? `${getNanimeSeriesUrl(anime.slug)}/${prev.slug}` : null);
         }
         if (episode.next_episode || props.next_episode) {
             const next = episode.next_episode || props.next_episode;
-            nav_next = next.url || (next.slug ? `https://nanimeid.net/anime/${anime.slug}/${next.slug}` : null);
+            nav_next = next.url || (next.slug ? `${getNanimeSeriesUrl(anime.slug)}/${next.slug}` : null);
         }
 
         if (servers.length === 0) {

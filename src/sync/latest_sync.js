@@ -6,6 +6,8 @@ import Anime from '../models/Anime.js';
 import { fetchNanimeInertia } from '../controllers/nanimeController.js';
 import { cache as katalogCache } from '../controllers/katalogController.js';
 import { cleanSeriesTitle } from '../utils/stringUtils.js';
+import { PROVIDER_URLS } from '../config/providerUrls.js';
+
 
 
 let isLatestSyncing = false;
@@ -52,7 +54,7 @@ export async function runLatestSync() {
 }
 
 async function scrapeSamehadakuLatest() {
-    const url = `https://v2.samehadaku.how/`;
+    const url = `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`;
     log(`[Latest Sync] Mengakses Beranda Samehadaku...`);
 
     let fetchRes, slot;
@@ -100,7 +102,7 @@ async function scrapeSamehadakuLatest() {
 }
 
 async function scrapeOtakudesuLatest() {
-    const url = `https://otakudesu.blog/`;
+    const url = `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/`;
     log(`[Latest Sync] Mengakses Beranda Otakudesu...`);
 
     let fetchRes, slot;
@@ -141,7 +143,7 @@ async function scrapeOtakudesuLatest() {
 }
 
 async function scrapeKuronimeLatest() {
-    const url = `https://kuronime.sbs/`;
+    const url = `${PROVIDER_URLS.KURONIME.BASE_URL}/`;
     log(`[Latest Sync] Mengakses Beranda Kuronime...`);
 
     let fetchRes, slot;
@@ -186,7 +188,7 @@ async function scrapeKuronimeLatest() {
 }
 
 async function scrapeNanimeLatest() {
-    const url = `https://nanimeid.net/`;
+    const url = `${PROVIDER_URLS.NANIME.BASE_URL}/`;
     log(`[Latest Sync] Mengakses Beranda Nanime ID (Inertia JSON)...`);
 
     const updates = [];
@@ -258,7 +260,7 @@ async function scrapeNanimeLatest() {
 }
 
 async function scrapeNimegamiLatest() {
-    const url = `https://nimegami.id/anime-terbaru-sub-indo/`;
+    const url = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/anime-terbaru-sub-indo/`;
     log(`[Latest Sync] Mengakses Beranda Nimegami...`);
 
     let fetchRes, slot;
@@ -281,10 +283,10 @@ async function scrapeNimegamiLatest() {
 
             const href = $(el).attr('href');
             let text = $(el).text().replace(/\s+/g, ' ').trim();
-            if (!href || !href.startsWith('http') || ignoreWords.some(w => href.toLowerCase().includes(w)) || href === 'https://nimegami.id/') return;
+            if (!href || !href.startsWith('http') || ignoreWords.some(w => href.toLowerCase().includes(w)) || href === `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/`) return;
             if (ignoreTitles.some(t => text.toLowerCase() === t || text.toLowerCase().includes(t))) return;
 
-            if (href.includes('nimegami.id/')) {
+            if (href.includes(new URL(PROVIDER_URLS.NIMEGAMI.BASE_URL).hostname + '/')) {
                 if (!updatesMap.has(href)) {
                     updatesMap.set(href, { title: null, status: null });
                 }

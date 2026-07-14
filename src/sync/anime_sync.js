@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import Anime from '../models/Anime.js'; // Model MongoDB
+import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 let isSyncing = false;
 
@@ -58,7 +59,8 @@ export async function runSync(isInitial = false) {
 
     try {
         while (hasNext) {
-            const url = page === 1 ? `https://v2.samehadaku.how/daftar-anime-2/` : `https://v2.samehadaku.how/daftar-anime-2/page/${page}/`;
+            const url = page === 1 ? PROVIDER_URLS.SAMEHADAKU.CATALOG_URL : `${PROVIDER_URLS.SAMEHADAKU.CATALOG_URL}page/${page}/`;
+
             log(`[Anime Sync] Scraping Halaman ${page}...`);
 
             let fetchRes, slot;
