@@ -154,20 +154,10 @@ export async function startBackgroundOtakuSync() {
         const count = await Anime.countDocuments({ 'sources.otakudesu': { $exists: true } });
         
         if (count === 0) {
-            log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal...");
+            log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal A-Z...");
             syncOtakudesu();
         } else {
-            // Otakudesu A-Z list jarang update secara masif, kita bisa cek dari lastUpdated
-            const latestDoc = await Anime.findOne({ 'sources.otakudesu': { $exists: true } }).sort({ lastUpdated: -1 });
-            const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
-            const sixHours = 6 * 60 * 60 * 1000;
-            
-            if (ageInMs > sixHours || !latestDoc || !latestDoc.lastUpdated) {
-                log(`[OtakuSync] Database Otakudesu usang. Memulai sinkronisasi pembaruan...`);
-                syncOtakudesu();
-            } else {
-                log(`[OtakuSync] Database Otakudesu masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
-            }
+            log(`[OtakuSync] Database Otakudesu sudah berisi (${count} anime). A-Z Catalog Sync dijadwalkan mingguan (setiap 7 hari).`);
         }
     } catch(err) {
         log("[OtakuSync] Error mengecek status database:", err.message);

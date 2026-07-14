@@ -149,20 +149,7 @@ export async function startBackgroundKuronimeSync() {
             log('[KuronimeSync] Database Kuronime kosong. Memulai sinkronisasi awal...');
             syncKuronime();
         } else {
-            const latestDoc = await Anime
-                .findOne({ 'sources.kuronime.url': { $ne: null } })
-                .sort({ lastUpdated: -1 });
-            const ageInMs = latestDoc?.lastUpdated
-                ? Date.now() - latestDoc.lastUpdated.getTime()
-                : Infinity;
-            const sevenDays = 7 * 24 * 60 * 60 * 1000;
-
-            if (ageInMs > sevenDays) {
-                log('[KuronimeSync] Data Kuronime sudah usang (>7 hari). Memulai sinkronisasi pembaruan...');
-                syncKuronime();
-            } else {
-                log(`[KuronimeSync] ${count} anime Kuronime masih baru (${Math.round(ageInMs / 1000 / 60 / 60)} jam). Melewati sync awal.`);
-            }
+            log(`[KuronimeSync] Database Kuronime sudah berisi (${count} anime). A-Z Catalog Sync dijadwalkan mingguan (setiap 7 hari).`);
         }
     } catch (err) {
         log('[KuronimeSync] Error cek status:', err.message);

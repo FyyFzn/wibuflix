@@ -23,16 +23,7 @@ export async function startBackgroundAnimeSync() {
             log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z...");
             runSync(true);
         } else {
-            const latestDoc = await Anime.findOne({ 'sources.samehadaku.url': { $exists: true, $ne: null } }).sort({ lastUpdated: -1 });
-            const ageInMs = latestDoc && latestDoc.lastUpdated ? (Date.now() - latestDoc.lastUpdated.getTime()) : 0;
-            const twelveHours = 12 * 60 * 60 * 1000;
-            
-            if (ageInMs > twelveHours || !latestDoc || !latestDoc.lastUpdated) {
-                log(`[Anime Sync] Database Samehadaku sudah usang (>12 jam). Menjalankan sinkronisasi pembaruan (Delay 1 menit)...`);
-                setTimeout(() => runSync(false), 60000);
-            } else {
-                log(`[Anime Sync] Database Samehadaku masih baru (Umur: ${Math.round(ageInMs/1000/60)} menit). Melewati sinkronisasi awal.`);
-            }
+            log(`[Anime Sync] Database Samehadaku sudah berisi (${count} anime). A-Z Catalog Sync dijadwalkan mingguan (setiap 7 hari).`);
         }
     } catch(err) {
         log("[Anime Sync] Error mengecek status database:", err.message);

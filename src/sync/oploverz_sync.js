@@ -219,20 +219,7 @@ export async function startBackgroundOploverzSync() {
             log('[OploverzSync] Database Oploverz kosong. Memulai sinkronisasi awal...');
             syncOploverz();
         } else {
-            const latestDoc = await Anime
-                .findOne({ 'sources.oploverz.url': { $ne: null } })
-                .sort({ lastUpdated: -1 });
-            const ageInMs = latestDoc?.lastUpdated
-                ? Date.now() - latestDoc.lastUpdated.getTime()
-                : Infinity;
-            const sevenDays = 7 * 24 * 60 * 60 * 1000;
-
-            if (ageInMs > sevenDays) {
-                log('[OploverzSync] Data Oploverz sudah usang (>7 hari). Memulai sinkronisasi pembaruan...');
-                syncOploverz();
-            } else {
-                log(`[OploverzSync] ${count} anime Oploverz masih baru (${Math.round(ageInMs / 1000 / 60 / 60)} jam). Melewati sync awal.`);
-            }
+            log(`[OploverzSync] Database Oploverz sudah berisi (${count} anime). A-Z Catalog Sync dijadwalkan mingguan (setiap 7 hari).`);
         }
     } catch (err) {
         log('[OploverzSync] Error cek status:', err.message);

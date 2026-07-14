@@ -189,20 +189,7 @@ export async function startBackgroundNimegamiSync() {
             log('[NimegamiSync] Database Nimegami kosong. Memulai sinkronisasi awal...');
             syncNimegami();
         } else {
-            const latestDoc = await Anime
-                .findOne({ 'sources.nimegami.url': { $ne: null } })
-                .sort({ lastUpdated: -1 });
-            const ageInMs = latestDoc?.lastUpdated
-                ? Date.now() - latestDoc.lastUpdated.getTime()
-                : Infinity;
-            const sevenDays = 7 * 24 * 60 * 60 * 1000;
-
-            if (ageInMs > sevenDays) {
-                log('[NimegamiSync] Data Nimegami sudah usang (>7 hari). Memulai sinkronisasi pembaruan...');
-                syncNimegami();
-            } else {
-                log(`[NimegamiSync] ${count} anime Nimegami masih baru (${Math.round(ageInMs / 1000 / 60 / 60)} jam). Melewati sync awal.`);
-            }
+            log(`[NimegamiSync] Database Nimegami sudah berisi (${count} anime). A-Z Catalog Sync dijadwalkan mingguan (setiap 7 hari).`);
         }
     } catch (err) {
         log('[NimegamiSync] Error cek status:', err.message);
