@@ -2,63 +2,10 @@ import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from './extr
 import { isMegaBlacklisted } from './stream/uploadProgressService.js';
 import { globalBlacklistCache } from './stream/streamStateStore.js';
 import { checkRangeSupport } from './stream/ffmpegStreamService.js';
-import { getNeosatsuServers } from './scrapers/neosatsuScraperService.js';
-import { getServersInternal as getOtakuServers } from '../controllers/otakudesuController.js';
-import { getKuronimeServers } from '../controllers/kuronimeController.js';
-import { getNanimeServers } from '../controllers/nanimeController.js';
-import { getNimegamiServers } from '../controllers/nimegamiController.js';
-import { getOploverzServers } from '../controllers/oploverzController.js';
+import { ProviderRegistry } from './ProviderRegistry.js';
 
 export async function getServersBasedOnUrl(episodeUrl) {
-    if (episodeUrl.includes('___neosatsu_ep___')) {
-        return await getNeosatsuServers(episodeUrl);
-    } else if (episodeUrl.includes('otakudesu') || episodeUrl.includes('/api/otakudesu/servers')) {
-        let realUrl = episodeUrl;
-        if (episodeUrl.includes('?url=')) {
-            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
-        }
-        return await getOtakuServers(realUrl);
-    } else if (episodeUrl.includes('kuronime.sbs') || episodeUrl.includes('/api/kuronime/servers')) {
-        let realUrl = episodeUrl;
-        if (episodeUrl.includes('?url=')) {
-            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
-        }
-        return await getKuronimeServers(realUrl);
-    } else if (episodeUrl.includes('nanimeid.net') || episodeUrl.includes('/api/nanime/servers')) {
-        let realUrl = episodeUrl;
-        if (episodeUrl.includes('?url=')) {
-            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
-        }
-        return await getNanimeServers(realUrl);
-    } else if (episodeUrl.includes('nimegami.id') || episodeUrl.includes('/api/nimegami/servers')) {
-        let realUrl = episodeUrl;
-        if (episodeUrl.includes('?url=')) {
-            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
-        }
-        return await getNimegamiServers(realUrl);
-    } else if (episodeUrl.includes('oploverz.ltd') || episodeUrl.includes('oploverz.site') || episodeUrl.includes('/api/oploverz/servers')) {
-        let realUrl = episodeUrl;
-        if (episodeUrl.includes('?url=')) {
-            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
-        }
-        const oploData = await getOploverzServers(realUrl);
-        return {
-            ...oploData,
-            servers: (oploData?.servers || []).map(s => ({
-                nama: s.nama,
-                post: "",
-                nume: s.id || "",
-                type: s.tipe || "direct",
-                aktif: s.aktif,
-                iframeUrl: s.url,
-                namaHost: s.provider || "Direct",
-                headers: s.headers,
-                source: "Oploverz"
-            }))
-        };
-    } else {
-        return await scrapeVideoServers(episodeUrl);
-    }
+    return await ProviderRegistry.fetchServers(episodeUrl);
 }
 
 export function serverScore(host) {
