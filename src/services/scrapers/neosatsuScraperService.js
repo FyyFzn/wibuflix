@@ -53,7 +53,7 @@ export async function getNeosatsuLatestUpdates() {
     try {
         const catalog = await getNeosatsuCatalog(1);
         const updates = [];
-        for (const item of catalog) {
+        for (const item of (catalog?.anime || [])) {
             if (item.judul && item.url) {
                 updates.push({ title: item.judul, status: item.episode_terbaru || 'Completed', url: item.url });
             }

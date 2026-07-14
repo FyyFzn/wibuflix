@@ -72,8 +72,8 @@ export async function fetchWithCF(url, options = {}) {
 
     const timeout = options.timeout || 60000;
     
-    // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku & Otakudesu)
-    const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku') || url.includes('otakudesu');
+    // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku)
+    const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku');
     
     let html = '';
     if (!isCloudflareStrict) {
