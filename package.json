@@ -2,10 +2,11 @@
   "name": "samehadaku-scraper",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node index.js",
-    "start:prod": "node server-prod.js",
+    "start": "node src/server.js",
+    "start:prod": "node -e \"process.env.NODE_ENV='production'; import('./src/server.js')\"",
+
     "sync:nimegami": "node src/scripts/init-nimegami-sync.js",
     "check:webs": "node src/scripts/check_provider_accessibility.js",
     "check:deep": "node src/scripts/check_provider_deep_extraction.js",

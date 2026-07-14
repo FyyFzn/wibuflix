@@ -62,8 +62,7 @@ RUN npm ci --omit=dev
 
 # Copy source code
 COPY src/ ./src/
-COPY index.js ./
-COPY server-prod.js ./
+
 
 # Expose port
 EXPOSE 3000

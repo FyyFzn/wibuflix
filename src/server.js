@@ -1,5 +1,16 @@
 import { initLogger } from './utils/logger.js';
-initLogger();
+initLogger({
+    productionSilent: process.env.NODE_ENV === 'production' || process.env.PROD_SILENT === 'true'
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 import express from 'express';
 import cors from 'cors';
 import { initPagePool, closeAllBrowsers } from './puppeteer/pool.js';
@@ -139,3 +150,8 @@ function startServer() {
 }
 
 export { startServer };
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    startServer();
+}
+

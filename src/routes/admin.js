@@ -351,4 +351,142 @@ router.get('/api/factory-reset', async (req, res) => {
     }
 });
 
+// ============================================================
+// RUTE 10: GET /api/admin/catalog-search  [PENCARIAN KARTU UNTUK MERGE]
+// ============================================================
+router.get('/api/admin/catalog-search', async (req, res) => {
+    try {
+        const Anime = (await import('../models/Anime.js')).default;
+        const query = (req.query.q || '').trim();
+        let filter = {};
+        if (query) {
+            filter = {
+                $or: [
+                    { title: { $regex: query, $options: 'i' } },
+                    { aliases: { $regex: query, $options: 'i' } }
+                ]
+            };
+        }
+        const list = await Anime.find(filter)
+            .sort({ updatedAt: -1 })
+            .limit(40)
+            .select('title aliases image type score status isLocked malId tmdbId sources updatedAt');
+        res.json({ status: 'ok', data: list });
+    } catch (error) {
+        console.error('[Admin CatalogSearch] Error:', error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// ============================================================
+// RUTE 11: POST /api/admin/merge-anime  [GABUNG KARTU ANIME MANUAL]
+// ============================================================
+router.post('/api/admin/merge-anime', async (req, res) => {
+    try {
+        const { primaryId, targetIds } = req.body;
+        if (!primaryId || !Array.isArray(targetIds) || targetIds.length === 0) {
+            return res.status(400).json({ status: 'error', message: 'primaryId dan targetIds wajib diisi!' });
+        }
+
+        const Anime = (await import('../models/Anime.js')).default;
+        const primary = await Anime.findById(primaryId);
+        if (!primary) {
+            return res.status(404).json({ status: 'error', message: 'Kartu utama tidak ditemukan di database.' });
+        }
+
+        const targets = await Anime.find({ _id: { $in: targetIds } });
+        if (targets.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Kartu duplikat yang akan digabung tidak ditemukan.' });
+        }
+
+        for (const dup of targets) {
+            // Gabungkan semua sources dari duplikat ke kartu utama jika belum ada atau kosong
+            const providerKeys = ['samehadaku', 'otakudesu', 'kuronime', 'neosatsu', 'nanime', 'nimegami', 'oploverz'];
+            for (const key of providerKeys) {
+                if (dup.sources?.[key]?.url && !primary.sources?.[key]?.url) {
+                    if (!primary.sources) primary.sources = {};
+                    primary.sources[key] = { ...dup.sources[key] };
+                }
+            }
+
+            // Gabungkan aliases dan judul duplikat
+            const aliasesSet = new Set([
+                ...(primary.aliases || []),
+                ...(dup.aliases || []),
+                dup.title
+            ].filter(Boolean));
+            primary.aliases = Array.from(aliasesSet);
+
+            // Jika kartu utama tidak punya MAL ID atau gambar yang bagus, ambil dari duplikat
+            if (!primary.malId && dup.malId) primary.malId = dup.malId;
+            if (!primary.tmdbId && dup.tmdbId) primary.tmdbId = dup.tmdbId;
+            if ((!primary.image || primary.image.includes('placehold')) && dup.image) {
+                primary.image = dup.image;
+            }
+        }
+
+        // Kunci kartu utama agar scraper tidak memecah atau menimpanya lagi
+        primary.isLocked = true;
+        await primary.save();
+
+        // Hapus kartu duplikat dari MongoDB
+        await Anime.deleteMany({ _id: { $in: targetIds } });
+
+        // Bersihkan seluruh memori dan cache sistem
+        flushAll();
+        if (global.anime_db_cache) global.anime_db_cache = null;
+        if (global.otaku_db_cache) global.otaku_db_cache = null;
+
+        res.json({
+            status: 'ok',
+            message: `Berhasil menggabungkan ${targets.length} kartu ke dalam "${primary.title}" dan mengunci metadatanya!`,
+            data: primary
+        });
+    } catch (error) {
+        console.error('[Admin MergeAnime] Error:', error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// ============================================================
+// RUTE 12: POST /api/admin/force-mal-id  [PAKSA / KUNCI MAL ID MANUAL]
+// ============================================================
+router.post('/api/admin/force-mal-id', async (req, res) => {
+    try {
+        const { animeId, malId } = req.body;
+        if (!animeId || malId === undefined) {
+            return res.status(400).json({ status: 'error', message: 'animeId dan malId wajib diisi!' });
+        }
+
+        const Anime = (await import('../models/Anime.js')).default;
+        const anime = await Anime.findById(animeId);
+        if (!anime) {
+            return res.status(404).json({ status: 'error', message: 'Kartu anime tidak ditemukan.' });
+        }
+
+        const numericMalId = Number(malId);
+        anime.malId = isNaN(numericMalId) || numericMalId <= 0 ? null : numericMalId;
+        anime.isLocked = true;
+        anime.tmdbEnriched = false; // Reset status enrich agar pekerja sync mengambil ulang metadata MAL/TMDB yang benar!
+        await anime.save();
+
+        // Bersihkan memori dan cache
+        flushAll();
+        if (global.anime_db_cache) global.anime_db_cache = null;
+        if (global.otaku_db_cache) global.otaku_db_cache = null;
+
+        // Jalankan background enrichment secara asinkron
+        syncUnified().catch(err => console.error('[ForceMalId Sync] Error:', err.message));
+
+        res.json({
+            status: 'ok',
+            message: `Berhasil mengunci MAL ID "${anime.malId || 'Kosong'}" untuk "${anime.title}". Pencarian metadata baru sedang diproses di background!`,
+            data: anime
+        });
+    } catch (error) {
+        console.error('[Admin ForceMalId] Error:', error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 export default router;
