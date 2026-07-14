@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WibuFlix Admin Command Center</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-card: #161b22;
+            --border-color: #30363d;
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent-blue: #1f6feb;
+            --accent-green: #238636;
+            --accent-red: #da3633;
+            --accent-yellow: #d29922;
+            --accent-purple: #8957e5;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 24px;
+            line-height: 1.5;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .header h1 {
+            font-size: 22px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .badge-live {
+            background: #1a3a1a;
+            color: #39ff14;
+            border: 1px solid #238636;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.15s, border-color 0.15s;
+        }
+        .card:hover {
+            border-color: #58a6ff;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            flex-grow: 1;
+        }
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        button {
+            background: #21262d;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        button:hover {
+            background: #30363d;
+            border-color: #8b949e;
+            color: #fff;
+        }
+        button.primary { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+        button.primary:hover { background: #388bfd; }
+        button.success { background: var(--accent-green); border-color: var(--accent-green); color: #fff; }
+        button.success:hover { background: #2ea043; }
+        button.danger { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+        button.danger:hover { background: #f85149; }
+        button.warning { background: var(--accent-yellow); border-color: var(--accent-yellow); color: #fff; }
+        button.warning:hover { background: #e3b341; }
+        
+        .tool-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .tool-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        input[type="text"], input[type="number"] {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            color: #c9d1d9;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            flex: 1;
+            min-width: 200px;
+        }
+        input:focus { border-color: var(--accent-blue); outline: none; }
+        
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #1f6feb;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s, transform 0.3s;
+            transform: translateY(10px);
+            z-index: 1000;
+        }
+        #toast.show { opacity: 1; transform: translateY(0); }
+        
+        #searchResults {
+            margin-top: 14px;
+            max-height: 280px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: #0d1117;
+            padding: 8px;
+            display: none;
+        }
+        .search-item {
+            padding: 8px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+        .search-item:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🚀 WIBUFLIX ADMIN COMMAND CENTER</h1>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Pusat kontrol infrastruktur, pemantauan log real-time, sinkronisasi katalog, dan manajemen database WibuFlix.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <span class="badge-live">● SYSTEM HEALTHY</span>
+            <button class="primary" onclick="window.open('/api/admin/logs', '_blank')">🧭 Live Log UI</button>
+        </div>
+    </div>
+
+    <h2 style="font-size: 15px; color: #fff; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px;">📊 Monitoring & Log Terminal</h2>
+    <div class="grid">
+        <div class="card">
+            <div>
+                <div class="card-title">🧭 Live Terminal Log Stream</div>
+                <div class="card-desc">Pantau aktivitas server secara real-time (Startup, Cron Job, Scraper, Puppeteer PagePool) dengan fitur filter tab (Sync/Scraper/Errors) & live search.</div>
+            </div>
+            <div class="btn-group">
+                <button class="primary" onclick="window.open('/api/admin/logs', '_blank')">Buka Live Log UI ➔</button>
+            </div>
+        </div>
+        <div class="card">
+            <div>
+                <div class="card-title">📄 Raw Log Text Buffer</div>
+                <div class="card-desc">Lihat atau unduh teks mentah (raw text) dari 3.000 baris log terakhir yang tersimpan di memori buffer server untuk analisis eksternal.</div>
+            </div>
+            <div class="btn-group">
+                <button onclick="window.open('/api/admin/logs/raw', '_blank')">Lihat Teks Raw ➔</button>
+                <button onclick="downloadRawLogs()">💾 Unduh Log</button>
+            </div>
+        </div>
+    </div>
+
+    <h2 style="font-size: 15px; color: #fff; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px;">⚡ Sinkronisasi & Pekerja Background (Workers)</h2>
+    <div class="grid">
+        <div class="card">
+            <div>
+                <div class="card-title">🚀 Force Sync All Providers</div>
+                <div class="card-desc">Jalankan sinkronisasi paksa katalog A-Z dan episode terbaru secara serentak untuk seluruh 7 web penyedia (Samehadaku, Otakudesu, Kuronime, Nanime, Nimegami, Oploverz, Neosatsu).</div>
+            </div>
+            <div class="btn-group">
+                <button class="success" onclick="triggerAction('/api/force-sync', 'Force Sync seluruh provider sedang berjalan di latar belakang!')">⚡ Trigger Force Sync</button>
+            </div>
+        </div>
+        <div class="card">
+            <div>
+                <div class="card-title">💫 Retry TMDB/MAL Enrichment</div>
+                <div class="card-desc">Periksa kartu anime yang metadata TMDB/MAL-nya masih kosong, skor placeholder (-), atau gambar rusak, lalu coba pencarian ulang secara otomatis.</div>
+            </div>
+            <div class="btn-group">
+                <button class="warning" onclick="triggerAction('/api/retry-enrich', 'Proses pengayaan (Enrichment) ulang sedang diproses!')">💫 Retry Enrichment</button>
+            </div>
+        </div>
+    </div>
+
+    <h2 style="font-size: 15px; color: #fff; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px;">🧹 Pembersihan Cache & Reset (Maintenance)</h2>
+    <div class="grid">
+        <div class="card">
+            <div>
+                <div class="card-title">🧹 Clear Memory Cache</div>
+                <div class="card-desc">Bersihkan seluruh cache RAM (flushAll, cache DB anime/otaku) agar server langsung mengambil data segar dari MongoDB maupun Scraper tanpa restart.</div>
+            </div>
+            <div class="btn-group">
+                <button onclick="triggerAction('/api/cache-clear', 'Seluruh cache memori berhasil dibersihkan!')">🧹 Bersihkan Cache</button>
+            </div>
+        </div>
+        <div class="card" style="border-color: #8b2323;">
+            <div>
+                <div class="card-title" style="color: #ff7b72;">🚨 Factory Reset Database</div>
+                <div class="card-desc">[TINDAKAN KERTAS & PERMANEN] Hapus total seluruh koleksi MongoDB (Anime & TMDBCache) dan mulai ulang scraping dari titik nol (Raw Sync + Unified).</div>
+            </div>
+            <div class="btn-group">
+                <button class="danger" onclick="confirmFactoryReset()">🚨 Factory Reset DB</button>
+            </div>
+        </div>
+    </div>
+
+    <h2 style="font-size: 15px; color: #fff; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px;">🧲 Tools Manajemen Data Kartu (Card Control Engine)</h2>
+    <div class="tool-section">
+        <div class="tool-title">🧲 Manual Card Merger (Penggabungan Kartu Duplikat)</div>
+        <p style="font-size: 13px; color: var(--text-muted);">Cari kartu anime yang terpecah/duplikat dari web penyedia berbeda, lalu gabungkan link stream-nya ke dalam satu kartu utama (Primary Card) dan kunci metadatanya.</p>
+        <div class="form-row">
+            <input type="text" id="mergeSearchInput" placeholder="🔍 Cari judul anime (misal: One Piece)..." />
+            <button class="primary" onclick="searchForMerge()">Cari Kartu di DB</button>
+        </div>
+        <div id="searchResults"></div>
+        <div id="mergeActionBox" style="margin-top: 12px; display: none; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <div style="font-size: 12px; color: #fff; margin-bottom: 8px;">Pilih 1 ID Kartu Utama (Primary) dan 1 atau lebih ID Kartu Duplikat (Target):</div>
+            <div class="form-row">
+                <input type="text" id="primaryCardId" placeholder="ID Kartu Utama (misal: 66a...)" />
+                <input type="text" id="targetCardIds" placeholder="ID Kartu Duplikat (pisahkan koma jika banyak: 66b..., 66c...)" />
+                <button class="success" onclick="executeMerge()">🧲 Gabungkan Sekarang</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="tool-section">
+        <div class="tool-title">🔒 Lock / Force MyAnimeList ID (malId)</div>
+        <p style="font-size: 13px; color: var(--text-muted);">Kunci ID MyAnimeList pada kartu anime spesifik agar pekerja sinkronisasi otomatis mengambil poster, judul alternatif, dan skor dari MAL/TMDB yang akurat.</p>
+        <div class="form-row">
+            <input type="text" id="forceAnimeId" placeholder="ID Kartu Anime di MongoDB (misal: 66a...)" />
+            <input type="number" id="forceMalIdInput" placeholder="MAL ID (misal: 21 untuk One Piece)" />
+            <button class="warning" onclick="executeForceMalId()">🔒 Kunci MAL ID</button>
+        </div>
+    </div>
+
+    <div id="toast">Notifikasi</div>
+
+    <script>
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.background = isError ? '#da3633' : '#238636';
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        async function triggerAction(url, successMsg) {
+            try {
+                showToast('⏳ Mengirim perintah ke server...', false);
+                const res = await fetch(url);
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    showToast('✅ ' + (data.message || successMsg));
+                } else {
+                    showToast('❌ Gagal: ' + (data.message || 'Error server'), true);
+                }
+            } catch (e) {
+                showToast('❌ Kesalahan jaringan: ' + e.message, true);
+            }
+        }
+
+        async function downloadRawLogs() {
+            try {
+                const res = await fetch('/api/admin/logs/raw');
+                const text = await res.text();
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'wibuflix-raw-log-' + new Date().toISOString().slice(0,19).replace(/[:T]/g, '-') + '.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('✅ Log berhasil diunduh!');
+            } catch (e) {
+                showToast('❌ Gagal mendownload log', true);
+            }
+        }
+
+        function confirmFactoryReset() {
+            const code = prompt('⚠️ BAHAYA PERMANEN! Seluruh database anime akan dihapus total.\nKetik "RESET" untuk melanjutkan:');
+            if (code === 'RESET') {
+                triggerAction('/api/factory-reset', 'Factory Reset sedang diproses...');
+            } else if (code !== null) {
+                showToast('❌ Kode salah. Factory reset dibatalkan.', true);
+            }
+        }
+
+        async function searchForMerge() {
+            const q = document.getElementById('mergeSearchInput').value.trim();
+            if (!q) return showToast('❌ Masukkan kata kunci pencarian!', true);
+            try {
+                const res = await fetch('/api/admin/catalog-search?q=' + encodeURIComponent(q));
+                const json = await res.json();
+                const container = document.getElementById('searchResults');
+                const actionBox = document.getElementById('mergeActionBox');
+                if (json.data && json.data.length > 0) {
+                    container.style.display = 'block';
+                    actionBox.style.display = 'block';
+                    container.innerHTML = json.data.map(item => {
+                        const sources = item.sources ? Object.keys(item.sources).join(', ') : 'None';
+                        return '<div class="search-item">' +
+                            '<div><b style="color:#fff;">' + item.title + '</b> <span style="color:#8b949e;">(' + item.type + ' | MAL: ' + (item.malId || '-') + ')</span><br/>' +
+                            '<span style="font-size:11px;color:#58a6ff;">Sources: [' + sources + '] | Locked: ' + item.isLocked + '</span></div>' +
+                            '<div><code style="background:#21262d;padding:2px 6px;border-radius:4px;user-select:all;">' + item._id + '</code></div>' +
+                            '</div>';
+                    }).join('');
+                } else {
+                    container.style.display = 'block';
+                    container.innerHTML = '<div style="padding:8px;color:#8b949e;">Tidak ada kartu ditemukan.</div>';
+                }
+            } catch (e) {
+                showToast('❌ Gagal mencari kartu: ' + e.message, true);
+            }
+        }
+
+        async function executeMerge() {
+            const primaryId = document.getElementById('primaryCardId').value.trim();
+            const targetsRaw = document.getElementById('targetCardIds').value.trim();
+            if (!primaryId || !targetsRaw) return showToast('❌ Isi ID Utama dan ID Duplikat!', true);
+            const targetIds = targetsRaw.split(',').map(s => s.trim()).filter(Boolean);
+            try {
+                const res = await fetch('/api/admin/merge-anime', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ primaryId, targetIds })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    showToast('✅ ' + json.message);
+                    searchForMerge();
+                } else {
+                    showToast('❌ ' + json.message, true);
+                }
+            } catch (e) {
+                showToast('❌ Error saat penggabungan: ' + e.message, true);
+            }
+        }
+
+        async function executeForceMalId() {
+            const animeId = document.getElementById('forceAnimeId').value.trim();
+            const malId = document.getElementById('forceMalIdInput').value.trim();
+            if (!animeId || !malId) return showToast('❌ Isi ID Anime dan MAL ID!', true);
+            try {
+                const res = await fetch('/api/admin/force-mal-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ animeId, malId: Number(malId) })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    showToast('✅ ' + json.message);
+                } else {
+                    showToast('❌ ' + json.message, true);
+                }
+            } catch (e) {
+                showToast('❌ Error saat mengunci MAL ID: ' + e.message, true);
+            }
+        }
+    </script>
+</body>
+</html>

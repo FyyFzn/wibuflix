@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <title>WibuFlix Live Log Stream</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { box-sizing: border-box; }
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', Courier, monospace; padding: 0; margin: 0; font-size: 13px; line-height: 1.6; }
+        #header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 10px 16px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .header-top { display: flex; justify-content: space-between; align-items: center; }
+        h3 { margin: 0; color: #58a6ff; font-size: 15px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .status { 
+            font-family: -apple-system, sans-serif; font-size: 11px; font-weight: bold; 
+            padding: 3px 8px; border-radius: 12px; background: #238636; color: #ffffff;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .status.paused { background: #d29922; }
+        .status.offline { background: #da3633; }
+        
+        .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        input[type="text"] {
+            background: #0d1117; border: 1px solid #30363d; color: #c9d1d9;
+            padding: 5px 10px; border-radius: 6px; font-size: 12px; font-family: inherit;
+            width: 200px; transition: border-color 0.15s;
+        }
+        input[type="text"]:focus { outline: none; border-color: #58a6ff; }
+        button {
+            background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+            padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-weight: 500;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        button:hover { background: #30363d; border-color: #8b949e; }
+        button.active { background: #1f6feb; border-color: #1f6feb; color: white; }
+        .tab-btn { background: #161b22; border: 1px solid #30363d; color: #8b949e; }
+        .tab-btn.active { background: #238636; border-color: #238636; color: #fff; font-weight: 600; }
+        
+        #logContainer {
+            margin-top: 115px; padding: 16px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        .log-line { 
+            padding: 2px 6px; border-left: 3px solid transparent; 
+            border-bottom: 1px solid rgba(48,54,61,0.3); transition: background 0.1s;
+        }
+        .log-line:hover { background-color: #161b22; cursor: pointer; }
+        
+        .level-info { border-left-color: #3fb950; color: #e6edf3; }
+        .level-warn { border-left-color: #d29922; color: #e3b341; background: rgba(210,153,34,0.05); }
+        .level-error { border-left-color: #f85149; color: #ff7b72; font-weight: bold; background: rgba(248,81,73,0.08); }
+        .level-log { border-left-color: #8b949e; color: #8b949e; }
+        .match { background-color: #bb8009; color: white; border-radius: 2px; padding: 0 2px; }
+        
+        #toast {
+            position: fixed; bottom: 20px; right: 20px;
+            background: #1f6feb; color: white; padding: 8px 16px; border-radius: 6px;
+            font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5); opacity: 0; pointer-events: none;
+            transition: opacity 0.2s; z-index: 2000;
+        }
+        #toast.show { opacity: 1; }
+        #lineCount { color: #484f58; font-size: 11px; font-family: -apple-system, sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div class="header-top">
+            <h3>🚀 WibuFlix Live Terminal</h3>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span id="lineCount"></span>
+                <span id="statusIndicator" class="status">● LIVE</span>
+            </div>
+        </div>
+        <div class="toolbar">
+            <input type="text" id="searchBox" placeholder="🔍 Cari log..." />
+            <button id="btnPause" onclick="togglePause()">⏸ Pause</button>
+            <button onclick="copyAll()">📋 Copy All</button>
+            <button onclick="downloadLogs()">💾 Download</button>
+            <button onclick="clearDisplay()">🗑 Clear</button>
+            <button class="active" onclick="window.open('/admin', '_blank')">🧭 Admin Portal</button>
+        </div>
+        <div class="filter-tabs" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+            <button class="tab-btn active" onclick="setTab('ALL', this)">🌐 Semua Log</button>
+            <button class="tab-btn" onclick="setTab('SYNC', this)">🔄 Sync / Background</button>
+            <button class="tab-btn" onclick="setTab('SCRAPER', this)">🕷️ Scrapers & Pool</button>
+            <button class="tab-btn" onclick="setTab('ERRORS', this)">⚠️ Errors & Warn Only</button>
+        </div>
+    </div>
+    <div id="logContainer">Memuat log...</div>
+    <div id="toast"></div>
+    <script>
+        const logContainer = document.getElementById('logContainer');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const searchBox = document.getElementById('searchBox');
+        const lineCountEl = document.getElementById('lineCount');
+        const btnPause = document.getElementById('btnPause');
+        let autoScroll = true;
+        let isPaused = false;
+        let rawText = '';
+        let searchTerm = '';
+        let currentTab = 'ALL';
+
+        window.addEventListener('scroll', () => {
+            const isAtBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 50;
+            autoScroll = isAtBottom;
+        });
+
+        searchBox.addEventListener('input', (e) => {
+            searchTerm = e.target.value.toLowerCase();
+            renderLogs(rawText);
+        });
+
+        function setTab(tab, el) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            el.classList.add('active');
+            renderLogs(rawText);
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 1500);
+        }
+
+        function getLineClass(line) {
+            if (line.includes('[ERROR]')) return 'level-error';
+            if (line.includes('[WARN]')) return 'level-warn';
+            if (line.includes('[INFO]')) return 'level-info';
+            return 'level-log';
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function renderLogs(text) {
+            const lines = text.split('\n').filter(l => l.trim());
+            let filtered = lines;
+            if (currentTab === 'SYNC') {
+                filtered = filtered.filter(l => l.includes('[Latest Sync]') || l.includes('Sync]') || l.includes('[Scheduler]') || l.includes('[UnifiedSync]') || l.includes('[Queue]'));
+            } else if (currentTab === 'SCRAPER') {
+                filtered = filtered.filter(l => l.includes('[Browser]') || l.includes('[PagePool]') || l.includes('[Puppeteer]') || l.includes('[scrapeHelper]') || l.includes('Scraper]'));
+            } else if (currentTab === 'ERRORS') {
+                filtered = filtered.filter(l => l.includes('[ERROR]') || l.includes('[WARN]') || l.includes('✖') || l.includes('⚠'));
+            }
+            if (searchTerm) {
+                filtered = filtered.filter(l => l.toLowerCase().includes(searchTerm));
+            }
+            lineCountEl.textContent = (searchTerm || currentTab !== 'ALL')
+                ? filtered.length + '/' + lines.length + ' baris'
+                : lines.length + ' baris';
+
+            logContainer.innerHTML = filtered.map((line, i) => {
+                let display = escapeHtml(line);
+                if (searchTerm) {
+                    const regex = new RegExp('(' + searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                    display = display.replace(regex, '<span class="match">$1</span>');
+                }
+                return '<div class="log-line ' + getLineClass(line) + '" onclick="copyLine(this, ' + i + ')" title="Klik untuk copy baris ini">' + display + '</div>';
+            }).join('');
+        }
+
+        function copyLine(el, i) {
+            const lines = rawText.split('\n').filter(l => l.trim());
+            if (lines[i]) {
+                navigator.clipboard.writeText(lines[i]);
+                showToast('✓ Baris disalin');
+            }
+        }
+
+        function copyAll() {
+            navigator.clipboard.writeText(rawText);
+            showToast('✓ Seluruh log disalin');
+        }
+
+        function downloadLogs() {
+            const blob = new Blob([rawText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'wibuflix-log-' + new Date().toISOString().slice(0,19).replace(/[:T]/g, '-') + '.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('✓ Log diunduh!');
+        }
+
+        function clearDisplay() {
+            logContainer.innerHTML = '<div class="log-line level-log">Display dibersihkan. Log berikutnya akan muncul saat refresh...</div>';
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            btnPause.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+            btnPause.classList.toggle('active', isPaused);
+            statusIndicator.textContent = isPaused ? '● PAUSED' : '● LIVE';
+            statusIndicator.className = isPaused ? 'status paused' : 'status';
+        }
+
+        async function fetchLogs() {
+            if (isPaused) return;
+            try {
+                const response = await fetch('/api/admin/logs/raw');
+                if (!response.ok) throw new Error('fail');
+                rawText = await response.text();
+                renderLogs(rawText);
+                if (!isPaused) {
+                    statusIndicator.textContent = '● LIVE';
+                    statusIndicator.className = 'status';
+                }
+                if (autoScroll && !searchTerm && currentTab === 'ALL') {
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
+            } catch (error) {
+                statusIndicator.textContent = '● TERPUTUS';
+                statusIndicator.className = 'status offline';
+            }
+        }
+
+        setInterval(fetchLogs, 2000);
+        fetchLogs();
+    </script>
+</body>
+</html>
