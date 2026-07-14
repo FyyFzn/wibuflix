@@ -159,14 +159,16 @@ export function isSafeToMergeById(title1, title2) {
 
 export function formatEpisodeTitle(title) {
     if (!title) return 'Episode ?';
-    if (title.toLowerCase().includes('batch')) return 'Batch';
-    const typeMatch = title.match(/(OVA|OAD|Special|SP)[\s-_]*(\d+(?:[\s-_&+/]*\d+)?(?:\.\d+)?)/i);
+    let clean = title.replace(/\b(\d+)\s*(?:menit|mins?|m|detik|s|sec|episodes?|eps)\b/gi, '').trim();
+    clean = clean.replace(/\(\s*\)/g, '').trim();
+    if (clean.toLowerCase().includes('batch')) return 'Batch';
+    const typeMatch = clean.match(/(OVA|OAD|Special|SP)[\s-_]*(\d+(?:[-_&+/]+\d+)?(?:\.\d+)?)/i);
     if (typeMatch) return `${typeMatch[1].toUpperCase()} ${typeMatch[2]}`;
-    const epMatch = title.match(/(?:episode|ep|eps)[\s-_]*(\d+(?:[\s-_&+/]*\d+)?(?:\.\d+)?)/i);
+    const epMatch = clean.match(/(?:episode|ep|eps)[\s-_]*(\d+(?:[-_&+/]+\d+)?(?:\.\d+)?)/i);
     if (epMatch) return `Episode ${epMatch[1]}`;
-    const fallback = title.match(/\b(\d+(?:[\s-_&+/]*\d+)?(?:\.\d+)?)\s*(?:\(End\))?\s*$/i);
+    const fallback = clean.match(/\b(\d+(?:[-_&+/]+\d+)?(?:\.\d+)?)\s*(?:\(End\))?\s*$/i);
     if (fallback) return `Episode ${fallback[1]}`;
-    return title;
+    return clean || title;
 }
 
 export function extractEpNumStrict(title) {
