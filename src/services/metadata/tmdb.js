@@ -32,29 +32,51 @@ export function normalizeTitle(title, isToku = false) {
 /**
  * Fallback pencarian ke AniList GraphQL API (Lebih lengkap & rate limit 90/menit, jauh lebih baik dari MAL)
  */
-async function searchAniList(cleanTitle, retries = 3) {
+async function searchAniList(cleanTitle, retries = 3, malId = null) {
     // Beri jeda 1000ms (1 detik) agar aman dari limit AniList (90 req/menit = 1.5 req/detik maksimal)
     await new Promise(r => setTimeout(r, 1000));
     try {
-        const query = `
-        query ($search: String) {
-          Media(search: $search, type: ANIME) {
-            idMal
-            format
-            title { romaji english native }
-            coverImage { extraLarge large }
-            averageScore
-            description(asHtml: false)
-            genres
-            episodes
-            seasonYear
-            status
-          }
-        }`;
+        let query;
+        let variables;
+        if (malId && Number(malId) > 0) {
+            query = `
+            query ($idMal: Int) {
+              Media(idMal: $idMal, type: ANIME) {
+                idMal
+                format
+                title { romaji english native }
+                coverImage { extraLarge large }
+                averageScore
+                description(asHtml: false)
+                genres
+                episodes
+                seasonYear
+                status
+              }
+            }`;
+            variables = { idMal: Number(malId) };
+        } else {
+            query = `
+            query ($search: String) {
+              Media(search: $search, type: ANIME) {
+                idMal
+                format
+                title { romaji english native }
+                coverImage { extraLarge large }
+                averageScore
+                description(asHtml: false)
+                genres
+                episodes
+                seasonYear
+                status
+              }
+            }`;
+            variables = { search: cleanTitle };
+        }
 
         const response = await axios.post('https://graphql.anilist.co', {
             query,
-            variables: { search: cleanTitle }
+            variables
         }, { timeout: 15000 });
 
         const item = response.data.data.Media;
@@ -100,6 +122,12 @@ async function searchAniList(cleanTitle, retries = 3) {
                 malId: item.idMal || null
             };
         }
+
+        if (malId && Number(malId) > 0 && cleanTitle) {
+            console.warn(`[AniList] MAL ID ${malId} tidak ditemukan di AniList, mencoba fallback ke pencarian judul: "${cleanTitle}"...`);
+            return searchAniList(cleanTitle, retries, null);
+        }
+
         return null;
     } catch (e) {
         if (e.response && e.response.status === 429 && retries > 0) {
@@ -108,35 +136,42 @@ async function searchAniList(cleanTitle, retries = 3) {
                 : 10000; // Default tunggu 10 detik jika tidak ada header
             console.warn(`[AniList] Terkena Rate Limit (429). Menunggu ${retryAfter/1000} detik sebelum mencoba lagi...`);
             await new Promise(r => setTimeout(r, retryAfter));
-            return searchAniList(cleanTitle, retries - 1);
+            return searchAniList(cleanTitle, retries - 1, malId);
         }
         
+        if (malId && Number(malId) > 0 && cleanTitle && e.response?.status !== 429) {
+            console.warn(`[AniList] Error pencarian MAL ID ${malId}, mencoba fallback ke pencarian judul: "${cleanTitle}"...`);
+            return searchAniList(cleanTitle, retries, null);
+        }
+
         // Abaikan 404 Not Found karena wajar jika anime aneh/sangat baru tidak ada di Anilist
         if (e.response && e.response.status !== 404) {
-            console.error('[AniList] Gagal mencari:', cleanTitle, e.response?.data?.errors || e.message);
+            console.error('[AniList] Gagal mencari:', cleanTitle || malId, e.response?.data?.errors || e.message);
         }
         return null;
     }
 }
 
 /**
- * Mencari data Anime dan Tokusatsu di TMDB berdasarkan judul.
+ * Mencari data Anime dan Tokusatsu di TMDB berdasarkan judul atau malId.
  * Mencari di kategori TV Shows, lalu mencari alternatif di Movies.
  */
-export async function searchTMDB(title, isToku = false) {
-    if (!title) return null;
+export async function searchTMDB(title, isToku = false, malId = null) {
+    if (!title && !malId) return null;
     
     // Ekstraksi angka Season sebelum dihapus (jika isToku=true)
     let seasonNumber = null;
-    const seasonMatch = title.match(/(?:season|s)\s*(\d+)/i);
+    const seasonMatch = title ? title.match(/(?:season|s)\s*(\d+)/i) : null;
     if (seasonMatch) {
         seasonNumber = parseInt(seasonMatch[1]);
     }
     
-    const cleanTitle = normalizeTitle(title, isToku);
-    if (!cleanTitle) return null;
+    const cleanTitle = title ? normalizeTitle(title, isToku) : '';
+    if (!cleanTitle && !malId) return null;
 
-    const cacheKey = `meta_${cleanTitle}_${isToku ? 'toku' : 'anime'}`;
+    const cacheKey = malId && Number(malId) > 0 
+        ? `meta_mal_${malId}_${isToku ? 'toku' : 'anime'}` 
+        : `meta_${cleanTitle}_${isToku ? 'toku' : 'anime'}`;
     
     // 1. Cek Cache di MongoDB
     try {
@@ -154,11 +189,12 @@ export async function searchTMDB(title, isToku = false) {
         // ==========================================
         // JALUR ANIME: FULL ANILIST (Kualitas Tinggi)
         // ==========================================
-        resultData = await searchAniList(cleanTitle);
+        resultData = await searchAniList(cleanTitle, 3, malId);
         if (resultData) {
             resultData.source = 'AniList';
         }
     } else {
+
         // ==========================================
         // JALUR TOKUSATSU: FULL TMDB
         // ==========================================

@@ -34,7 +34,8 @@ export async function syncUnified() {
                 cleanTitle = cleanTitle.replace(/[-:]\s*$/, '').trim();
 
                 const isToku = anime.type === 'Toku';
-                const tmdbData = await searchTMDB(cleanTitle, isToku);
+                const tmdbData = await searchTMDB(cleanTitle, isToku, anime.malId);
+
 
                 if (tmdbData) {
                     // =========================================================================

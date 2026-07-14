@@ -309,11 +309,16 @@ export async function forceEnrichCards(req, res) {
                 let cleanTitle = anime.title.replace(/[\[\]【】()]/g, '').replace(/[-:]\s*$/, '').trim();
                 const norm = normalizeTitle(cleanTitle, isToku);
                 const cacheKey = `meta_${norm}_${isToku ? 'toku' : 'anime'}`;
+                const cacheMalKey = anime.malId ? `meta_mal_${anime.malId}_${isToku ? 'toku' : 'anime'}` : null;
 
                 // Hapus cache MongoDB lama agar benar-benar force fetch data terbaru dari AniList/TMDB
                 await TMDBCache.deleteOne({ key: cacheKey });
+                if (cacheMalKey) {
+                    await TMDBCache.deleteOne({ key: cacheMalKey });
+                }
 
-                const tmdbData = await searchTMDB(cleanTitle, isToku);
+                const tmdbData = await searchTMDB(cleanTitle, isToku, anime.malId);
+
                 if (tmdbData) {
                     if (!anime.image || anime.image.includes('placehold') || req.body.forceOverwriteImage) {
                         anime.image = tmdbData.image || anime.image;
