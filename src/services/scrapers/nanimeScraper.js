@@ -1,9 +1,9 @@
 import axios from 'axios';
-import { getCache } from '../utils/cacheManager.js';
-import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import Anime from '../models/Anime.js';
-import { assertAndRespondContract } from '../utils/contractValidator.js';
-import { PROVIDER_URLS, getNanimeSeriesUrl } from '../config/providerUrls.js';
+import { getCache } from '../../utils/cacheManager.js';
+import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
+import Anime from '../../models/Anime.js';
+import { assertAndRespondContract } from '../../utils/contractValidator.js';
+import { PROVIDER_URLS, getNanimeSeriesUrl } from '../../config/providerUrls.js';
 
 const cache = getCache('nanime', 3600);
 

@@ -1,10 +1,10 @@
-import { getSamehadakuEpisodes } from '../controllers/samehadakuController.js';
+import { getSamehadakuEpisodes } from '../services/scrapers/samehadakuScraper.js';
 import { scrapeVideoServers } from '../services/extractors/videoExtractor.js';
-import * as otakudesu from '../controllers/otakudesuController.js';
-import { getKuronimeEpisodes, getKuronimeServers } from '../controllers/kuronimeController.js';
-import { getNanimeEpisodes, getNanimeServers } from '../controllers/nanimeController.js';
-import { getNimegamiEpisodes, getNimegamiServers } from '../controllers/nimegamiController.js';
-import { getOploverzEpisodes, getOploverzServers } from '../controllers/oploverzController.js';
+import * as otakudesu from '../services/scrapers/otakudesuScraper.js';
+import { getKuronimeEpisodes, getKuronimeServers } from '../services/scrapers/kuronimeScraper.js';
+import { getNanimeEpisodes, getNanimeServers } from '../services/scrapers/nanimeScraper.js';
+import { getNimegamiEpisodes, getNimegamiServers } from '../services/scrapers/nimegamiScraper.js';
+import { getOploverzEpisodes, getOploverzServers } from '../services/scrapers/oploverzScraper.js';
 import { getNeosatsuEpisodes, getNeosatsuServers, getNeosatsuCatalog } from '../services/scrapers/neosatsuScraperService.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';

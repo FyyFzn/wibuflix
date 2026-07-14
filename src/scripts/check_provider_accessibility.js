@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchNanimeInertia } from '../controllers/nanimeController.js';
+import { fetchNanimeInertia } from '../services/scrapers/nanimeScraper.js';
 import { PROVIDER_LIST } from '../config/providerUrls.js';
 
 /**

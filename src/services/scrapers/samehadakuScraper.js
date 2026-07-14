@@ -1,9 +1,9 @@
-import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
+import { releaseToPool } from '../../puppeteer/pool.js';
+import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
-import { getCache } from '../utils/cacheManager.js';
-import Anime from '../models/Anime.js';
-import { extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
+import { getCache } from '../../utils/cacheManager.js';
+import Anime from '../../models/Anime.js';
+import { extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
 
 const cache = getCache('episodes', 3600);
 

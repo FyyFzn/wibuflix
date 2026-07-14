@@ -1,5 +1,5 @@
 import express from 'express';
-import { handleGetEpisodes, handleGetServers } from '../controllers/kuronimeController.js';
+import { handleGetEpisodes, handleGetServers } from '../services/scrapers/kuronimeScraper.js';
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
 import express from 'express';
-import { handleGetEpisodes, handleGetServers } from '../controllers/oploverzController.js';
+import { handleGetEpisodes, handleGetServers } from '../services/scrapers/oploverzScraper.js';
 
 const router = express.Router();
 

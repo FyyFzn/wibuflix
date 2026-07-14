@@ -2,13 +2,13 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { OtakudesuInstance } from 'otakudesu-scraper';
-import Anime from '../models/Anime.js';
-import { getCache } from '../utils/cacheManager.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { releaseToPool } from '../puppeteer/pool.js';
-import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { assertAndRespondContract } from '../utils/contractValidator.js';
-import { PROVIDER_URLS } from '../config/providerUrls.js';
+import Anime from '../../models/Anime.js';
+import { getCache } from '../../utils/cacheManager.js';
+import { fetchWithCF } from '../../utils/scrapeHelper.js';
+import { releaseToPool } from '../../puppeteer/pool.js';
+import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
+import { assertAndRespondContract } from '../../utils/contractValidator.js';
+import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 const cache = getCache('otakudesu', 3600);
 const resolveLimit = pLimit(3); // Maksimal 3 request serentak untuk mencegah Self-DDoS

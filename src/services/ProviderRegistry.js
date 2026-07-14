@@ -1,10 +1,10 @@
-import { getSamehadakuEpisodes } from '../controllers/samehadakuController.js';
+import { getSamehadakuEpisodes } from './scrapers/samehadakuScraper.js';
 import { scrapeVideoServers } from './extractors/videoExtractor.js';
-import * as otakudesu from '../controllers/otakudesuController.js';
-import { getKuronimeEpisodes, getKuronimeServers } from '../controllers/kuronimeController.js';
-import { getNanimeEpisodes, getNanimeServers } from '../controllers/nanimeController.js';
-import { getNimegamiEpisodes, getNimegamiServers } from '../controllers/nimegamiController.js';
-import * as oploverz from '../controllers/oploverzController.js';
+import * as otakudesu from './scrapers/otakudesuScraper.js';
+import { getKuronimeEpisodes, getKuronimeServers } from './scrapers/kuronimeScraper.js';
+import { getNanimeEpisodes, getNanimeServers } from './scrapers/nanimeScraper.js';
+import { getNimegamiEpisodes, getNimegamiServers } from './scrapers/nimegamiScraper.js';
+import * as oploverz from './scrapers/oploverzScraper.js';
 import { getNeosatsuEpisodes, getNeosatsuServers } from './scrapers/neosatsuScraperService.js';
 import { extractOtakuSlug } from '../utils/stringUtils.js';
 

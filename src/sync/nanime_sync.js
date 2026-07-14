@@ -1,7 +1,7 @@
 import axios from 'axios';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
-import { fetchNanimeInertia } from '../controllers/nanimeController.js';
+import { fetchNanimeInertia } from '../services/scrapers/nanimeScraper.js';
 import { PROVIDER_URLS, getNanimeSeriesUrl } from '../config/providerUrls.js';
 
 let isNanimeSyncing = false;

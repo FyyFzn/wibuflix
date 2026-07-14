@@ -1,5 +1,5 @@
 import express from 'express';
-import * as otakudesu from '../controllers/otakudesuController.js';
+import * as otakudesu from '../services/scrapers/otakudesuScraper.js';
 
 const router = express.Router();
 

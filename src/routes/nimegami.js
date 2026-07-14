@@ -1,5 +1,5 @@
 import express from 'express';
-import { getEpisodes, getServers } from '../controllers/nimegamiController.js';
+import { getEpisodes, getServers } from '../services/scrapers/nimegamiScraper.js';
 
 const router = express.Router();
 

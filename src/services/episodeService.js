@@ -1,10 +1,10 @@
-import { getSamehadakuEpisodes } from '../controllers/samehadakuController.js';
+import { getSamehadakuEpisodes } from './scrapers/samehadakuScraper.js';
 import { getNeosatsuEpisodes } from './scrapers/neosatsuScraperService.js';
-import * as otakudesu from '../controllers/otakudesuController.js';
-import { getKuronimeEpisodes } from '../controllers/kuronimeController.js';
-import { getNanimeEpisodes } from '../controllers/nanimeController.js';
-import { getNimegamiEpisodes } from '../controllers/nimegamiController.js';
-import * as oploverz from '../controllers/oploverzController.js';
+import * as otakudesu from './scrapers/otakudesuScraper.js';
+import { getKuronimeEpisodes } from './scrapers/kuronimeScraper.js';
+import { getNanimeEpisodes } from './scrapers/nanimeScraper.js';
+import { getNimegamiEpisodes } from './scrapers/nimegamiScraper.js';
+import * as oploverz from './scrapers/oploverzScraper.js';
 import Anime from '../models/Anime.js';
 import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { getOploverzSeriesUrl, getKuronimeSeriesUrl, getNanimeSeriesUrl, getNimegamiSeriesUrl } from '../config/providerUrls.js';

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 import Anime from '../models/Anime.js';
-import { fetchNanimeInertia } from '../controllers/nanimeController.js';
+import { fetchNanimeInertia } from '../services/scrapers/nanimeScraper.js';
 import { cache as katalogCache } from '../controllers/katalogController.js';
 import { cleanSeriesTitle } from '../utils/stringUtils.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';

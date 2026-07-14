@@ -1,10 +1,10 @@
-import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
+import { releaseToPool } from '../../puppeteer/pool.js';
+import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
-import { getCache } from '../utils/cacheManager.js';
-import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { assertAndRespondContract } from '../utils/contractValidator.js';
-import { PROVIDER_URLS } from '../config/providerUrls.js';
+import { getCache } from '../../utils/cacheManager.js';
+import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
+import { assertAndRespondContract } from '../../utils/contractValidator.js';
+import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 const cache = getCache('oploverz', 3600);
 

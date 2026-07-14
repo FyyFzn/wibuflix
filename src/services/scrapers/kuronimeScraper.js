@@ -1,11 +1,11 @@
 import * as cheerio from 'cheerio';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../utils/kuronimeDecryptor.js';
-import { getCache } from '../utils/cacheManager.js';
-import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
-import Anime from '../models/Anime.js';
-import { assertAndRespondContract } from '../utils/contractValidator.js';
+import { fetchWithCF } from '../../utils/scrapeHelper.js';
+import { releaseToPool } from '../../puppeteer/pool.js';
+import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../../utils/kuronimeDecryptor.js';
+import { getCache } from '../../utils/cacheManager.js';
+import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
+import Anime from '../../models/Anime.js';
+import { assertAndRespondContract } from '../../utils/contractValidator.js';
 
 const cache = getCache('kuronime', 3600);
 

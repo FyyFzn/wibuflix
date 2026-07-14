@@ -1,6 +1,6 @@
 import express from 'express';
 import { scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
-import * as otakudesu from '../controllers/otakudesuController.js';
+import * as otakudesu from '../services/scrapers/otakudesuScraper.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
 import { ProviderRegistry } from '../services/ProviderRegistry.js';
 
