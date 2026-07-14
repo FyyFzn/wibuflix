@@ -186,8 +186,8 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
         const page = await createPage(context);
         try {
             console.log(`[PagePool] Me-refresh CF cookie untuk ${domain}...`);
-            await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() =>
-                page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() =>
+                page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 25000 })
             );
             await waitForCloudflare(page);
             await new Promise(r => setTimeout(r, 2000));

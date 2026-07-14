@@ -126,19 +126,18 @@ function startServer() {
         // Print sebagai satu kesatuan string (Atomic) agar tidak terselip error/log lain di Azure
         log(banner);
 
-        log('⏳ [Puppeteer] Memulai inisialisasi pool browser...');
-        try {
-            await initPagePool();
-            log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
-        } catch (err) {
-            log('❌ [Puppeteer] Gagal inisialisasi pool browser pada startup:', err.message);
-        }
+        // Memulai semua jadwal background jobs langsung tanpa diblokir oleh Puppeteer
+        initScheduler();
 
         // Lanjutkan antrean download HLS yang mungkin terputus saat server restart
         backgroundQueue.resumeOrphanedTasks().catch(err => console.error("Error resuming orphaned tasks:", err));
 
-        // Memulai semua jadwal background jobs
-        initScheduler();
+        log('⏳ [Puppeteer] Memulai inisialisasi pool browser (di latar belakang)...');
+        initPagePool().then(() => {
+            log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
+        }).catch(err => {
+            log('❌ [Puppeteer] Gagal inisialisasi pool browser pada startup:', err.message);
+        });
 
         });
     }).catch(err => {
