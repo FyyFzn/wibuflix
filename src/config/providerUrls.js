@@ -53,9 +53,14 @@ export const PROVIDER_URLS = {
 export const PROVIDER_LIST = Object.values(PROVIDER_URLS);
 
 /**
- * Mendapatkan URL Series/Anime Oploverz berdasarkan slug
+ * Mendapatkan URL Series/Anime Samehadaku berdasarkan slug
  */
-export const getOploverzSeriesUrl = (slug) => `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/${slug}`;
+export const getSamehadakuSeriesUrl = (slug) => `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/${slug}/`;
+
+/**
+ * Mendapatkan URL Series/Anime Otakudesu berdasarkan slug
+ */
+export const getOtakudesuSeriesUrl = (slug) => `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/${slug}/`;
 
 /**
  * Mendapatkan URL Series/Anime Kuronime berdasarkan slug
@@ -71,6 +76,34 @@ export const getNimegamiSeriesUrl = (slug) => `${PROVIDER_URLS.NIMEGAMI.BASE_URL
  * Mendapatkan URL Series/Anime Nanime berdasarkan slug
  */
 export const getNanimeSeriesUrl = (slug) => `${PROVIDER_URLS.NANIME.BASE_URL}/anime/${slug}`;
+
+/**
+ * Mendapatkan URL Series/Anime Oploverz berdasarkan slug
+ */
+export const getOploverzSeriesUrl = (slug) => `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/${slug}`;
+
+/**
+ * Mendapatkan URL Series/Anime Neosatsu berdasarkan slug
+ */
+export const getNeosatsuSeriesUrl = (slug) => `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/01/${slug}.html`;
+
+/**
+ * Mendapatkan URL Series/Anime secara dinamis berdasarkan key provider dan slug
+ */
+export function getProviderSeriesUrl(providerKey, slug) {
+    if (!providerKey || !slug) return null;
+    const key = providerKey.toUpperCase();
+    switch (key) {
+        case 'SAMEHADAKU': return getSamehadakuSeriesUrl(slug);
+        case 'OTAKUDESU': return getOtakudesuSeriesUrl(slug);
+        case 'KURONIME': return getKuronimeSeriesUrl(slug);
+        case 'NANIME': return getNanimeSeriesUrl(slug);
+        case 'NIMEGAMI': return getNimegamiSeriesUrl(slug);
+        case 'OPLOVERZ': return getOploverzSeriesUrl(slug);
+        case 'NEOSATSU': return getNeosatsuSeriesUrl(slug);
+        default: return null;
+    }
+}
 
 /**
  * Cek apakah URL atau string adalah milik provider tertentu (menggunakan kunci provider, misal: 'OPLOVERZ')
