@@ -44,8 +44,26 @@ export async function getOploverzEpisodes(targetUrl) {
             
             if (epHref && !epTitleRaw.toLowerCase().includes('batch')) {
                 const epUrl = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}${epHref}`;
-                // Coba ekstrak episode dari URL jika teks tidak mengandung angka jelas
-
+                
+                // Cek apakah episode merupakan rentang/gabungan ganda (cth: Episode 166-167 atau /episode/166-167/)
+                const rangeMatch = epHref.match(/\/episode\/(\d+)-(\d+)\//i) || epTitleRaw.match(/(?:episode|ep|eps)\s*(\d+)\s*[-–]\s*(\d+)/i);
+                if (rangeMatch) {
+                    const startNum = parseInt(rangeMatch[1], 10);
+                    const endNum = parseInt(rangeMatch[2], 10);
+                    if (!isNaN(startNum) && !isNaN(endNum) && startNum <= endNum && (endNum - startNum) <= 15) {
+                        for (let n = startNum; n <= endNum; n++) {
+                            if (!seenEpNums.has(n)) {
+                                seenEpNums.add(n);
+                                daftar_episode.push({
+                                    judul: `Episode ${n}`,
+                                    url: epUrl,
+                                    num: n
+                                });
+                            }
+                        }
+                        return;
+                    }
+                }
 
                 const epNumFromUrlMatch = epHref.match(/\/episode\/(\d+(\.\d+)?)/i);
                 const epNum = extractEpNumStrict(epTitleRaw) || (epNumFromUrlMatch ? parseFloat(epNumFromUrlMatch[1]) : null);

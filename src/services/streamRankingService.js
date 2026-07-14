@@ -7,6 +7,7 @@ import { getServersInternal as getOtakuServers } from '../controllers/otakudesuC
 import { getKuronimeServers } from '../controllers/kuronimeController.js';
 import { getNanimeServers } from '../controllers/nanimeController.js';
 import { getNimegamiServers } from '../controllers/nimegamiController.js';
+import { getOploverzServers } from '../controllers/oploverzController.js';
 
 export async function getServersBasedOnUrl(episodeUrl) {
     if (episodeUrl.includes('___neosatsu_ep___')) {
@@ -35,6 +36,26 @@ export async function getServersBasedOnUrl(episodeUrl) {
             realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
         }
         return await getNimegamiServers(realUrl);
+    } else if (episodeUrl.includes('oploverz.ltd') || episodeUrl.includes('oploverz.site') || episodeUrl.includes('/api/oploverz/servers')) {
+        let realUrl = episodeUrl;
+        if (episodeUrl.includes('?url=')) {
+            realUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
+        }
+        const oploData = await getOploverzServers(realUrl);
+        return {
+            ...oploData,
+            servers: (oploData?.servers || []).map(s => ({
+                nama: s.nama,
+                post: "",
+                nume: s.id || "",
+                type: s.tipe || "direct",
+                aktif: s.aktif,
+                iframeUrl: s.url,
+                namaHost: s.provider || "Direct",
+                headers: s.headers,
+                source: "Oploverz"
+            }))
+        };
     } else {
         return await scrapeVideoServers(episodeUrl);
     }
