@@ -1,6 +1,7 @@
 import axios from 'axios';
 import vm from 'vm';
 import { PROVIDER_URLS } from '../../../config/providerUrls.js';
+import { getExtractorReferer } from './utils.js';
 
 export const name = 'vidhide';
 
@@ -14,7 +15,7 @@ export async function extract(embedUrl, req) {
         const { data } = await axios.get(embedUrl, {
             headers: {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`
+                "Referer": getExtractorReferer(embedUrl, req)
             }
         });
 

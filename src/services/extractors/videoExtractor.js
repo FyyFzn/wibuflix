@@ -2,7 +2,7 @@ import { acquireFromPool, releaseToPool } from '../../puppeteer/pool.js';
 import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
-import { extractIframeSrc, namaServer } from './providers/utils.js';
+import { extractIframeSrc, namaServer, recordIframeReferer, getExtractorReferer } from './providers/utils.js';
 import { resolveExtractor } from './providers/index.js';
 import * as genericExtractor from './providers/generic.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
@@ -300,6 +300,15 @@ export async function scrapeVideoServers(targetUrl) {
             activeServer.namaHost = namaServer(iframeAktif);
         }
 
+        for (const srv of servers) {
+            if (srv.iframeUrl) {
+                recordIframeReferer(srv.iframeUrl, targetUrl);
+            }
+        }
+        if (iframeAktif) {
+            recordIframeReferer(iframeAktif, targetUrl);
+        }
+
         return { judul, gambar, nav_prev, nav_next, servers, iframeAktif };
     } catch (err) {
         throw err;
@@ -342,6 +351,10 @@ export async function resolveSingleServer(targetUrl, nume, req) {
 
         if (!iframeUrl) throw new Error("Gagal mengekstrak iframe URL dari AJAX");
 
+        if (iframeUrl) {
+            recordIframeReferer(iframeUrl, targetUrl);
+        }
+
         return { iframeUrl, namaHost: namaServer(iframeUrl) };
     } catch (err) {
         throw err;
@@ -360,7 +373,7 @@ export async function extractVideoUrl(embedUrl, req) {
         return { 
             url: embedUrl,
             headers: {
-                'Referer': `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`,
+                'Referer': getExtractorReferer(embedUrl, req),
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         };

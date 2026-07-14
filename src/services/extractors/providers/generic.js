@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { acquireFromExtractorPool, releaseToPool, getBrowser } from '../../../puppeteer/pool.js';
 import { PROVIDER_URLS } from '../../../config/providerUrls.js';
+import { getExtractorReferer, getExtractorOrigin } from './utils.js';
 
 export const name = 'generic';
 
@@ -16,7 +17,7 @@ export async function extract(embedUrl, req) {
             timeout: 8000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                'Referer': `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`
+                'Referer': getExtractorReferer(embedUrl, req)
             }
         });
         
@@ -55,8 +56,8 @@ export async function extract(embedUrl, req) {
             slot = await acquireFromExtractorPool();
             tempPage = slot.page;
             await tempPage.setExtraHTTPHeaders({
-                'Referer': `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/`,
-                'Origin': `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}`
+                'Referer': getExtractorReferer(embedUrl, req),
+                'Origin': getExtractorOrigin(embedUrl, req)
             });
         }
 
