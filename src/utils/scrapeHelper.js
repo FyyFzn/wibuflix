@@ -10,6 +10,7 @@ function isCloudflareHtml(html) {
     if (!html) return false;
     return (
         html.includes('Just a moment') ||
+        html.includes('One moment, please') ||
         html.includes('cf-browser-verification') ||
         html.includes('Ray ID:') ||
         html.includes('Checking your browser') ||
@@ -68,8 +69,8 @@ export async function fetchWithCF(url, options = {}) {
 
     const timeout = options.timeout || 60000;
     
-    // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku)
-    const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku');
+    // Deteksi domain dengan proteksi ketat Cloudflare (seperti Samehadaku & Otakudesu)
+    const isCloudflareStrict = options.forcePuppeteer || url.includes('samehadaku') || url.includes('otakudesu');
     
     let html = '';
     if (!isCloudflareStrict) {

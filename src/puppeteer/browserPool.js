@@ -137,18 +137,23 @@ export async function getBrowser() {
     return await browserLaunchPromise;
 }
 
-export async function waitForCloudflare(page) {
-    const MAX_WAIT = 12000;
+const CF_CHALLENGE_TITLES = ['just a moment', 'please wait', 'one moment', 'checking your browser', 'loader'];
+
+function isCfChallengeTitle(title) {
+    const t = title.toLowerCase();
+    return CF_CHALLENGE_TITLES.some(kw => t.includes(kw));
+}
+
+export async function waitForCloudflare(page, maxWait = 15000) {
     const INTERVAL = 400;
     let elapsed = 0;
-    while (elapsed < MAX_WAIT) {
+    while (elapsed < maxWait) {
         if (page.isClosed()) return;
         const judul = await Promise.race([
             page.title().catch(() => ''),
             new Promise(r => setTimeout(() => r(''), 2000))
         ]);
-        const titleLower = judul.toLowerCase();
-        if (!titleLower.includes('just a moment') && !titleLower.includes('please wait')) return;
+        if (!isCfChallengeTitle(judul)) return;
         await new Promise(r => setTimeout(r, INTERVAL));
         elapsed += INTERVAL;
     }
@@ -157,8 +162,8 @@ export async function waitForCloudflare(page) {
             page.title().catch(() => ''),
             new Promise(r => setTimeout(() => r(''), 2000))
         ]);
-        if (finalTitle.toLowerCase().includes('just a moment')) {
-            console.warn('[waitForCloudflare] Timeout menunggu CF challenge selesai!');
+        if (isCfChallengeTitle(finalTitle)) {
+            console.warn(`[waitForCloudflare] Timeout menunggu CF challenge selesai! (title: "${finalTitle}")`);
         }
     }
 }
@@ -220,16 +225,18 @@ export async function initPagePool() {
     if (poolReady) return;
     poolReady = true;
     
-    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie untuk Samehadaku, Kuronime, & Animeku...');
+    console.log('[PagePool] Inisialisasi pool dan warming up CF cookie untuk Samehadaku, Kuronime, Otakudesu & Animeku...');
     await getBrowser().catch(e => console.error('[PagePool] Gagal membuka browser awal:', e.message));
     await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Warm-up Samehadaku gagal:', e.message));
     await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Warm-up Kuronime gagal:', e.message));
+    await refreshCfCookie('https://otakudesu.io/').catch(e => console.warn('[PagePool] Warm-up Otakudesu gagal:', e.message));
     await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Warm-up Animeku gagal:', e.message));
 
     setInterval(async () => {
         console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
         await refreshCfCookie('https://v2.samehadaku.how/').catch(e => console.warn('[PagePool] Auto-refresh Samehadaku gagal:', e.message));
         await refreshCfCookie('https://kuronime.sbs/').catch(e => console.warn('[PagePool] Auto-refresh Kuronime gagal:', e.message));
+        await refreshCfCookie('https://otakudesu.io/').catch(e => console.warn('[PagePool] Auto-refresh Otakudesu gagal:', e.message));
         await refreshCfCookie('https://animeku.org/').catch(e => console.warn('[PagePool] Auto-refresh Animeku gagal:', e.message));
     }, 30 * 60 * 1000);
 }
