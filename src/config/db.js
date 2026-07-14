@@ -33,7 +33,7 @@ const connectDB = async () => {
         console.log(`✅ [MongoDB] Berhasil terhubung ke: ${conn.connection.host}`);
     } catch (error) {
         console.error(`❌ [MongoDB] Error Koneksi: ${error.message}`);
-        process.exit(1);
+        throw error;
     }
 };
 
