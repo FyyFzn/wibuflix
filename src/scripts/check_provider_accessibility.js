@@ -50,8 +50,9 @@ const PROVIDERS = [
     },
     {
         name: 'Oploverz',
-        baseUrl: 'https://plus.oploverz.ltd/',
-        catalogUrl: 'https://plus.oploverz.ltd/series',
+        baseUrl: 'https://idn.oploverz.site/',
+        catalogUrl: 'https://idn.oploverz.site/series',
+
         type: 'html-cf',
         expectedKeyword: 'oploverz'
     },

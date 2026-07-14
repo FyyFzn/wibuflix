@@ -10,10 +10,11 @@ const log = (...args) => {
     else console.log(...args);
 };
 
-const OPLOVERZ_SERIES_URL = 'https://plus.oploverz.ltd/series';
+const OPLOVERZ_SERIES_URL = 'https://idn.oploverz.site/series';
 
 /**
- * Sinkronisasi katalog anime dari Oploverz (plus.oploverz.ltd/series).
+ * Sinkronisasi katalog anime dari Oploverz (idn.oploverz.site/series).
+
  * Menggunakan Puppeteer untuk merender SvelteKit SPA, kemudian Fuzzy Matching
  * (isSafeToMerge) agar tidak ada duplikasi di MongoDB.
  */
@@ -91,10 +92,11 @@ export async function syncOploverz() {
             if (title && slug) {
                 animeMap.set(slug, {
                     title: title,
-                    url: `https://plus.oploverz.ltd/series/${slug}`,
+                    url: `https://idn.oploverz.site/series/${slug}`,
                     id: slug
                 });
             }
+
         }
 
         const list = Array.from(animeMap.values());

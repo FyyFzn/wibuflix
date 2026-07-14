@@ -40,8 +40,9 @@ export async function getOploverzEpisodes(targetUrl) {
             const epHref = $(el).attr('href');
             
             if (epHref && !epTitleRaw.toLowerCase().includes('batch')) {
-                const epUrl = `https://plus.oploverz.ltd${epHref}`;
+                const epUrl = `https://idn.oploverz.site${epHref}`;
                 // Coba ekstrak episode dari URL jika teks tidak mengandung angka jelas
+
                 const epNumFromUrlMatch = epHref.match(/\/episode\/(\d+(\.\d+)?)/i);
                 const epNum = extractEpNumStrict(epTitleRaw) || (epNumFromUrlMatch ? parseFloat(epNumFromUrlMatch[1]) : null);
                 
@@ -148,8 +149,9 @@ export async function getOploverzServers(episodeUrl) {
             const href = $(el).attr('href');
             const linkText = $(el).text().trim();
             
-            if (href && href.startsWith('http') && !href.includes('oploverz.ltd')) {
+            if (href && href.startsWith('http') && !href.includes('oploverz')) {
                 if (linkText.length > 2 && linkText.length <= 25 && !linkText.toLowerCase().includes('login') && !linkText.toLowerCase().includes('register')) {
+
                     const hostLower = linkText.toLowerCase();
                     const isExtractable = hostLower.includes('mega') || hostLower.includes('acefile') || hostLower.includes('filedon') || hostLower.includes('gofile') || hostLower.includes('pdrain') || hostLower.includes('pixeldrain');
                     

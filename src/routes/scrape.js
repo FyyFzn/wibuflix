@@ -132,8 +132,9 @@ router.get('/api/scrape', async (req, res) => {
                 nav_next: kuroData.nav_next,
                 servers: (kuroData.servers || []).map(s => ({ ...s, source: 'Kuronime' }))
             };
-        } else if (targetUrl.includes('oploverz.ltd') || targetUrl.startsWith('/api/oploverz/servers')) {
+        } else if (targetUrl.includes('oploverz.ltd') || targetUrl.includes('oploverz.site') || targetUrl.startsWith('/api/oploverz/servers')) {
             let realUrl = targetUrl;
+
             if (targetUrl.startsWith('/api/oploverz/servers')) {
                 realUrl = new URL('http://localhost' + targetUrl).searchParams.get('url') || targetUrl;
             }

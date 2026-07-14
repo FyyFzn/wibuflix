@@ -77,8 +77,9 @@ async function getSampleAnimeUrl(providerName) {
     } else if (providerName === 'Nimegami') {
         return 'https://nimegami.id/dr-stone-new-world-sub-indo/';
     } else if (providerName === 'Oploverz') {
-        return 'https://plus.oploverz.ltd/series/one-piece';
+        return 'https://idn.oploverz.site/series/one-piece';
     } else if (providerName === 'Neosatsu') {
+
         try {
             const data = await getNeosatsuCatalog(1, '', '');
             if (data?.anime?.length > 0) return data.anime[0].endpoint;

@@ -23,7 +23,8 @@ const CONFIGURED_PROVIDERS = [
     { name: 'Kuronime', baseUrl: 'https://kuronime.sbs/', expectedProtocol: 'https:' },
     { name: 'Nanime ID', baseUrl: 'https://nanimeid.net/', expectedProtocol: 'https:' },
     { name: 'Nimegami', baseUrl: 'https://nimegami.id/', expectedProtocol: 'https:' },
-    { name: 'Oploverz', baseUrl: 'https://plus.oploverz.ltd/', expectedProtocol: 'https:' },
+    { name: 'Oploverz', baseUrl: 'https://idn.oploverz.site/', expectedProtocol: 'https:' },
+
     { name: 'Neosatsu', baseUrl: 'https://www.neosatsu.com/', expectedProtocol: 'https:' }
 ];
 

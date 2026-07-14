@@ -178,7 +178,7 @@ export async function findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakude
             dbAnime = await Anime.findOne({ $or: [{ "sources.nanime.url": targetUrl }, { "episodesList.urls.nanime": targetUrl }] });
         } else if (targetUrl.includes('nimegami.id') || targetUrl.startsWith('/api/nimegami/')) {
             dbAnime = await Anime.findOne({ $or: [{ "sources.nimegami.url": targetUrl }, { "episodesList.urls.nimegami": targetUrl }] });
-        } else if (targetUrl.includes('oploverz.ltd') || targetUrl.startsWith('/api/oploverz/')) {
+        } else if (targetUrl.includes('oploverz.ltd') || targetUrl.includes('oploverz.site') || targetUrl.startsWith('/api/oploverz/')) {
             dbAnime = await Anime.findOne({ $or: [{ "sources.oploverz.url": targetUrl }, { "episodesList.urls.oploverz": targetUrl }] });
         } else {
             dbAnime = await Anime.findOne({ $or: [{ "sources.samehadaku.url": targetUrl }, { "episodesList.urls.samehadaku": targetUrl }, { "url": targetUrl }] });
@@ -215,7 +215,7 @@ async function executeScraperStrategy(targetUrl) {
     } else if (targetUrl.includes('nimegami.id') || targetUrl.startsWith('/api/nimegami/')) {
         providerName = 'nimegami';
         data = await getNimegamiEpisodes(targetUrl);
-    } else if (targetUrl.includes('oploverz.ltd') || targetUrl.startsWith('/api/oploverz/')) {
+    } else if (targetUrl.includes('oploverz.ltd') || targetUrl.includes('oploverz.site') || targetUrl.startsWith('/api/oploverz/')) {
         providerName = 'oploverz';
         data = await oploverz.getOploverzEpisodes(targetUrl);
     } else {
@@ -259,7 +259,8 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
     let cleanKuronime = urlKuronime || dbAnime?.sources?.kuronime?.url || (dbAnime?.sources?.kuronime?.id ? `https://kuronime.sbs/anime/${dbAnime.sources.kuronime.id.replace(/^kuronime:/, '')}/` : null);
     let cleanNanime = urlNanime || dbAnime?.sources?.nanime?.url || (dbAnime?.sources?.nanime?.id ? `https://nanimeid.net/anime/${dbAnime.sources.nanime.id}` : null);
     let cleanNimegami = urlNimegami || dbAnime?.sources?.nimegami?.url || (dbAnime?.sources?.nimegami?.id ? `https://nimegami.id/${dbAnime.sources.nimegami.id.replace(/^nimegami:/, '')}/` : null);
-    let cleanOploverz = urlOploverz || dbAnime?.sources?.oploverz?.url || (dbAnime?.sources?.oploverz?.id ? `https://plus.oploverz.ltd/series/${dbAnime.sources.oploverz.id}` : null);
+    let cleanOploverz = urlOploverz || dbAnime?.sources?.oploverz?.url || (dbAnime?.sources?.oploverz?.id ? `https://idn.oploverz.site/series/${dbAnime.sources.oploverz.id}` : null);
+
     let cleanNeosatsu = dbAnime?.sources?.neosatsu?.url || (typeof targetUrl === 'string' && targetUrl.includes('neosatsu') ? (targetUrl.includes('___neosatsu_ep___') ? targetUrl.split('___neosatsu_ep___')[0] : targetUrl) : null);
 
     if (targetUrl) {
