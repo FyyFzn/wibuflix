@@ -1,4 +1,5 @@
-import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
+import { releaseToPool } from '../puppeteer/pool.js';
+import { fetchWithCF } from '../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../utils/stringUtils.js';
@@ -17,16 +18,17 @@ export async function getOploverzEpisodes(targetUrl) {
         return cachedData;
     }
 
-    console.log(`\n[Oploverz] Fetching episodes via Puppeteer: ${targetUrl}`);
+    console.log(`\n[Oploverz Fast Fetch] ${targetUrl}`);
     let slot;
     try {
-        slot = await acquireFromPool();
-        const page = slot.page;
-        
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-        
-        const html = await page.content();
-        const $ = cheerio.load(html);
+        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 8000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
+
+        if (html === '404_NOT_FOUND') {
+            throw new Error("Target URL returned 404");
+        }
 
         let rawTitle = $('h1').first().text().trim() || $('title').text().replace(/Oploverz/i, '').replace(/subtitle indonesia/i, '').trim();
         const judul = cleanSeriesTitle(rawTitle);
@@ -102,16 +104,17 @@ export async function getOploverzServers(episodeUrl) {
         return cachedData;
     }
 
-    console.log(`[Oploverz] Fetching servers via Puppeteer: ${episodeUrl}`);
+    console.log(`[Oploverz Fast Fetch] Servers: ${episodeUrl}`);
     let slot;
     try {
-        slot = await acquireFromPool();
-        const page = slot.page;
-        
-        await page.goto(episodeUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-        
-        const html = await page.content();
-        const $ = cheerio.load(html);
+        const fetchRes = await fetchWithCF(episodeUrl, { fetchTimeout: 8000 });
+        slot = fetchRes.slot;
+        const $ = fetchRes.$;
+        const html = fetchRes.html;
+
+        if (html === '404_NOT_FOUND') {
+            throw new Error("Target URL returned 404");
+        }
 
         let judul = $('h1').first().text().trim() || $('title').text().replace(/Oploverz/i, '').replace(/subtitle indonesia/i, '').trim();
         judul = formatEpisodeTitle(judul);
