@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "start:prod": "node -e \"process.env.NODE_ENV='production'; import('./src/server.js')\"",
+    "start:prod": "node src/server.js",
+
 
     "sync:nimegami": "node src/scripts/init-nimegami-sync.js",
     "check:webs": "node src/scripts/check_provider_accessibility.js",
