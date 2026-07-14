@@ -199,12 +199,12 @@ export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') 
                     : cookies.map(c => `${c.name}=${c.value}`).join('; ');
                 setCfCookie(domain, cookieString, cookies);
                 const label = cfClearance ? 'cf_clearance' : `session (${cookies.length} cookies)`;
-                console.log(`[PagePool] Cookie berhasil diperbarui untuk ${domain} ✓ [${label}]`);
+                console.debug(`[PagePool] Cookie berhasil diperbarui untuk ${domain} ✓ [${label}]`);
             } else {
                 const title = await page.title().catch(() => '');
                 if (!title.toLowerCase().includes('just a moment') && !title.toLowerCase().includes('please wait')) {
                     setCfCookie(domain, '', []);
-                    console.log(`[PagePool] ${domain} merespons normal tanpa cookie tantangan Cloudflare (Public Edge CDN) ✓`);
+                    console.debug(`[PagePool] ${domain} merespons normal tanpa cookie tantangan Cloudflare (Public Edge CDN) ✓`);
                 } else {
                     console.warn(`[PagePool] ⚠️ Tantangan Cloudflare masih aktif namun tidak ada cookie yang didapat untuk ${domain}.`);
                 }

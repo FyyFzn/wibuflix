@@ -108,8 +108,14 @@ router.get('/api/admin/logs', (req, res) => {
                     <button onclick="downloadLogs()">💾 Download</button>
                     <button onclick="clearDisplay()">🗑 Clear</button>
                 </div>
+                <div class="filter-tabs" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                    <button class="tab-btn active" onclick="setTab('ALL', this)">🌐 Semua Log</button>
+                    <button class="tab-btn" onclick="setTab('SYNC', this)">🔄 Sync / Background</button>
+                    <button class="tab-btn" onclick="setTab('SCRAPER', this)">🕷️ Scrapers & Pool</button>
+                    <button class="tab-btn" onclick="setTab('ERRORS', this)">⚠️ Errors & Warn Only</button>
+                </div>
             </div>
-            <div id="logContainer">Memuat log...</div>
+            <div id="logContainer" style="margin-top:115px;">Memuat log...</div>
             <div id="toast"></div>
             <script>
                 const logContainer = document.getElementById('logContainer');
@@ -121,6 +127,7 @@ router.get('/api/admin/logs', (req, res) => {
                 let isPaused = false;
                 let rawText = '';
                 let searchTerm = '';
+                let currentTab = 'ALL';
 
                 window.addEventListener('scroll', () => {
                     const isAtBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 50;
@@ -131,6 +138,13 @@ router.get('/api/admin/logs', (req, res) => {
                     searchTerm = e.target.value.toLowerCase();
                     renderLogs(rawText);
                 });
+
+                function setTab(tab, el) {
+                    currentTab = tab;
+                    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                    el.classList.add('active');
+                    renderLogs(rawText);
+                }
 
                 function showToast(msg) {
                     const toast = document.getElementById('toast');
@@ -153,10 +167,17 @@ router.get('/api/admin/logs', (req, res) => {
                 function renderLogs(text) {
                     const lines = text.split('\\n').filter(l => l.trim());
                     let filtered = lines;
-                    if (searchTerm) {
-                        filtered = lines.filter(l => l.toLowerCase().includes(searchTerm));
+                    if (currentTab === 'SYNC') {
+                        filtered = filtered.filter(l => l.includes('[Latest Sync]') || l.includes('Sync]') || l.includes('[Scheduler]') || l.includes('[UnifiedSync]') || l.includes('[Queue]'));
+                    } else if (currentTab === 'SCRAPER') {
+                        filtered = filtered.filter(l => l.includes('[Browser]') || l.includes('[PagePool]') || l.includes('[Puppeteer]') || l.includes('[scrapeHelper]') || l.includes('Scraper]'));
+                    } else if (currentTab === 'ERRORS') {
+                        filtered = filtered.filter(l => l.includes('[ERROR]') || l.includes('[WARN]') || l.includes('✖') || l.includes('⚠'));
                     }
-                    lineCountEl.textContent = searchTerm 
+                    if (searchTerm) {
+                        filtered = filtered.filter(l => l.toLowerCase().includes(searchTerm));
+                    }
+                    lineCountEl.textContent = (searchTerm || currentTab !== 'ALL')
                         ? filtered.length + '/' + lines.length + ' baris'
                         : lines.length + ' baris';
 

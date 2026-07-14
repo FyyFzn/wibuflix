@@ -22,7 +22,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
         if (cachedData) {
             staticAnimeList = cachedData;
         } else {
-            console.info(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
+            console.debug(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
             const neosatsuBase = PROVIDER_URLS.NEOSATSU.BASE_URL;
             const staticPages = [
                 `${neosatsuBase}/p/kamen-rider-series.html`,
@@ -105,7 +105,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
 
             for (const feed of labelFeeds) {
                 try {
-                    console.info(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
+                    console.debug(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
                     const fUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
                     const { data } = await axios.get(fUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                     
