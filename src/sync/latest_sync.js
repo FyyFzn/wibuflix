@@ -5,6 +5,8 @@ import { releaseToPool } from '../puppeteer/pool.js';
 import Anime from '../models/Anime.js';
 import { fetchNanimeInertia } from '../controllers/nanimeController.js';
 import { cache as katalogCache } from '../controllers/katalogController.js';
+import { cleanSeriesTitle } from '../utils/stringUtils.js';
+
 
 let isLatestSyncing = false;
 
@@ -291,13 +293,9 @@ async function scrapeNimegamiLatest() {
                     const match = text.match(/eps?\.?\s*(\d+)/i);
                     if (match) entry.status = `Eps ${match[1]}`;
                 } else if (text.length > 2 && !text.toLowerCase().includes('belum update')) {
-                    entry.title = text
-                        .replace(/\s*\(Complete\)\s*/i, '')
-                        .replace(/\s*\(On-?going\)\s*/i, '')
-                        .replace(/\s*Subtitle\s*Indonesia\s*/i, '')
-                        .replace(/\s*Sub\s*Indo\s*/i, '')
-                        .trim();
+                    entry.title = cleanSeriesTitle(text);
                 }
+
             }
         });
     } catch (e) {

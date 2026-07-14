@@ -17,8 +17,10 @@ export function normalizeTitleForMatch(title) {
     // Konversi ordinal: "2nd season" -> "season 2"
     t = t.replace(/(\d+)(?:st|nd|rd|th)\s+season/gi, 'season $1');
 
-    // Hapus embel-embel umum
+    // Hapus embel-embel umum & nomor episode seperti #12, Episode 12, Eps 12, 01-12
     t = t.replace(/subtitle indonesia|sub indo|batch|ongoing|on-going|tv series/gi, '');
+    t = t.replace(/(?:#|episode|eps?|ep)\s*\d+(?:[\s-_]*[-–to]+\s*(?:#|episode|eps?|ep)?\s*\d+)?.*$/gi, '');
+    t = t.replace(/\s+\d+\s*[-–]\s*\d+.*$/gi, ''); // Cth: " 01-12" atau " 01 - 12"
 
     // Standarisasi "Season X" menjadi "sX"
     t = t.replace(/season\s*(\d+)/gi, 's$1');
@@ -30,6 +32,7 @@ export function normalizeTitleForMatch(title) {
     // Hapus spasi ganda
     return t.replace(/\s+/g, ' ').trim();
 }
+
 
 import stringSimilarity from 'string-similarity';
 
@@ -265,16 +268,15 @@ export function cleanSeriesTitle(title) {
     if (!title) return '';
     let t = String(title).trim();
     // 1. Hapus nama situs & kata kunci SEO (Sub Indo, Subtitle Indonesia, dll.)
-    t = t.replace(/[-–|]\s*(?:Samehadaku|Otakudesu|Kuronime|Neosatsu).*$/i, '');
+    t = t.replace(/[-–|]\s*(?:Samehadaku|Otakudesu|Kuronime|Neosatsu|Nimegami).*$/i, '');
     t = t.replace(/\s*(?:\(?Sub(?:title)?\s*Indo(?:nesia)?\)?)\s*/gi, '');
-    // 2. Hapus metadata episode & batch (Episode XX - XX, Tamat, End, OVA, Batch)
-    t = t.replace(/(?:Episode|Eps)\s*\d+\s*-\s*\d+.*$/i, '');
-    t = t.replace(/(?:Episode|Eps)\s*\d+.*$/i, '');
-    t = t.replace(/\s*\d+\s*-\s*\d+\s*(?:Tamat|End)?.*$/i, '');
+    // 2. Hapus metadata episode & batch (Episode XX - XX, #XX, Tamat, End, OVA, Batch)
+    t = t.replace(/(?:#|Episode|Eps?|Ep)\s*\d+(?:[\s-_]*[-–to]+\s*(?:#|Episode|Eps?|Ep)?\s*\d+)?.*$/i, '');
+    t = t.replace(/\s+\d+\s*[-–]\s*\d+.*$/i, '');
     t = t.replace(/\s*OVA\s*\d*.*$/i, '');
     t = t.replace(/(?:\s*[\(\[]?BD[\)\]]?\s*)?(?:\s*[\(\[]?Batch[\)\]]?\s*)/gi, '');
     t = t.replace(/\s*[\(\[]?(?:End|Tamat)[\)\]]?\s*/gi, '');
     // 3. Hapus pemisah dan karakter sisa di akhir string
-    t = t.replace(/\s*[-–|]\s*$/i, '');
+    t = t.replace(/\s*[-–|#]\s*$/i, '');
     return t.replace(/[-\s]+$/, '').replace(/\s+/g, ' ').trim();
-}
+}

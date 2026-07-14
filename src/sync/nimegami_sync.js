@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import Anime from '../models/Anime.js';
-import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
+import { normalizeTitleForMatch, isSafeToMerge, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { fetchWithCF } from '../utils/scrapeHelper.js';
 import { releaseToPool } from '../puppeteer/pool.js';
 
@@ -66,13 +66,8 @@ export async function syncNimegami() {
                     seenUrls.add(link);
                     addedCount++;
 
-                    title = title
-                        .replace(/\s*\(Complete\)\s*/i, '')
-                        .replace(/\s*\(On-?going\)\s*/i, '')
-                        .replace(/\s*Subtitle\s*Indonesia\s*/i, '')
-                        .replace(/\s*Sub\s*Indo\s*/i, '')
-                        .replace(/\s*Batch\s*/i, '')
-                        .trim();
+                    title = cleanSeriesTitle(title);
+
 
                     const parts = link.replace(/\/$/, '').split('/');
                     const slug = parts[parts.length - 1];
