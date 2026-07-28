@@ -161,12 +161,13 @@ export async function mergeAnimeCards(req, res) {
         }
 
         for (const dup of targets) {
-            const providerKeys = ['samehadaku', 'otakudesu', 'kuronime', 'neosatsu', 'nanime', 'nimegami', 'oploverz'];
-            for (const key of providerKeys) {
-                if (dup.sources?.[key]?.url && !primary.sources?.[key]?.url) {
-                    if (!primary.sources) primary.sources = {};
-                    primary.sources[key] = { ...dup.sources[key] };
-                }
+            // Gabungkan sourceUrls array
+            if (dup.sourceUrls && dup.sourceUrls.length > 0) {
+                const mergedUrls = new Set([
+                    ...(primary.sourceUrls || []),
+                    ...dup.sourceUrls
+                ].filter(Boolean));
+                primary.sourceUrls = Array.from(mergedUrls);
             }
 
             const aliasesSet = new Set([
