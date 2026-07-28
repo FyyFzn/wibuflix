@@ -120,6 +120,8 @@ export async function syncOploverz() {
         const bulkOps = [];
 
         for (let i = 0; i < list.length; i++) {
+            if (i % 25 === 0) await new Promise(r => setImmediate(r));
+            
             const anime = list[i];
             const normTitle = normalizeTitleForMatch(anime.title);
 

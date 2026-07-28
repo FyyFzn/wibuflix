@@ -106,6 +106,9 @@ export async function syncNanimeCatalog() {
         const bulkOps = [];
 
         for (let i = 0; i < allAnimes.length; i++) {
+            // Unblock event loop agar API tidak mati!
+            if (i % 25 === 0) await new Promise(r => setImmediate(r));
+            
             const anime = allAnimes[i];
             const normTitle = normalizeTitleForMatch(anime.title);
 

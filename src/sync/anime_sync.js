@@ -192,6 +192,7 @@ export async function runSync(isInitial = false) {
                 const bulkOperations = [];
 
                 for (let index = 0; index < allAnime.length; index++) {
+                    if (index % 25 === 0) await new Promise(r => setImmediate(r));
                     const anime = allAnime[index];
                     const normTitle = normalizeTitleForMatch(anime.judul);
                     let existing = urlMap.get(anime.url) || titleMap.get(normTitle);
