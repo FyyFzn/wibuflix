@@ -108,7 +108,6 @@ export function ssrfMiddleware(req, res, next) {
                 }
             }
         }
-        }
     }
 
     // Periksa array 'urls' (Zero-Compromise Super URL)
@@ -151,4 +150,4 @@ export function ssrfMiddleware(req, res, next) {
     }
 
     next();
-
+}
