@@ -115,10 +115,17 @@ export function ssrfMiddleware(req, res, next) {
         if (!urlsData) return null;
         let parsedUrls = [];
         if (typeof urlsData === 'string') {
-            try { parsedUrls = JSON.parse(urlsData); } catch (e) {}
+            try { 
+                const parsed = JSON.parse(urlsData); 
+                if (Array.isArray(parsed)) {
+                    parsedUrls = parsed;
+                } else if (typeof parsed === 'object' && parsed !== null) {
+                    parsedUrls = Object.values(parsed);
+                }
+            } catch (e) {}
         } else if (Array.isArray(urlsData)) {
             parsedUrls = urlsData;
-        } else if (typeof urlsData === 'object') {
+        } else if (typeof urlsData === 'object' && urlsData !== null) {
             parsedUrls = Object.values(urlsData);
         }
 
