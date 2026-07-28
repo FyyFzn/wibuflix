@@ -6,13 +6,6 @@ import {
     PROVIDER_URLS,
     PROVIDER_LIST,
     getProviderSeriesUrl,
-    getSamehadakuSeriesUrl,
-    getOtakudesuSeriesUrl,
-    getKuronimeSeriesUrl,
-    getNanimeSeriesUrl,
-    getNimegamiSeriesUrl,
-    getOploverzSeriesUrl,
-    getNeosatsuSeriesUrl,
     isProviderUrl
 } from '../config/providerUrls.js';
 
@@ -73,16 +66,16 @@ test('Provider Catalog & Base URL Completeness: Semua provider memiliki atribut 
     }
 });
 
-test('Individual Helper Verification: Setiap helper get[Provider]SeriesUrl menghasilkan URL absolut yang akurat', () => {
+test('Dynamic URL Generation Verification: getProviderSeriesUrl menghasilkan URL absolut yang akurat berdasarkan SERIES_PATH', () => {
     const slug = 'kamen-rider-gavv';
 
-    assert.strictEqual(getSamehadakuSeriesUrl(slug), `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/${slug}/`);
-    assert.strictEqual(getOtakudesuSeriesUrl(slug), `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/${slug}/`);
-    assert.strictEqual(getKuronimeSeriesUrl(slug), `${PROVIDER_URLS.KURONIME.BASE_URL}/anime/${slug}/`);
-    assert.strictEqual(getNanimeSeriesUrl(slug), `${PROVIDER_URLS.NANIME.BASE_URL}/anime/${slug}`);
-    assert.strictEqual(getNimegamiSeriesUrl(slug), `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/${slug}/`);
-    assert.strictEqual(getOploverzSeriesUrl(slug), `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/${slug}`);
-    assert.strictEqual(getNeosatsuSeriesUrl(slug), `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/01/${slug}.html`);
+    assert.strictEqual(getProviderSeriesUrl('SAMEHADAKU', slug), `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/${slug}/`);
+    assert.strictEqual(getProviderSeriesUrl('OTAKUDESU', slug), `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/${slug}/`);
+    assert.strictEqual(getProviderSeriesUrl('KURONIME', slug), `${PROVIDER_URLS.KURONIME.BASE_URL}/anime/${slug}/`);
+    assert.strictEqual(getProviderSeriesUrl('NANIME', slug), `${PROVIDER_URLS.NANIME.BASE_URL}/anime/${slug}`);
+    assert.strictEqual(getProviderSeriesUrl('NIMEGAMI', slug), `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/${slug}/`);
+    assert.strictEqual(getProviderSeriesUrl('OPLOVERZ', slug), `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/${slug}`);
+    assert.strictEqual(getProviderSeriesUrl('NEOSATSU', slug), `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/01/${slug}.html`);
 });
 
 test('Provider Domain Recognition: isProviderUrl mengenali domain absolut dan menolak URL relatif atau rusak', () => {

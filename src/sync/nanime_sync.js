@@ -2,7 +2,7 @@ import axios from 'axios';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 import { fetchNanimeInertia } from '../services/scrapers/nanimeScraper.js';
-import { PROVIDER_URLS, getNanimeSeriesUrl } from '../config/providerUrls.js';
+import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
 
 let isNanimeSyncing = false;
 
@@ -64,7 +64,7 @@ export async function syncNanimeCatalog() {
                     const slug = item.slug;
                     if (!title || !slug) continue;
 
-                    const animeUrl = getNanimeSeriesUrl(slug);
+                    const animeUrl = getProviderSeriesUrl('NANIME', slug);
 
 
                     allAnimes.push({
@@ -99,7 +99,7 @@ export async function syncNanimeCatalog() {
         // Pre-fetch database anime existing (kecuali Tokusatsu)
         const existingAnimes = await Anime.find(
             { isToku: { $ne: true }, type: { $ne: 'Toku' } },
-            { title: 1, aliases: 1, 'sources.nanime': 1 }
+            { title: 1, aliases: 1, 'sourceUrls': 1 }
         ).lean();
 
         const now = Date.now();
@@ -138,10 +138,7 @@ export async function syncNanimeCatalog() {
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
-                            $set: {
-                                'sources.nanime.url': anime.url,
-                                'sources.nanime.id': anime.id
-                            }
+                            $addToSet: { sourceUrls: anime.url }
                         }
                     }
                 });
@@ -192,7 +189,7 @@ export async function syncNanimeCatalog() {
  */
 export async function startBackgroundNanimeSync() {
     try {
-        const count = await Anime.countDocuments({ 'sources.nanime.url': { $ne: null } });
+        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
         if (count === 0) {
             log('[NanimeSync] Database Nanime kosong. Memulai sinkronisasi awal...');
             setTimeout(() => {

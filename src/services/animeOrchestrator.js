@@ -78,13 +78,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
             const queryConditions = [
                 { slug: slug },
                 { url: { $regex: slug, $options: 'i' } },
-                { "sources.samehadaku.url": { $regex: slug, $options: 'i' } },
-                { "sources.otakudesu.id": slug },
-                { "sources.kuronime.url": { $regex: slug, $options: 'i' } },
-                { "sources.nanime.url": { $regex: slug, $options: 'i' } },
-                { "sources.neosatsu.url": { $regex: slug, $options: 'i' } },
-                { "sources.nimegami.url": { $regex: slug, $options: 'i' } },
-                { "sources.oploverz.url": { $regex: slug, $options: 'i' } }
+                { sourceUrls: { $regex: slug, $options: 'i' } }
             ];
             if (isNumericMalId) {
                 queryConditions.unshift({ malId: parseInt(slug, 10) });
@@ -93,14 +87,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         }
 
         if (dbAnime) {
-            queryUrl = dbAnime.url || 
-                       dbAnime.sources?.samehadaku?.url || 
-                       dbAnime.sources?.kuronime?.url || 
-                       dbAnime.sources?.nanime?.url || 
-                       dbAnime.sources?.neosatsu?.url || 
-                       dbAnime.sources?.nimegami?.url || 
-                       dbAnime.sources?.oploverz?.url || 
-                       (dbAnime.sources?.otakudesu?.id ? `/anime/${dbAnime.sources.otakudesu.id}` : null);
+            queryUrl = dbAnime.url || (dbAnime.sourceUrls && dbAnime.sourceUrls.length > 0 ? dbAnime.sourceUrls[0] : null);
         }
     }
 
@@ -141,29 +128,17 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         const epNum = isOvaTitle ? null : (ep.num != null ? ep.num : extractEpNum(ep.judul));
         const epId = epNum != null ? `ep_${epNum}` : `idx_${idx}`;
         
-        const urlsObj = (ep.urls && (ep.urls instanceof Map || typeof ep.urls.entries === 'function'))
-            ? Object.fromEntries(ep.urls)
-            : (ep.urls || {});
+        let urlsObj = ep.urls || {};
+        if (urlsObj instanceof Map || typeof urlsObj.entries === 'function') {
+            urlsObj = Object.fromEntries(urlsObj);
+        }
 
-        // Kumpulkan daftar provider yang tersedia untuk episode ini
-        const availableSources = [];
-        if (urlsObj.samehadaku) availableSources.push('samehadaku');
-        if (urlsObj.otakudesu) availableSources.push('otakudesu');
-        if (urlsObj.kuronime) availableSources.push('kuronime');
-        if (urlsObj.nanime) availableSources.push('nanime');
-        if (urlsObj.neosatsu) availableSources.push('neosatsu');
-        if (urlsObj.nimegami) availableSources.push('nimegami');
-        if (urlsObj.oploverz) availableSources.push('oploverz');
+        // Kumpulkan daftar URL sumber secara murni (Zero-Compromise Anonymous Array)
+        const urlList = Array.isArray(urlsObj) ? urlsObj : Object.values(urlsObj);
+        const availableSources = Array.from(new Set(urlList)).filter(Boolean);
 
-        // Pilih URL representatif (prioritas: Samehadaku -> Otakudesu -> Nanime -> Neosatsu -> Nimegami -> Oploverz -> Kuronime)
-        const representativeUrl = urlsObj.samehadaku ||
-                                  urlsObj.otakudesu ||
-                                  urlsObj.nanime ||
-                                  urlsObj.neosatsu ||
-                                  urlsObj.nimegami ||
-                                  urlsObj.oploverz ||
-                                  ep.url ||
-                                  urlsObj.kuronime || '';
+        // Pilih URL representatif
+        const representativeUrl = urlList[0] || ep.url || '';
 
         return {
             id: epId,

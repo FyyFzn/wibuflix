@@ -51,10 +51,18 @@ export function getResolutionGroup(serverName) {
 export function getProviderKey(url) {
     if (!url) return '';
     const lower = url.toString().toLowerCase();
-    for (const p of ['otakudesu', 'kuronime', 'nanime', 'neosatsu', 'nimegami', 'samehadaku', 'oploverz']) {
-        if (lower.includes(p)) return p;
+    
+    // Manual fallback API lokal
+    if (lower.startsWith('/anime/')) return 'otakudesu';
+    if (lower.startsWith('neosatsu')) return 'neosatsu';
+
+    try {
+        const parsed = new URL(lower);
+        // Hapus 'www.' agar lebih seragam (e.g. www.samehadaku.tv -> samehadaku.tv)
+        return parsed.hostname.replace(/^www\./, '');
+    } catch {
+        return lower.split('/')[2] || lower;
     }
-    return '';
 }
 
 export function isEpisodeProviderBlacklisted(provider, slugs) {
@@ -200,8 +208,14 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
         if (urlsObj && typeof urlsObj === 'object') {
             console.info(`${logPrefix} Mengambil URL alternatif dari metadata urls:`, JSON.stringify(urlsObj));
-            for (const [provider, provUrl] of Object.entries(urlsObj)) {
+            const urlList = Array.isArray(urlsObj) ? urlsObj : Object.values(urlsObj);
+            
+            for (const provUrl of urlList) {
                 if (!provUrl || typeof provUrl !== 'string') continue;
+                
+                // Ekstrak provider dari URL secara mandiri (bukan dari key object)
+                const provider = getProviderKey(provUrl) || 'unknown';
+                
                 if (checkUrlBlacklisted(provUrl, slugs) || globalBlacklistCache.get(`broken_provider_${provider}`) || isEpisodeProviderBlacklisted(provider, slugs)) {
                     console.info(`${logPrefix} Melewati provider [${provider.toUpperCase()}] karena dilaporkan rusak/blacklisted untuk episode ini.`);
                     continue;
@@ -209,7 +223,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                 if (episodeUrl.includes(provUrl) || provider === getProviderKey(episodeUrl)) {
                     continue;
                 }
-                const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+                
+                const label = provider !== 'unknown' ? (provider.charAt(0).toUpperCase() + provider.slice(1)) : 'Alternative';
                 let fetchUrl = provUrl;
                 if (fetchUrl.startsWith('/api/')) {
                     try {

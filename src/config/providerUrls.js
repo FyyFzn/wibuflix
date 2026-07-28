@@ -10,42 +10,49 @@ export const PROVIDER_URLS = {
         NAME: 'Samehadaku',
         BASE_URL: 'https://v2.samehadaku.how',
         CATALOG_URL: 'https://v2.samehadaku.how/daftar-anime-2/',
+        SERIES_PATH: '/anime/{slug}/',
         DOMAIN_KEYWORDS: ['samehadaku', 'v2.samehadaku.how']
     },
     OTAKUDESU: {
         NAME: 'Otakudesu',
         BASE_URL: 'https://otakudesu.blog',
         CATALOG_URL: 'https://otakudesu.blog/anime-list/',
+        SERIES_PATH: '/anime/{slug}/',
         DOMAIN_KEYWORDS: ['otakudesu']
     },
     KURONIME: {
         NAME: 'Kuronime',
         BASE_URL: 'https://kuronime.sbs',
         CATALOG_URL: 'https://kuronime.sbs/anime/?list',
+        SERIES_PATH: '/anime/{slug}/',
         DOMAIN_KEYWORDS: ['kuronime']
     },
     NANIME: {
         NAME: 'Nanime ID',
         BASE_URL: 'https://nanimeid.net',
         CATALOG_URL: 'https://nanimeid.net/explore?page=1',
+        SERIES_PATH: '/anime/{slug}',
         DOMAIN_KEYWORDS: ['nanime', 'nanimeid.net']
     },
     NIMEGAMI: {
         NAME: 'Nimegami',
         BASE_URL: 'https://nimegami.id',
         CATALOG_URL: 'https://nimegami.id/anime-list/',
+        SERIES_PATH: '/{slug}/',
         DOMAIN_KEYWORDS: ['nimegami']
     },
     OPLOVERZ: {
         NAME: 'Oploverz',
         BASE_URL: 'https://idn.oploverz.site',
         CATALOG_URL: 'https://idn.oploverz.site/series',
+        SERIES_PATH: '/series/{slug}',
         DOMAIN_KEYWORDS: ['oploverz']
     },
     NEOSATSU: {
         NAME: 'Neosatsu',
         BASE_URL: 'https://www.neosatsu.com',
         CATALOG_URL: 'https://www.neosatsu.com/p/kamen-rider-series.html',
+        SERIES_PATH: '/2024/01/{slug}.html',
         DOMAIN_KEYWORDS: ['neosatsu']
     }
 };
@@ -53,56 +60,13 @@ export const PROVIDER_URLS = {
 export const PROVIDER_LIST = Object.values(PROVIDER_URLS);
 
 /**
- * Mendapatkan URL Series/Anime Samehadaku berdasarkan slug
- */
-export const getSamehadakuSeriesUrl = (slug) => `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/${slug}/`;
-
-/**
- * Mendapatkan URL Series/Anime Otakudesu berdasarkan slug
- */
-export const getOtakudesuSeriesUrl = (slug) => `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/${slug}/`;
-
-/**
- * Mendapatkan URL Series/Anime Kuronime berdasarkan slug
- */
-export const getKuronimeSeriesUrl = (slug) => `${PROVIDER_URLS.KURONIME.BASE_URL}/anime/${slug}/`;
-
-/**
- * Mendapatkan URL Series/Anime Nimegami berdasarkan slug
- */
-export const getNimegamiSeriesUrl = (slug) => `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/${slug}/`;
-
-/**
- * Mendapatkan URL Series/Anime Nanime berdasarkan slug
- */
-export const getNanimeSeriesUrl = (slug) => `${PROVIDER_URLS.NANIME.BASE_URL}/anime/${slug}`;
-
-/**
- * Mendapatkan URL Series/Anime Oploverz berdasarkan slug
- */
-export const getOploverzSeriesUrl = (slug) => `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/${slug}`;
-
-/**
- * Mendapatkan URL Series/Anime Neosatsu berdasarkan slug
- */
-export const getNeosatsuSeriesUrl = (slug) => `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/01/${slug}.html`;
-
-/**
  * Mendapatkan URL Series/Anime secara dinamis berdasarkan key provider dan slug
  */
 export function getProviderSeriesUrl(providerKey, slug) {
     if (!providerKey || !slug) return null;
-    const key = providerKey.toUpperCase();
-    switch (key) {
-        case 'SAMEHADAKU': return getSamehadakuSeriesUrl(slug);
-        case 'OTAKUDESU': return getOtakudesuSeriesUrl(slug);
-        case 'KURONIME': return getKuronimeSeriesUrl(slug);
-        case 'NANIME': return getNanimeSeriesUrl(slug);
-        case 'NIMEGAMI': return getNimegamiSeriesUrl(slug);
-        case 'OPLOVERZ': return getOploverzSeriesUrl(slug);
-        case 'NEOSATSU': return getNeosatsuSeriesUrl(slug);
-        default: return null;
-    }
+    const provider = PROVIDER_URLS[providerKey.toUpperCase()];
+    if (!provider || !provider.SERIES_PATH) return null;
+    return `${provider.BASE_URL}${provider.SERIES_PATH.replace('{slug}', slug)}`;
 }
 
 /**

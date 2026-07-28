@@ -107,7 +107,7 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
             ];
             results = await Anime.aggregate(pipeline);
         } else {
-            let dbQuery = Anime.find(query).select('title image type score status sources');
+            let dbQuery = Anime.find(query).select('title image type score status sourceUrls');
             if (sortParam === 'latest') {
                 // Urutkan berdasarkan yang paling baru diupdate (episode baru rilis)
                 results = await dbQuery.sort({ lastUpdated: -1, _id: -1 }).skip(skip).limit(limit + 1).lean();

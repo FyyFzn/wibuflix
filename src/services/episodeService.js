@@ -1,16 +1,7 @@
-import { getSamehadakuEpisodes } from './scrapers/samehadakuScraper.js';
-import { getNeosatsuEpisodes } from './scrapers/neosatsuScraperService.js';
-import * as otakudesu from './scrapers/otakudesuScraper.js';
-import { getKuronimeEpisodes } from './scrapers/kuronimeScraper.js';
-import { getNanimeEpisodes } from './scrapers/nanimeScraper.js';
-import { getNimegamiEpisodes } from './scrapers/nimegamiScraper.js';
-import * as oploverz from './scrapers/oploverzScraper.js';
 import Anime from '../models/Anime.js';
-import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { getOploverzSeriesUrl, getKuronimeSeriesUrl, getNanimeSeriesUrl, getNimegamiSeriesUrl } from '../config/providerUrls.js';
-
-
-const activeScrapeLocks = new Map();
+import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle, parseEpisodeText } from '../utils/stringUtils.js';
+import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
+import { ProviderRegistry } from './ProviderRegistry.js';
 
 /**
  * Mencegah episode ganda berdasarkan nomor atau judul episode dan me-merge URL dari berbagai provider.
@@ -99,156 +90,73 @@ export function deduplicateEpisodes(episodes) {
     return Array.from(dedupeMap.values());
 }
 
-/**
- * Kalkulasi offset antar scraper (Samehadaku, Otakudesu, Kuronime) untuk penomoran episode yang selaras.
- */
-export function calculateOffsets(sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes) {
-    let offsetSame = 0;
-    let offsetOtaku = 0;
-    let offsetKuro = 0;
-    let offsetNanime = 0;
-    let offsetNimegami = 0;
-    let offsetOploverz = 0;
 
-    const getValidEpNums = (epsList) => {
-        if (!epsList) return [];
-        return epsList
-            .filter(ep => !ep.judul.toLowerCase().includes('batch'))
-            .map(ep => extractEpNum(ep.judul))
-            .filter(num => typeof num === 'number' && !isNaN(num));
-    };
-
-    const sameEps = getValidEpNums(sameRes?.daftar_episode);
-    const otakuEps = getValidEpNums(otakuRes?.daftar_episode);
-    const kuroEps = getValidEpNums(kuroRes?.daftar_episode);
-    const nanimeEps = getValidEpNums(nanimeRes?.daftar_episode);
-    const nimegamiEps = getValidEpNums(nimegamiRes?.daftar_episode);
-    const oploverzEps = getValidEpNums(oploverzRes?.daftar_episode);
-
-    // Kalkulasi offset Samehadaku vs Otakudesu
-    if (sameEps.length > 0 && otakuEps.length > 0) {
-        const minSame = Math.min(...sameEps);
-        const minOtaku = Math.min(...otakuEps);
-        const sameSet = new Set(sameEps);
-        const hasOverlap = otakuEps.some(num => sameSet.has(num));
-        if (!hasOverlap) {
-            if (minOtaku === 1 && minSame > 1) offsetOtaku = minSame - 1;
-            else if (minSame === 1 && minOtaku > 1) offsetSame = minOtaku - 1;
-        }
-    }
-
-    // Kalkulasi offset Kuronime vs referensi utama (Samehadaku atau Otakudesu)
-    const refEps = sameEps.length > 0 ? sameEps : otakuEps;
-    if (refEps.length > 0 && kuroEps.length > 0) {
-        const minRef = Math.min(...refEps);
-        const minKuro = Math.min(...kuroEps);
-        const refSet = new Set(refEps);
-        const hasOverlap = kuroEps.some(num => refSet.has(num));
-        if (!hasOverlap) {
-            if (minKuro === 1 && minRef > 1) offsetKuro = minRef - 1;
-            else if (minRef === 1 && minKuro > 1) offsetKuro = 0;
-        }
-    }
-
-    // Kalkulasi offset Nanime vs referensi utama
-    if (refEps.length > 0 && nanimeEps.length > 0) {
-        const minRef = Math.min(...refEps);
-        const minNanime = Math.min(...nanimeEps);
-        const refSet = new Set(refEps);
-        const hasOverlap = nanimeEps.some(num => refSet.has(num));
-        if (!hasOverlap) {
-            if (minNanime === 1 && minRef > 1) offsetNanime = minRef - 1;
-            else if (minRef === 1 && minNanime > 1) offsetNanime = 0;
-        }
-    }
-
-    // Kalkulasi offset Nimegami vs referensi utama
-    if (refEps.length > 0 && nimegamiEps.length > 0) {
-        const minRef = Math.min(...refEps);
-        const minNimegami = Math.min(...nimegamiEps);
-        const refSet = new Set(refEps);
-        const hasOverlap = nimegamiEps.some(num => refSet.has(num));
-        if (!hasOverlap) {
-            if (minNimegami === 1 && minRef > 1) offsetNimegami = minRef - 1;
-            else if (minRef === 1 && minNimegami > 1) offsetNimegami = 0;
-        }
-    }
-
-    // Kalkulasi offset Oploverz vs referensi utama
-    if (refEps.length > 0 && oploverzEps.length > 0) {
-        const minRef = Math.min(...refEps);
-        const minOploverz = Math.min(...oploverzEps);
-        const refSet = new Set(refEps);
-        const hasOverlap = oploverzEps.some(num => refSet.has(num));
-        if (!hasOverlap) {
-            if (minOploverz === 1 && minRef > 1) offsetOploverz = minRef - 1;
-            else if (minRef === 1 && minOploverz > 1) offsetOploverz = 0;
-        }
-    }
-
-    return { offsetSame, offsetOtaku, offsetKuro, offsetNanime, offsetNimegami, offsetOploverz };
-}
 
 /**
  * Cari anime di database lokal
  */
-export async function findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz }) {
+export async function findAnimeInDatabase({ targetUrl, providerUrls = {} }) {
     if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
         targetUrl = targetUrl.split('___neosatsu_ep___')[0];
     }
     let dbAnime = null;
-    const orQuery = [];
     
-    if (urlSamehadaku) {
-        orQuery.push({ "sources.samehadaku.url": urlSamehadaku });
-        orQuery.push({ "episodesList.urls.samehadaku": urlSamehadaku });
-        orQuery.push({ "url": urlSamehadaku });
-    }
-    if (urlOtakudesu) {
-        const otakuId = extractOtakuSlug(urlOtakudesu);
-        if (otakuId) {
-            orQuery.push({ "sources.otakudesu.id": otakuId });
-            orQuery.push({ "episodesList.urls.otakudesu": { $regex: otakuId, $options: 'i' } });
-        }
-    }
-    if (urlKuronime) {
-        orQuery.push({ "sources.kuronime.url": urlKuronime });
-        orQuery.push({ "episodesList.urls.kuronime": urlKuronime });
-    }
-    if (urlNanime) {
-        orQuery.push({ "sources.nanime.url": urlNanime });
-        orQuery.push({ "episodesList.urls.nanime": urlNanime });
-    }
-    if (urlNimegami) {
-        orQuery.push({ "sources.nimegami.url": urlNimegami });
-        orQuery.push({ "episodesList.urls.nimegami": urlNimegami });
-    }
-    if (urlOploverz) {
-        orQuery.push({ "sources.oploverz.url": urlOploverz });
-        orQuery.push({ "episodesList.urls.oploverz": urlOploverz });
+    // Kumpulkan semua URL pencarian
+    const searchUrls = new Set();
+    if (targetUrl) searchUrls.add(targetUrl);
+    for (const url of Object.values(providerUrls)) {
+        if (url) searchUrls.add(url);
     }
     
-    if (orQuery.length > 0) {
-        dbAnime = await Anime.findOne({ $or: orQuery });
+    const urlsArray = Array.from(searchUrls);
+    if (urlsArray.length === 0) return null;
+
+    // 1. Cari berdasarkan skema baru sourceUrls
+    dbAnime = await Anime.findOne({ sourceUrls: { $in: urlsArray } });
+
+    // 2. Backward Compatibility: Cari berdasarkan skema lama jika belum ketemu
+    if (!dbAnime) {
+        const legacyOrQuery = urlsArray.map(url => ({ "url": url })); // fallback dasar
+        
+        for (const provider of Object.values(PROVIDER_URLS)) {
+            const pk = provider.NAME.toLowerCase().replace(/[^a-z]/g, '');
+            for (const url of urlsArray) {
+                legacyOrQuery.push({ [`sources.${pk}.url`]: url });
+                legacyOrQuery.push({ [`episodesList.urls.${pk}`]: url });
+            }
+        }
+        
+        dbAnime = await Anime.findOne({ $or: legacyOrQuery });
     }
-    if (!dbAnime && targetUrl) {
-        if (targetUrl.startsWith('/anime/') || targetUrl.includes('otakudesu')) {
-            const otakuId = extractOtakuSlug(targetUrl);
-            if (otakuId) dbAnime = await Anime.findOne({ $or: [{ "sources.otakudesu.id": otakuId }, { "episodesList.urls.otakudesu": { $regex: otakuId, $options: 'i' } }] });
-        } else if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu')) {
-            dbAnime = await Anime.findOne({ $or: [{ "sources.neosatsu.url": targetUrl }, { "episodesList.urls.neosatsu": targetUrl }, { "url": targetUrl }] });
-        } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
-            dbAnime = await Anime.findOne({ $or: [{ "sources.kuronime.url": targetUrl }, { "episodesList.urls.kuronime": targetUrl }] });
-        } else if (targetUrl.includes('nanimeid.net') || targetUrl.startsWith('/api/nanime/')) {
-            dbAnime = await Anime.findOne({ $or: [{ "sources.nanime.url": targetUrl }, { "episodesList.urls.nanime": targetUrl }] });
-        } else if (targetUrl.includes('nimegami.id') || targetUrl.startsWith('/api/nimegami/')) {
-            dbAnime = await Anime.findOne({ $or: [{ "sources.nimegami.url": targetUrl }, { "episodesList.urls.nimegami": targetUrl }] });
-        } else if (targetUrl.includes('oploverz.ltd') || targetUrl.includes('oploverz.site') || targetUrl.startsWith('/api/oploverz/')) {
-            dbAnime = await Anime.findOne({ $or: [{ "sources.oploverz.url": targetUrl }, { "episodesList.urls.oploverz": targetUrl }] });
-        } else {
-            dbAnime = await Anime.findOne({ $or: [{ "sources.samehadaku.url": targetUrl }, { "episodesList.urls.samehadaku": targetUrl }, { "url": targetUrl }] });
+
+    // 3. AUTO-MIGRATE: Jika data ditemukan tapi masih pakai format lama (sources)
+    if (dbAnime && (!dbAnime.sourceUrls || dbAnime.sourceUrls.length === 0)) {
+        console.log(`[DB Auto-Migrate] Memindahkan format lama 'sources' ke 'sourceUrls' untuk: ${dbAnime.title}`);
+        const newUrls = new Set(dbAnime.sourceUrls || []);
+        
+        if (dbAnime.url) newUrls.add(dbAnime.url); // Legacy Samehadaku URL
+        
+        if (dbAnime.sources) {
+            if (typeof dbAnime.sources.entries === 'function') {
+                for (const [key, obj] of dbAnime.sources.entries()) {
+                    if (obj && obj.url) newUrls.add(obj.url);
+                }
+            } else {
+                for (const obj of Object.values(dbAnime.sources)) {
+                    if (obj && obj.url) newUrls.add(obj.url);
+                }
+            }
+        }
+        
+        dbAnime.sourceUrls = Array.from(newUrls);
+        
+        try {
+            await dbAnime.save();
+        } catch (e) {
+            console.warn('[DB Auto-Migrate] Gagal menyimpan migrasi:', e.message);
         }
     }
+    
     return dbAnime;
 }
 
@@ -260,32 +168,12 @@ async function executeScraperStrategy(targetUrl) {
     if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
         targetUrl = targetUrl.split('___neosatsu_ep___')[0];
     }
-    let data = null;
-    let providerName = 'samehadaku';
-
-    if (targetUrl.includes('neosatsu.com') || targetUrl.startsWith('neosatsu-label:') || targetUrl.startsWith('neosatsu-merge:')) {
-        providerName = 'neosatsu';
-        data = await getNeosatsuEpisodes(targetUrl);
-    } else if (targetUrl.startsWith('/anime/') || (targetUrl.includes('otakudesu') && !targetUrl.includes('samehadaku'))) {
-        providerName = 'otakudesu';
-        const slug = extractOtakuSlug(targetUrl);
-        data = await otakudesu.getOtakuEpisodesFormatted(slug);
-        if (!data) throw new Error("Anime tidak ditemukan di Otakudesu");
-    } else if (targetUrl.includes('kuronime.sbs') || targetUrl.startsWith('/api/kuronime/')) {
-        providerName = 'kuronime';
-        data = await getKuronimeEpisodes(targetUrl);
-    } else if (targetUrl.includes('nanimeid.net') || targetUrl.startsWith('/api/nanime/')) {
-        providerName = 'nanime';
-        data = await getNanimeEpisodes(targetUrl);
-    } else if (targetUrl.includes('nimegami.id') || targetUrl.startsWith('/api/nimegami/')) {
-        providerName = 'nimegami';
-        data = await getNimegamiEpisodes(targetUrl);
-    } else if (targetUrl.includes('oploverz.ltd') || targetUrl.includes('oploverz.site') || targetUrl.startsWith('/api/oploverz/')) {
-        providerName = 'oploverz';
-        data = await oploverz.getOploverzEpisodes(targetUrl);
-    } else {
-        providerName = 'samehadaku';
-        data = await getSamehadakuEpisodes(targetUrl);
+    
+    const data = await ProviderRegistry.fetchEpisodes(targetUrl);
+    
+    if (!data) {
+        console.warn(`[Scraper Factory] Tidak ada fungsi scraper yang terdaftar untuk URL: ${targetUrl}`);
+        return { judul_seri: 'Unknown', daftar_episode: [] };
     }
 
     if (!data) return { judul_seri: 'Unknown', daftar_episode: [] };
@@ -305,7 +193,7 @@ async function executeScraperStrategy(targetUrl) {
 
                 return {
                     judul: finalJudul,
-                    urls: { [providerName]: ep.url },
+                    urls: [ep.url],
                     num: typeof rawNum === 'number' && !isNaN(rawNum) ? rawNum : null
                 };
             });
@@ -317,42 +205,35 @@ async function executeScraperStrategy(targetUrl) {
 /**
  * Scrape dari beberapa sumber sekaligus, hitung offset, dan merge episode.
  */
-async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz }) {
-    // TAHAP 1: Source Resolution (Ambil URL seri resmi dari database atau parameter input)
-    let cleanSamehadaku = urlSamehadaku || dbAnime?.sources?.samehadaku?.url;
-    let cleanOtakudesu = urlOtakudesu || dbAnime?.sources?.otakudesu?.url || (dbAnime?.sources?.otakudesu?.id ? `/anime/${dbAnime.sources.otakudesu.id.replace(/^otakudesu:/, '')}` : null);
-    let cleanKuronime = urlKuronime || dbAnime?.sources?.kuronime?.url || (dbAnime?.sources?.kuronime?.id ? getKuronimeSeriesUrl(dbAnime.sources.kuronime.id.replace(/^kuronime:/, '')) : null);
-    let cleanNanime = urlNanime || dbAnime?.sources?.nanime?.url || (dbAnime?.sources?.nanime?.id ? getNanimeSeriesUrl(dbAnime.sources.nanime.id) : null);
-    let cleanNimegami = urlNimegami || dbAnime?.sources?.nimegami?.url || (dbAnime?.sources?.nimegami?.id ? getNimegamiSeriesUrl(dbAnime.sources.nimegami.id.replace(/^nimegami:/, '')) : null);
-    let cleanOploverz = urlOploverz || dbAnime?.sources?.oploverz?.url || (dbAnime?.sources?.oploverz?.id ? getOploverzSeriesUrl(dbAnime.sources.oploverz.id) : null);
-
-
-    let cleanNeosatsu = dbAnime?.sources?.neosatsu?.url || (typeof targetUrl === 'string' && targetUrl.includes('neosatsu') ? (targetUrl.includes('___neosatsu_ep___') ? targetUrl.split('___neosatsu_ep___')[0] : targetUrl) : null);
-
+async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
+    const urlsToScrape = new Set();
+    
+    // 1. Target URL
     if (targetUrl) {
-        if ((targetUrl.includes('samehadaku') || targetUrl.includes('v2.samehadaku')) && !cleanSamehadaku) cleanSamehadaku = targetUrl;
-        else if ((targetUrl.includes('otakudesu') || targetUrl.startsWith('/anime/')) && !cleanOtakudesu) cleanOtakudesu = targetUrl;
-        else if (targetUrl.includes('kuronime') && !cleanKuronime) cleanKuronime = targetUrl;
-        else if (targetUrl.includes('nanime') && !cleanNanime) cleanNanime = targetUrl;
-        else if (targetUrl.includes('nimegami') && !cleanNimegami) cleanNimegami = targetUrl;
-        else if (targetUrl.includes('oploverz') && !cleanOploverz) cleanOploverz = targetUrl;
-        else if (targetUrl.includes('neosatsu') && !cleanSamehadaku && !cleanOtakudesu && !cleanKuronime && !cleanNanime && !cleanNimegami && !cleanOploverz && !cleanNeosatsu) {
-            cleanNeosatsu = targetUrl.includes('___neosatsu_ep___') ? targetUrl.split('___neosatsu_ep___')[0] : targetUrl;
+        let finalTargetUrl = targetUrl;
+        if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
+            finalTargetUrl = targetUrl.split('___neosatsu_ep___')[0];
+        }
+        urlsToScrape.add(finalTargetUrl);
+    }
+    
+    // 2. Explicit Provider URLs (Zero-Compromise Array)
+    const extraUrls = Array.isArray(providerUrls) ? providerUrls : Object.values(providerUrls);
+    for (const url of extraUrls) {
+        if (url) urlsToScrape.add(url);
+    }
+    
+    // 3. Database URLs
+    if (dbAnime && dbAnime.sourceUrls && Array.isArray(dbAnime.sourceUrls)) {
+        for (const url of dbAnime.sourceUrls) {
+            if (url) urlsToScrape.add(url);
         }
     }
 
     // TAHAP 2: Independent Scraping secara Paralel menggunakan executeScraperStrategy
-    const [sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes, neosatsuRes] = await Promise.all([
-        cleanSamehadaku ? executeScraperStrategy(cleanSamehadaku).catch(() => null) : Promise.resolve(null),
-        cleanOtakudesu ? executeScraperStrategy(cleanOtakudesu).catch(() => null) : Promise.resolve(null),
-        cleanKuronime ? executeScraperStrategy(cleanKuronime).catch(() => null) : Promise.resolve(null),
-        cleanNanime ? executeScraperStrategy(cleanNanime).catch(() => null) : Promise.resolve(null),
-        cleanNimegami ? executeScraperStrategy(cleanNimegami).catch(() => null) : Promise.resolve(null),
-        cleanOploverz ? executeScraperStrategy(cleanOploverz).catch(() => null) : Promise.resolve(null),
-        cleanNeosatsu ? executeScraperStrategy(cleanNeosatsu).catch(() => null) : Promise.resolve(null),
-    ]);
-
-    const allResults = [sameRes, otakuRes, kuroRes, nanimeRes, nimegamiRes, oploverzRes, neosatsuRes].filter(r => r && r.daftar_episode && r.daftar_episode.length > 0);
+    const scrapePromises = Array.from(urlsToScrape).map(url => executeScraperStrategy(url).catch(() => null));
+    let allResults = await Promise.all(scrapePromises);
+    allResults = allResults.filter(r => r && r.daftar_episode && r.daftar_episode.length > 0);
 
     // ZERO DATA LOSS FALLBACK: Jika hasil gabungan kosong tapi targetUrl ada, ambil langsung
     if (allResults.length === 0 && targetUrl) {
@@ -378,21 +259,19 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
             if (actualNum != null && typeof actualNum === 'number' && !isNaN(actualNum)) {
                 if (epMap.has(actualNum)) {
                     const existing = epMap.get(actualNum);
-                    // Hanya merge URL yang tidak tercemar pola OVA
-                    const cleanIncomingUrls = {};
-                    for (const [prov, provUrl] of Object.entries(ep.urls || {})) {
-                        if (typeof provUrl === 'string' && !/(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i.test(provUrl)) {
-                            cleanIncomingUrls[prov] = provUrl;
-                        }
-                    }
-                    existing.urls = { ...existing.urls, ...cleanIncomingUrls };
+                    // Gabungkan array URL
+                    const mergedUrls = Array.from(new Set([...(existing.urls || []), ...(ep.urls || [])]));
+                    
+                    // Bersihkan URL tercemar OVA (opsional, jika perlu di array)
+                    existing.urls = mergedUrls.filter(url => !/(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i.test(url));
+                    
                     if (!existing.judul || existing.judul === 'Episode ?' || (!existing.judul.toLowerCase().includes('episode') && ep.judul.toLowerCase().includes('episode'))) {
                         existing.judul = ep.judul;
                     }
                 } else {
                     epMap.set(actualNum, {
                         judul: ep.judul || `Episode ${actualNum}`,
-                        urls: { ...ep.urls },
+                        urls: ep.urls ? [...ep.urls] : [],
                         num: actualNum
                     });
                 }
@@ -400,11 +279,11 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
                 // Untuk Movie / Batch / OVA / Special yang tidak memiliki nomor (num === null)
                 const existingNoNum = noNumEps.find(item => (item.judul || '').toLowerCase().trim() === titleLower);
                 if (existingNoNum) {
-                    existingNoNum.urls = { ...existingNoNum.urls, ...ep.urls };
+                    existingNoNum.urls = Array.from(new Set([...(existingNoNum.urls || []), ...(ep.urls || [])]));
                 } else {
                     noNumEps.push({
                         judul: ep.judul || 'Special / Movie',
-                        urls: { ...ep.urls },
+                        urls: ep.urls ? [...ep.urls] : [],
                         num: null
                     });
                 }
@@ -420,16 +299,15 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtaku
         finalDaftarEpisode = deduplicateEpisodes(finalDaftarEpisode);
     }
 
-    const judulSeri = cleanSeriesTitle(
-        (sameRes?.judul_seri) ||
-        (otakuRes?.judul_seri) ||
-        (kuroRes?.judul_seri) ||
-        (nanimeRes?.judul_seri) ||
-        (nimegamiRes?.judul_seri) ||
-        (oploverzRes?.judul_seri) ||
-        dbAnime?.title ||
-        'Unknown'
-    );
+    let judulSeri = 'Unknown';
+    for (const res of allResults) {
+        if (res.judul_seri && res.judul_seri !== 'Unknown') {
+            judulSeri = res.judul_seri;
+            break;
+        }
+    }
+    
+    judulSeri = cleanSeriesTitle(judulSeri === 'Unknown' && dbAnime ? dbAnime.title : judulSeri);
 
     const data = {
         judul_seri: judulSeri,
@@ -479,8 +357,8 @@ async function finalizeScrapedData(data, dbAnime) {
  * Logika utama dari Service:
  * Mengambil episode dari database (jika ada & masih relevan) atau menjalankan scraping real-time.
  */
-export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz, forceRefresh = false }) {
-    const dbAnime = await findAnimeInDatabase({ targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz });
+export async function getEpisodeServiceData({ targetUrl, providerUrls = {}, forceRefresh = false }) {
+    const dbAnime = await findAnimeInDatabase({ targetUrl, providerUrls });
 
     if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0 && !forceRefresh) {
         const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
@@ -524,7 +402,8 @@ export async function getEpisodeServiceData({ targetUrl, urlSamehadaku, urlOtaku
 
     const scrapePromise = (async () => {
         try {
-            return await scrapeAndMergeMulti({ dbAnime, targetUrl, urlSamehadaku, urlOtakudesu, urlKuronime, urlNanime, urlNimegami, urlOploverz });
+            const { daftar_episode, judul_seri } = await scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls });
+            return { daftar_episode, judul_seri };
         } finally {
             activeScrapeLocks.delete(lockKey);
         }

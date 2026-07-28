@@ -9,8 +9,23 @@ import { releaseToPool } from '../../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
+import { extractEpNum, extractOtakuSlug } from '../../utils/stringUtils.js';
 
-const cache = getCache('otakudesu', 3600);
+const cache = getCache('episodes_otakudesu', 3600);
+
+export const scraperMeta = {
+    id: 'otakudesu',
+    name: 'Otakudesu',
+    domains: ['otakudesu'] // support URL & lokal slug API diurus oleh ProviderRegistry
+};
+
+export async function scrapeEpisodes(url) {
+    const slug = extractOtakuSlug(url);
+    const data = await getOtakuEpisodesFormatted(slug);
+    if (!data) throw new Error("Anime tidak ditemukan di Otakudesu");
+    return data;
+}
+
 const resolveLimit = pLimit(3); // Maksimal 3 request serentak untuk mencegah Self-DDoS
 const badHosts = new Map(); // Simpan host yang sedang cooldown
 const hostFailCounts = new Map();
@@ -45,7 +60,7 @@ export async function getOtakuEpisodesFormatted(slug) {
     if (!details) return null;
 
     // Fallback title dari database MongoDB jika parser scraper gagal mendapatkan nama
-    const found = await Anime.findOne({ "sources.otakudesu.id": slug }).lean();
+    const found = await Anime.findOne({ sourceUrls: { $regex: slug, $options: 'i' } }).lean();
     let fallbackTitle = found ? found.title : slug;
     let finalTitle = details.title ? details.title.replace(/^Nonton\s+/i, '').trim() : fallbackTitle;
 
@@ -275,3 +290,8 @@ export async function getOtakudesuLatestUpdates() {
     }
     return updates;
 }
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+export const scrapeServers = getServersInternal;
+export const scrapeLatestUpdates = getOtakudesuLatestUpdates;

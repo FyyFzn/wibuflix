@@ -55,7 +55,7 @@ export async function syncOtakudesu() {
             
             try {
                 // 1. Pre-fetch seluruh database untuk Fuzzy Matching (Hindari menyentuh data Tokusatsu dari Neosatsu)
-                const existingAnimes = await Anime.find({ type: { $ne: 'Toku' } }, { title: 1, aliases: 1, 'sources.otakudesu': 1 }).lean();
+                const existingAnimes = await Anime.find({ type: { $ne: 'Toku' } }, { title: 1, aliases: 1, 'sourceUrls': 1 }).lean();
                 const { normalizeTitleForMatch, isSafeToMerge } = await import('../utils/stringUtils.js');
                 
                 const now = Date.now();
@@ -98,10 +98,7 @@ export async function syncOtakudesu() {
                             updateOne: {
                                 filter: { _id: matchedId },
                                 update: { 
-                                    $set: { 
-                                        'sources.otakudesu.url': anime.url,
-                                        'sources.otakudesu.id': anime.id
-                                    }
+                                    $addToSet: { sourceUrls: anime.url }
                                 }
                             }
                         });
@@ -112,11 +109,8 @@ export async function syncOtakudesu() {
                                 // Fallback filter untuk keamanan ganda jika skrip diinterupsi
                                 filter: { title: anime.title },
                                 update: { 
-                                    $set: { 
-                                        'sources.otakudesu.url': anime.url,
-                                        'sources.otakudesu.id': anime.id,
-                                        normalizedTitle: normTitle
-                                    },
+                                    $set: { normalizedTitle: normTitle },
+                                        $addToSet: { sourceUrls: anime.url },
                                     $setOnInsert: {
                                         title: anime.title,
                                         type: 'TV',
@@ -151,7 +145,7 @@ export async function syncOtakudesu() {
 
 export async function startBackgroundOtakuSync() {
     try {
-        const count = await Anime.countDocuments({ 'sources.otakudesu': { $exists: true } });
+        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
         
         if (count === 0) {
             log("[OtakuSync] Database Otakudesu kosong. Memulai sinkronisasi awal A-Z...");

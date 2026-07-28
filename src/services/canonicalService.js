@@ -2,6 +2,7 @@ import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch } from '../utils/stringUtils.js';
 import { findAnimeInDatabase } from './episodeService.js';
 import { resolveCatalogSource } from '../utils/animeMatcher.js';
+import { PROVIDER_LIST } from '../config/providerUrls.js';
 
 export const canonicalTitleMap = new Map();
 
@@ -41,7 +42,8 @@ export async function resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitl
         }
         
         if (!dbAnime && seriesTitle) {
-            for (const prov of ['samehadaku', 'otakudesu', 'kuronime', 'nanime', 'nimegami', 'neosatsu']) {
+            const activeProviders = PROVIDER_LIST.map(p => p.NAME.toLowerCase().replace(/[^a-z]/g, ''));
+            for (const prov of activeProviders) {
                 const res = await resolveCatalogSource(seriesTitle, prov);
                 if (res && res.entry) {
                     dbAnime = res.entry;

@@ -75,7 +75,7 @@ export function validateSafeUrl(inputUrl) {
 export function ssrfMiddleware(req, res, next) {
     const urlKeys = [
         'url', 'episodeUrl', 'seriesUrl', 'nextEpisodeUrl', 
-        'urlSamehadaku', 'urlOtakudesu', 'urlKuronime', 'embedUrl', 'target'
+        'embedUrl', 'target'
     ];
 
     // Periksa query params
@@ -108,7 +108,47 @@ export function ssrfMiddleware(req, res, next) {
                 }
             }
         }
+        }
+    }
+
+    // Periksa array 'urls' (Zero-Compromise Super URL)
+    const validateUrlsArray = (urlsData, source) => {
+        if (!urlsData) return null;
+        let parsedUrls = [];
+        if (typeof urlsData === 'string') {
+            try { parsedUrls = JSON.parse(urlsData); } catch (e) {}
+        } else if (Array.isArray(urlsData)) {
+            parsedUrls = urlsData;
+        } else if (typeof urlsData === 'object') {
+            parsedUrls = Object.values(urlsData);
+        }
+
+        for (const u of parsedUrls) {
+            if (u && typeof u === 'string') {
+                const check = validateSafeUrl(u);
+                if (!check.valid) {
+                    return `Blocked ${source} array param 'urls' containing ${u}: ${check.reason}`;
+                }
+            }
+        }
+        return null;
+    };
+
+    if (req.query && req.query.urls) {
+        const errorMsg = validateUrlsArray(req.query.urls, 'query');
+        if (errorMsg) {
+            console.warn(`[SSRF Protection] ${errorMsg}`);
+            return res.status(403).json({ status: 'error', message: `Keamanan Ditolak (SSRF Protection): Format URL tidak aman` });
+        }
+    }
+
+    if (req.body && req.body.urls) {
+        const errorMsg = validateUrlsArray(req.body.urls, 'body');
+        if (errorMsg) {
+            console.warn(`[SSRF Protection] ${errorMsg}`);
+            return res.status(403).json({ status: 'error', message: `Keamanan Ditolak (SSRF Protection): Format URL tidak aman` });
+        }
     }
 
     next();
-}
+

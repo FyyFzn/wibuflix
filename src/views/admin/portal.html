@@ -386,8 +386,10 @@
                     container.style.display = 'block';
                     actionBox.style.display = 'block';
                     container.innerHTML = json.data.map(item => {
-                        const sources = item.sources ? Object.keys(item.sources).join(', ') : 'None';
-                        return '<div class="search-item">' +
+                        const sources = (item.sourceUrls && item.sourceUrls.length > 0) ? `${item.sourceUrls.length} Links` : 'None';
+                        const hoverTitle = (item.sourceUrls && item.sourceUrls.length > 0) ? `title="${item.sourceUrls.join('&#10;')}"` : '';
+
+                        return '<div class="search-item" ' + hoverTitle + ' style="cursor: help;">' +
                             '<div><b style="color:#fff;">' + item.title + '</b> <span style="color:#8b949e;">(' + item.type + ' | MAL: ' + (item.malId || '-') + ')</span><br/>' +
                             '<span style="font-size:11px;color:#58a6ff;">Sources: [' + sources + '] | Locked: ' + item.isLocked + ' | Enriched: ' + (item.tmdbEnriched || false) + '</span></div>' +
                             '<div style="display:flex;gap:6px;align-items:center;"><code style="background:#21262d;padding:2px 6px;border-radius:4px;user-select:all;">' + item._id + '</code>' +

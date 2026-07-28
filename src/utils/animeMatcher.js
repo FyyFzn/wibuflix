@@ -28,31 +28,33 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
 
     try {
         const query = normalizeTitleForMatch(seriesTitle);
-        const sourceUrlField = `sources.${providerKey}.url`;
         const qSeq = extractSequelMetadata(seriesTitle);
 
         // 1. Prioritaskan pencarian Exact 1-to-1 match dari database (title atau aliases)
         const exactMatch = await Anime.findOne({
-            [sourceUrlField]: { $ne: null },
+            sourceUrls: { $regex: providerKey, $options: 'i' },
             $or: [
                 { title: { $regex: new RegExp(`^${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
                 { aliases: { $regex: new RegExp(`^${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
             ]
         }).lean();
 
-        if (exactMatch && exactMatch.sources && exactMatch.sources[providerKey]) {
-            const itemSeq = extractSequelMetadata(`${exactMatch.title} ${exactMatch.sources[providerKey].url}`);
-            if (qSeq.season === itemSeq.season && qSeq.part === itemSeq.part) {
-                return {
-                    title: exactMatch.title,
-                    url: exactMatch.sources[providerKey].url,
-                    entry: exactMatch
-                };
+        if (exactMatch && exactMatch.sourceUrls && exactMatch.sourceUrls.length > 0) {
+            const matchUrl = exactMatch.sourceUrls.find(url => url.toLowerCase().includes(providerKey));
+            if (matchUrl) {
+                const itemSeq = extractSequelMetadata(`${exactMatch.title} ${matchUrl}`);
+                if (qSeq.season === itemSeq.season && qSeq.part === itemSeq.part) {
+                    return {
+                        title: exactMatch.title,
+                        url: matchUrl,
+                        entry: exactMatch
+                    };
+                }
             }
         }
 
         // 2. Fallback ke Safe Fuzzy Match dengan Semantic Versioning & skoring penalti selisih panjang
-        const dbItems = await Anime.find({ [sourceUrlField]: { $ne: null } }).lean();
+        const dbItems = await Anime.find({ sourceUrls: { $regex: providerKey, $options: 'i' } }).lean();
         if (!dbItems || dbItems.length === 0) return null;
 
         const queryWords = query.split(' ').filter(w => w.length > 2);
@@ -63,9 +65,12 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
         const isMovieQuery = query.includes('movie') || query.includes('film');
 
         for (const item of dbItems) {
-            if (!item.sources || !item.sources[providerKey] || !item.sources[providerKey].url) continue;
-
-            const itemUrl = (item.sources[providerKey].url || '').toLowerCase();
+            // Lakukan pre-check cepat
+            if (!item.sourceUrls || item.sourceUrls.length === 0) continue;
+            const matchUrl = item.sourceUrls.find(url => url.toLowerCase().includes(providerKey));
+            if (!matchUrl) continue;
+            
+            const itemUrl = matchUrl.toLowerCase();
             const titlesToTest = [item.title, ...(item.aliases || [])];
 
             for (const candTitle of titlesToTest) {
@@ -106,12 +111,16 @@ export async function resolveCatalogSource(seriesTitle, providerKey) {
             }
         }
 
-        if (!bestMatch || !bestMatch.sources || !bestMatch.sources[providerKey]) return null;
+        if (!bestMatch || !bestMatch.sourceUrls || bestMatch.sourceUrls.length === 0) return null;
+        
+        const finalMatchUrl = bestMatch.sourceUrls.find(url => url.toLowerCase().includes(providerKey));
+        if (!finalMatchUrl) return null;
 
         return {
             title: bestMatch.title,
-            url: bestMatch.sources[providerKey].url,
-            entry: bestMatch
+            url: finalMatchUrl,
+            entry: bestMatch,
+            fuzzyScore: bestScore
         };
     } catch (err) {
         console.error(`[resolveCatalogSource Error] (${providerKey}):`, err.message);

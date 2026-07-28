@@ -65,23 +65,13 @@ export async function syncUnified() {
                             if (isSafe) {
                                 log(`[UnifiedSync] 🔗 DUPLIKAT TERDETEKSI! Meleburkan "${anime.title}" ke dalam "${existingDuplicate.title}" (TMDB ID: ${tmdbData.malId})`);
 
-                                // Gabungkan sumber (sources) dari anime ini ke anime utama
-                                if (anime.sources) {
-                                    if (anime.sources.samehadaku?.url && !existingDuplicate.sources.samehadaku?.url) {
-                                        existingDuplicate.sources.samehadaku = anime.sources.samehadaku;
-                                    }
-                                    if (anime.sources.otakudesu?.url && !existingDuplicate.sources.otakudesu?.url) {
-                                        existingDuplicate.sources.otakudesu = anime.sources.otakudesu;
-                                    }
-                                    if (anime.sources.kuronime?.url && !existingDuplicate.sources.kuronime?.url) {
-                                        existingDuplicate.sources.kuronime = anime.sources.kuronime;
-                                    }
-                                    if (anime.sources.neosatsu?.url && !existingDuplicate.sources.neosatsu?.url) {
-                                        existingDuplicate.sources.neosatsu = anime.sources.neosatsu;
-                                    }
-                                    if (anime.sources.nanime?.url && !existingDuplicate.sources.nanime?.url) {
-                                        existingDuplicate.sources.nanime = anime.sources.nanime;
-                                    }
+                                // Gabungkan URL dari anime ini ke anime utama tanpa peduli asal provider (Anonymous Array)
+                                if (anime.sourceUrls && anime.sourceUrls.length > 0) {
+                                    const mergedUrls = new Set([
+                                        ...(existingDuplicate.sourceUrls || []),
+                                        ...anime.sourceUrls
+                                    ]);
+                                    existingDuplicate.sourceUrls = Array.from(mergedUrls);
                                 }
 
                                 // Gabungkan aliases agar pencarian Atlas Search makin pintar

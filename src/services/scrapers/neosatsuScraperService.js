@@ -64,3 +64,14 @@ export async function getNeosatsuLatestUpdates() {
         return [];
     }
 }
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+export const scraperMeta = {
+    id: 'neosatsu',
+    name: 'Neosatsu',
+    domains: ['neosatsu']
+};
+export const scrapeEpisodes = getNeosatsuEpisodes;
+export const scrapeServers = getNeosatsuServers;
+export const scrapeLatestUpdates = getNeosatsuLatestUpdates;

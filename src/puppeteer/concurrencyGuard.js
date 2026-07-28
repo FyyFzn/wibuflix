@@ -20,7 +20,7 @@ async function injectStoredCookies(page, domain) {
     }
 }
 
-export async function acquireFromPool(domain = 'v2.samehadaku.how', signal = null) {
+export async function acquireFromPool(domain = null, signal = null) {
     if (domain && isCircuitOpen(domain)) {
         throw new Error(`PROVIDER_CIRCUIT_OPEN: Domain ${domain} sedang dalam Circuit Breaker cooldown.`);
     }
@@ -220,7 +220,7 @@ export async function releaseToPool(slot) {
 }
 
 export async function fetchPage(url, signal = null) {
-    let domain = 'v2.samehadaku.how';
+    let domain = null;
     try { domain = new URL(url).hostname; } catch (e) {}
     
     if (isCircuitOpen(domain)) {

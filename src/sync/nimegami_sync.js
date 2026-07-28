@@ -97,7 +97,7 @@ export async function syncNimegami() {
         // Pre-fetch database (skip Toku agar tidak tercampur)
         const existingAnimes = await Anime.find(
             { type: { $ne: 'Toku' } },
-            { title: 1, aliases: 1, 'sources.nimegami': 1 }
+            { title: 1, aliases: 1, 'sourceUrls': 1 }
         ).lean();
 
         const now = Date.now();
@@ -136,10 +136,7 @@ export async function syncNimegami() {
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
-                            $set: {
-                                'sources.nimegami.url': anime.url,
-                                'sources.nimegami.id': anime.id
-                            }
+                            $addToSet: { sourceUrls: anime.url }
                         }
                     }
                 });
@@ -149,11 +146,8 @@ export async function syncNimegami() {
                     updateOne: {
                         filter: { title: anime.title },
                         update: {
-                            $set: {
-                                'sources.nimegami.url': anime.url,
-                                'sources.nimegami.id': anime.id,
-                                normalizedTitle: normTitle
-                            },
+                            $set: { normalizedTitle: normTitle },
+                                        $addToSet: { sourceUrls: anime.url },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: 'TV',
@@ -183,7 +177,7 @@ export async function syncNimegami() {
  */
 export async function startBackgroundNimegamiSync() {
     try {
-        const count = await Anime.countDocuments({ 'sources.nimegami.url': { $ne: null } });
+        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
 
         if (count === 0) {
             log('[NimegamiSync] Database Nimegami kosong. Memulai sinkronisasi awal...');

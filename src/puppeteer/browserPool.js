@@ -169,8 +169,9 @@ export async function waitForCloudflare(page, maxWait = 15000) {
     }
 }
 
-export async function refreshCfCookie(targetUrl = 'https://v2.samehadaku.how/') {
-    let domain = 'v2.samehadaku.how';
+export async function refreshCfCookie(targetUrl) {
+    if (!targetUrl) targetUrl = PROVIDER_URLS.SAMEHADAKU.BASE_URL + '/';
+    let domain = new URL(PROVIDER_URLS.SAMEHADAKU.BASE_URL).hostname;
     try {
         domain = new URL(targetUrl).hostname;
     } catch (e) {}

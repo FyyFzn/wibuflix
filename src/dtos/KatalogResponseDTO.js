@@ -5,28 +5,12 @@
  */
 export class KatalogResponseDTO {
     constructor(item = {}) {
-        let finalUrl = '';
-        let finalId = '';
-
-        if (item.sources?.samehadaku?.url) {
-            finalUrl = item.sources.samehadaku.url;
-            finalId = item.sources.samehadaku.id || '';
-        } else if (item.sources?.otakudesu?.url) {
-            finalUrl = `/anime/${item.sources.otakudesu.id || ''}`;
-            finalId = item.sources.otakudesu.id || '';
-        } else if (item.sources?.neosatsu?.url) {
-            finalUrl = item.sources.neosatsu.url;
-            finalId = ''; // Neosatsu menggunakan endpoint URL langsung
-        } else if (item.sources?.kuronime?.url) {
-            finalUrl = item.sources.kuronime.url;
-            finalId = item.sources.kuronime.id || '';
-        } else if (item.sources?.nimegami?.url) {
-            finalUrl = item.sources.nimegami.url;
-            finalId = item.sources.nimegami.id || '';
-        } else if (item.sources?.oploverz?.url) {
-            finalUrl = item.sources.oploverz.url;
-            finalId = item.sources.oploverz.id || '';
+        let finalUrl = item.url || '';
+        if (!finalUrl && item.sourceUrls && item.sourceUrls.length > 0) {
+            finalUrl = item.sourceUrls[0];
         }
+        
+        let finalId = item.id || (item._id ? item._id.toString() : '');
 
         let displayType = item.type || '';
         if (item.type === 'Toku' && item.title) {

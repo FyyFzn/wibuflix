@@ -1,16 +1,8 @@
-import { getSamehadakuEpisodes } from '../services/scrapers/samehadakuScraper.js';
-import { scrapeVideoServers } from '../services/extractors/videoExtractor.js';
-import * as otakudesu from '../services/scrapers/otakudesuScraper.js';
-import { getKuronimeEpisodes, getKuronimeServers } from '../services/scrapers/kuronimeScraper.js';
-import { getNanimeEpisodes, getNanimeServers } from '../services/scrapers/nanimeScraper.js';
-import { getNimegamiEpisodes, getNimegamiServers } from '../services/scrapers/nimegamiScraper.js';
-import { getOploverzEpisodes, getOploverzServers } from '../services/scrapers/oploverzScraper.js';
-import { getNeosatsuEpisodes, getNeosatsuServers, getNeosatsuCatalog } from '../services/scrapers/neosatsuScraperService.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
-import { releaseToPool } from '../puppeteer/pool.js';
-import * as cheerio from 'cheerio';
+import { ProviderRegistry } from '../services/ProviderRegistry.js';
 import mongoose from 'mongoose';
 import Anime from '../models/Anime.js';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 // Mencegah Mongoose buffering timeout jika database tidak terhubung di CLI script ini
@@ -26,81 +18,28 @@ if (mongoose.connection.readyState === 0) {
 }
 
 /**
- * Diagnostic Deep Extraction Check
+ * Diagnostic Deep Extraction Check (Dynamic Version)
  * 
- * Mengecek apakah setiap web provider berhasil mengembalikan:
- * 1. Detail Anime & Daftar Episode (daftar_episode)
- * 2. Detail Episode & Link Stream/Download (servers)
+ * Mengecek secara otomatis SEMUA web provider yang terdaftar di sistem.
+ * Skrip ini tidak memuat fungsi scraper statis. Ia murni memanfaatkan 
+ * metode `fetchLatestUpdates`, `fetchEpisodes`, dan `fetchServers` 
+ * dari arsitektur ProviderRegistry.
  */
-
-async function getSampleAnimeUrl(providerName) {
-    if (providerName === 'Samehadaku') {
-        let res;
-        try {
-            res = await fetchWithCF(PROVIDER_URLS.SAMEHADAKU.CATALOG_URL);
-            if (res?.html && res.html !== '404_NOT_FOUND') {
-                const $ = cheerio.load(res.html);
-                const firstUrl = $('.animepost a').first().attr('href');
-                if (firstUrl) return firstUrl;
-            }
-        } finally {
-            if (res?.slot) releaseToPool(res.slot);
-        }
-        return `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/naruto-shippuden/`;
-    } else if (providerName === 'Otakudesu') {
-        let res;
-        try {
-            res = await fetchWithCF(PROVIDER_URLS.OTAKUDESU.CATALOG_URL);
-            if (res?.html && res.html !== '404_NOT_FOUND') {
-                const $ = cheerio.load(res.html);
-                const firstUrl = $('.jdlbar ul li a').first().attr('href') || $('#daftaranime ul li a').first().attr('href');
-                if (firstUrl) return firstUrl;
-            }
-        } finally {
-            if (res?.slot) releaseToPool(res.slot);
-        }
-        return `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/nru-shp-sub-indo/`;
-    } else if (providerName === 'Kuronime') {
-        let res;
-        try {
-            res = await fetchWithCF(PROVIDER_URLS.KURONIME.CATALOG_URL);
-            if (res?.html && res.html !== '404_NOT_FOUND') {
-                const $ = cheerio.load(res.html);
-                const firstUrl = $('.soralist ul li a').first().attr('href');
-                if (firstUrl) return firstUrl;
-            }
-        } finally {
-            if (res?.slot) releaseToPool(res.slot);
-        }
-        return `${PROVIDER_URLS.KURONIME.BASE_URL}/anime/bleach-thousand-year-blood-war-sub-indo/`;
-    } else if (providerName === 'Nanime ID') {
-        return `${PROVIDER_URLS.NANIME.BASE_URL}/anime/one-piece`;
-    } else if (providerName === 'Nimegami') {
-        return `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/dr-stone-new-world-sub-indo/`;
-    } else if (providerName === 'Oploverz') {
-        return `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/one-piece`;
-    } else if (providerName === 'Neosatsu') {
-        try {
-            const data = await getNeosatsuCatalog(1, '', '');
-            if (data?.anime?.length > 0) return data.anime[0].endpoint;
-        } catch (e) {}
-        return `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/09/kamen-rider-gavv-sub-indo.html`;
-    }
-    return null;
-}
-
 export async function runDeepExtractionCheck() {
     console.log('\n================================================================================');
     console.log('                 WIBUFLIX DEEP EXTRACTION & DOWNLOAD LINK CHECK                 ');
     console.log('================================================================================');
-    console.log('Memeriksa pengambilan Detail Anime, Daftar Episode, & Link Stream/Download...\n');
+    console.log('Memeriksa pengambilan Detail Anime, Daftar Episode, & Link Stream/Download secara dinamis...\n');
 
-    const providers = ['Samehadaku', 'Otakudesu', 'Kuronime', 'Nanime ID', 'Nimegami', 'Oploverz', 'Neosatsu'];
+    const providerIds = await ProviderRegistry.getAllProviderIds();
     const summary = [];
 
-    for (const name of providers) {
+    for (const pid of providerIds) {
+        const details = await ProviderRegistry.getProviderDetails(pid);
+        const name = details ? details.name : pid;
+        
         console.log(`--------------------------------------------------------------------------------`);
-        console.log(`[>>] Menguji Provider: ${name}`);
+        console.log(`[>>] Menguji Provider: ${name} (ID: ${pid})`);
         
         const report = {
             Provider: name,
@@ -112,47 +51,52 @@ export async function runDeepExtractionCheck() {
         };
 
         try {
-            const animeUrl = await getSampleAnimeUrl(name);
+            // 1. Ambil URL sample statis (Katalog Series)
+            // Kita tidak menggunakan fetchLatestUpdates() karena beberapa plugin mengembalikan URL halaman Episode (bukan Series),
+            // yang akan membuat fetchEpisodes() gagal.
+            const getFallbackUrl = (id) => {
+                if (id === 'samehadaku') return `${PROVIDER_URLS.SAMEHADAKU.BASE_URL}/anime/naruto-shippuden/`;
+                if (id === 'otakudesu') return `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/anime/compass-20-sub-indo/`;
+                if (id === 'kuronime') return `${PROVIDER_URLS.KURONIME.BASE_URL}/anime/bleach-thousand-year-blood-war/`;
+                if (id === 'nanime') return `${PROVIDER_URLS.NANIME.BASE_URL}/anime/one-piece`;
+                if (id === 'nimegami') return `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/dr-stone-new-world-sub-indo/`;
+                if (id === 'oploverz') return `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/series/one-piece`;
+                if (id === 'neosatsu') return `${PROVIDER_URLS.NEOSATSU.BASE_URL}/2024/09/kamen-rider-gavv-sub-indo.html`;
+                return null;
+            };
+            
+            const animeUrl = getFallbackUrl(pid);
+
+            if (!animeUrl) {
+                console.log(`     ⚠️ Gagal mendapatkan sample URL fallback. Melewati...`);
+                report.Status_Akhir = 'NO_SAMPLE_URL';
+                summary.push(report);
+                continue;
+            }
+
             console.log(`     -> Sample Anime URL: ${animeUrl}`);
 
-            // 1. Uji Detail Anime & Daftar Episode
-            let epCatalog = null;
-            if (name === 'Samehadaku') epCatalog = await getSamehadakuEpisodes(animeUrl);
-            else if (name === 'Otakudesu') {
-                const slug = animeUrl.split('/').filter(Boolean).pop();
-                epCatalog = await otakudesu.getOtakuEpisodesFormatted(slug);
-            }
-            else if (name === 'Kuronime') epCatalog = await getKuronimeEpisodes(animeUrl);
-            else if (name === 'Nanime ID') epCatalog = await getNanimeEpisodes(animeUrl);
-            else if (name === 'Nimegami') epCatalog = await getNimegamiEpisodes(animeUrl);
-            else if (name === 'Oploverz') epCatalog = await getOploverzEpisodes(animeUrl);
-            else if (name === 'Neosatsu') epCatalog = await getNeosatsuEpisodes(animeUrl);
+            // 2. Uji Detail Anime & Daftar Episode
+            const epCatalog = await ProviderRegistry.fetchEpisodes(animeUrl);
 
             if (epCatalog && epCatalog.daftar_episode && epCatalog.daftar_episode.length > 0) {
                 report.Detail_Anime_Judul = epCatalog.judul_seri || 'Terambil';
                 report.Total_Episode = epCatalog.daftar_episode.length;
                 console.log(`     ✅ Detail Anime sukses: "${report.Detail_Anime_Judul}" (${report.Total_Episode} episode terdeteksi)`);
 
-                // 2. Uji Detail Episode & Link Download/Server Stream
+                // 3. Uji Detail Episode & Link Download/Server Stream
                 const sampleEp = epCatalog.daftar_episode.find(ep => !ep.judul.toLowerCase().includes('batch') && (!ep.url || !ep.url.includes('/batch/'))) || epCatalog.daftar_episode[0];
                 const epUrl = sampleEp.url || sampleEp.slug;
                 console.log(`     -> Menguji Ekstraksi Link Episode: "${sampleEp.judul}" (${epUrl})...`);
 
-                let serverData = null;
-                if (name === 'Samehadaku') serverData = await scrapeVideoServers(epUrl);
-                else if (name === 'Otakudesu') serverData = await otakudesu.getServersInternal(epUrl);
-                else if (name === 'Kuronime') serverData = await getKuronimeServers(epUrl);
-                else if (name === 'Nanime ID') serverData = await getNanimeServers(epUrl);
-                else if (name === 'Nimegami') serverData = await getNimegamiServers(epUrl);
-                else if (name === 'Oploverz') serverData = await getOploverzServers(epUrl);
-                else if (name === 'Neosatsu') serverData = await getNeosatsuServers(epUrl);
+                const serverData = await ProviderRegistry.fetchServers(epUrl);
 
                 if (serverData && serverData.servers && serverData.servers.length > 0) {
                     report.Detail_Episode_Judul = serverData.judul || sampleEp.judul;
                     report.Total_Server_Link = serverData.servers.length;
                     report.Status_Akhir = 'BERHASIL & LENGKAP';
                     console.log(`     ✅ Detail Episode & Link Stream/Download sukses! Ditemukan ${report.Total_Server_Link} server/mirror link.`);
-                    console.log(`        Contoh Server: ${serverData.servers.slice(0, 3).map(s => `[${s.nama || s.provider || 'Direct'}]`).join(', ')}`);
+                    console.log(`        Contoh Server: ${serverData.servers.slice(0, 3).map(s => '[' + (s.nama || s.provider || 'Direct') + ']').join(', ')}`);
                 } else {
                     report.Detail_Episode_Judul = serverData?.judul || sampleEp.judul;
                     report.Status_Akhir = 'ONLY EPISODES (NO SERVERS)';
@@ -177,8 +121,6 @@ export async function runDeepExtractionCheck() {
     return summary;
 }
 
-import { fileURLToPath } from 'url';
-import fs from 'fs';
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
     runDeepExtractionCheck().then(() => process.exit(0)).catch(err => {
         console.error('Error saat menjalankan deep check:', err);

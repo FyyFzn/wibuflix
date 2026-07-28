@@ -4,7 +4,7 @@ import fs from 'fs';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
 import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
-import { PROVIDER_URLS, getOploverzSeriesUrl } from '../config/providerUrls.js';
+import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
 
 const log = (...args) => {
     if (global.forceLog) global.forceLog(...args);
@@ -94,7 +94,7 @@ export async function syncOploverz() {
             if (title && slug) {
                 animeMap.set(slug, {
                     title: title,
-                    url: getOploverzSeriesUrl(slug),
+                    url: getProviderSeriesUrl('OPLOVERZ', slug),
                     id: slug
                 });
             }
@@ -113,7 +113,7 @@ export async function syncOploverz() {
         // Pre-fetch database sekali (lebih efisien daripada query satu per satu)
         const existingAnimes = await Anime.find(
             { type: { $ne: 'Toku' } },
-            { title: 1, aliases: 1, normalizedTitle: 1, 'sources.oploverz': 1 }
+            { title: 1, aliases: 1, normalizedTitle: 1, 'sourceUrls': 1 }
         ).lean();
 
         const now = Date.now();
@@ -162,10 +162,7 @@ export async function syncOploverz() {
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
-                            $set: {
-                                'sources.oploverz.url': anime.url,
-                                'sources.oploverz.id': anime.id
-                            }
+                            $addToSet: { sourceUrls: anime.url }
                         }
                     }
                 });
@@ -175,11 +172,8 @@ export async function syncOploverz() {
                     updateOne: {
                         filter: { title: anime.title },
                         update: {
-                            $set: {
-                                'sources.oploverz.url': anime.url,
-                                'sources.oploverz.id': anime.id,
-                                normalizedTitle: normTitle
-                            },
+                            $set: { normalizedTitle: normTitle },
+                                        $addToSet: { sourceUrls: anime.url },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: 'TV',
@@ -213,7 +207,7 @@ export async function syncOploverz() {
  */
 export async function startBackgroundOploverzSync() {
     try {
-        const count = await Anime.countDocuments({ 'sources.oploverz.url': { $ne: null } });
+        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
 
         if (count === 0) {
             log('[OploverzSync] Database Oploverz kosong. Memulai sinkronisasi awal...');

@@ -6,7 +6,15 @@ import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
-const cache = getCache('oploverz', 3600);
+const cache = getCache('episodes_oploverz', 3600);
+
+export const scraperMeta = {
+    id: 'oploverz',
+    name: 'Oploverz',
+    domains: ['oploverz']
+};
+
+export const scrapeEpisodes = getOploverzEpisodes;
 
 export async function getOploverzEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
@@ -254,7 +262,7 @@ export async function handleGetServers(req, res) {
 }
 
 export async function getOploverzLatestUpdates() {
-    const { PROVIDER_URLS, getOploverzSeriesUrl } = await import('../../config/providerUrls.js');
+    const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
     const { acquireFromPool, releaseToPool } = await import('../../puppeteer/pool.js');
     const cheerio = await import('cheerio');
     const url = PROVIDER_URLS.OPLOVERZ.BASE_URL;
@@ -284,3 +292,8 @@ export async function getOploverzLatestUpdates() {
     }
     return updates;
 }
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+export const scrapeServers = getOploverzServers;
+export const scrapeLatestUpdates = getOploverzLatestUpdates;

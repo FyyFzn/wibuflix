@@ -57,7 +57,7 @@ export async function syncKuronime() {
         // Pre-fetch database (skip Toku agar tidak tercampur)
         const existingAnimes = await Anime.find(
             { type: { $ne: 'Toku' } },
-            { title: 1, aliases: 1, 'sources.kuronime': 1 }
+            { title: 1, aliases: 1, 'sourceUrls': 1 }
         ).lean();
 
         const now = Date.now();
@@ -96,10 +96,7 @@ export async function syncKuronime() {
                     updateOne: {
                         filter: { _id: matchedId },
                         update: {
-                            $set: {
-                                'sources.kuronime.url': anime.url,
-                                'sources.kuronime.id': anime.id
-                            }
+                            $addToSet: { sourceUrls: anime.url }
                         }
                     }
                 });
@@ -109,11 +106,8 @@ export async function syncKuronime() {
                     updateOne: {
                         filter: { title: anime.title },
                         update: {
-                            $set: {
-                                'sources.kuronime.url': anime.url,
-                                'sources.kuronime.id': anime.id,
-                                normalizedTitle: normTitle
-                            },
+                            $set: { normalizedTitle: normTitle },
+                                        $addToSet: { sourceUrls: anime.url },
                             $setOnInsert: {
                                 title: anime.title,
                                 type: 'TV',
@@ -143,7 +137,7 @@ export async function syncKuronime() {
  */
 export async function startBackgroundKuronimeSync() {
     try {
-        const count = await Anime.countDocuments({ 'sources.kuronime.url': { $ne: null } });
+        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
 
         if (count === 0) {
             log('[KuronimeSync] Database Kuronime kosong. Memulai sinkronisasi awal...');

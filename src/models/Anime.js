@@ -41,43 +41,7 @@ const animeSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    sources: {
-        samehadaku: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        },
-        otakudesu: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        },
-        neosatsu: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        },
-        kuronime: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        },
-        nanime: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        },
-        nimegami: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        },
-        oploverz: {
-            url: { type: String, default: null, index: true },
-            id: { type: String, default: null, index: true },
-            offset: { type: Number, default: 0 }
-        }
-    },
+    sourceUrls: [{ type: String, default: null }],
     // Metadata Lanjutan dari MAL / TMDB
     synopsis: { type: String, default: null },
     genres: { type: [String], default: [] },

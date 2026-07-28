@@ -29,15 +29,9 @@ import { ssrfMiddleware } from './middlewares/urlValidator.js';
 
 // Route Imports
 import katalogRouter from './routes/katalog.js';
-import episodesRouter from './routes/episodes.js';
 import scrapeRouter from './routes/scrape.js';
 import extractRouter from './routes/extract.js';
 import proxyRouter from './routes/proxy.js';
-import otakudesuRouter from './routes/otakudesu.js';
-import kuronimeRouter from './routes/kuronime.js';
-import nimegamiRouter from './routes/nimegami.js';
-import oploverzRouter from './routes/oploverz.js';
-import samehadakuRouter from './routes/samehadaku.js';
 import adminRouter from './routes/admin.js';
 import v2Router from './routes/v2.js';
 
@@ -90,15 +84,9 @@ app.use(express.static(path.join(__dirname, '../')));
 // Mounting Routers
 app.use(v2Router);
 app.use(katalogRouter);
-app.use(episodesRouter);
 app.use(scrapeRouter);
 app.use(extractRouter);
 app.use(proxyRouter);
-app.use(otakudesuRouter);
-app.use(kuronimeRouter);
-app.use(nimegamiRouter);
-app.use(oploverzRouter);
-app.use(samehadakuRouter);
 app.use(adminRouter);
 
 

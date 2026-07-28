@@ -71,8 +71,8 @@ async function processLatestUpdatesWithGuard(updates, providerName) {
     const normTitles = updates.map(u => normalizeTitleForMatch(u.judul || u.title)).filter(Boolean);
     const urls = updates.map(u => u.url).filter(Boolean);
     const filterOr = [{ normalizedTitle: { $in: normTitles } }];
-    if (urls.length > 0 && providerName === 'nimegami') {
-        filterOr.push({ 'sources.nimegami.url': { $in: urls } });
+    if (urls.length > 0) {
+        filterOr.push({ sourceUrls: { $in: urls } });
     }
 
     const existingDocs = await Anime.find({ $or: filterOr });
@@ -80,7 +80,9 @@ async function processLatestUpdatesWithGuard(updates, providerName) {
     const docByUrl = new Map();
     existingDocs.forEach(d => {
         if (d.normalizedTitle) docByTitle.set(d.normalizedTitle, d);
-        if (d.sources?.nimegami?.url) docByUrl.set(d.sources.nimegami.url, d);
+        if (d.sourceUrls && d.sourceUrls.length > 0) {
+            d.sourceUrls.forEach(u => docByUrl.set(u, d));
+        }
     });
 
     const bulkOps = [];
@@ -101,19 +103,12 @@ async function processLatestUpdatesWithGuard(updates, providerName) {
         let shouldUpdateStatus = false;
         let shouldUpdateTimestamp = false;
 
-        if (providerName === 'samehadaku') {
-            if (newEpNum > oldEpNum || (newEpNum === oldEpNum && newEpNum > 0 && doc.status !== newStatus) || !doc.lastUpdated) {
-                shouldUpdateStatus = true;
-                shouldUpdateTimestamp = true;
-            } else if (newEpNum >= oldEpNum) {
-                shouldUpdateStatus = true;
-            }
-        } else {
-            // Web lain (Otakudesu, Kuronime, Nanime, Nimegami) TIDAK BOLEH downgrade status maupun menimpa timestamp jika episodenya <= yang ada di DB
-            if (newEpNum > oldEpNum && newEpNum > 0) {
-                shouldUpdateStatus = true;
-                shouldUpdateTimestamp = true;
-            }
+        // General update logic for all providers (Zero-hardcode!)
+        if (newEpNum > oldEpNum || (newEpNum === oldEpNum && newEpNum > 0 && doc.status !== newStatus) || !doc.lastUpdated) {
+            shouldUpdateStatus = true;
+            shouldUpdateTimestamp = true;
+        } else if (newEpNum >= oldEpNum) {
+            shouldUpdateStatus = true;
         }
 
         const setFields = {};

@@ -26,15 +26,9 @@ export async function findAlternativeProviderCandidate({ targetUrl, seriesTitle,
                     (e.urls && Object.values(e.urls).includes(targetUrl))
                 );
                 if (targetEp && targetEp.urls) {
-                    targetEpUrls = targetEp.urls;
-                    const candidates = [
-                        targetEp.urls.samehadaku,
-                        targetEp.urls.otakudesu,
-                        targetEp.urls.nanime,
-                        targetEp.urls.neosatsu,
-                        targetEp.urls.nimegami,
-                        targetEp.urls.kuronime
-                    ].filter(Boolean);
+                    const urlArray = Array.isArray(targetEp.urls) ? targetEp.urls : Object.values(targetEp.urls);
+                    targetEpUrls = urlArray;
+                    const candidates = urlArray.filter(Boolean);
 
                     for (const cand of candidates) {
                         if (cand && cand !== targetUrl) {
@@ -77,12 +71,18 @@ export async function resolveInitialAlternative({ targetUrl, seriesTitle, episod
                 (e.urls && Object.values(e.urls).includes(targetUrl))
             );
             if (ep?.urls) {
-                updatedUrlsObj = { ...(updatedUrlsObj || {}), ...ep.urls };
-                for (const [prov, pUrl] of Object.entries(ep.urls)) {
-                    if (pUrl && pUrl !== targetUrl && prov !== currentProv && !checkUrlBlacklisted(pUrl, { seriesSlug, episodeSlug, oldSeriesSlug })) {
-                        extractionUrl = pUrl;
-                        console.info(`[API v2 Stream] ✓ Mengalihkan ekstraksi ke provider alternatif: [${prov.toUpperCase()}] ${extractionUrl}`);
-                        break;
+                const epUrlArray = Array.isArray(ep.urls) ? ep.urls : Object.values(ep.urls);
+                const currentUrlsArray = Array.isArray(updatedUrlsObj) ? updatedUrlsObj : (updatedUrlsObj ? Object.values(updatedUrlsObj) : []);
+                updatedUrlsObj = Array.from(new Set([...currentUrlsArray, ...epUrlArray]));
+
+                for (const pUrl of epUrlArray) {
+                    if (pUrl && pUrl !== targetUrl && !checkUrlBlacklisted(pUrl, { seriesSlug, episodeSlug, oldSeriesSlug })) {
+                        const prov = getProviderKey(pUrl) || 'unknown';
+                        if (prov !== currentProv) {
+                            extractionUrl = pUrl;
+                            console.info(`[API v2 Stream] ✓ Mengalihkan ekstraksi ke alternatif: [${prov.toUpperCase()}] ${extractionUrl}`);
+                            break;
+                        }
                     }
                 }
             }

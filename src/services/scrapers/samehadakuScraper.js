@@ -7,6 +7,14 @@ import { extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js
 
 const cache = getCache('episodes', 3600);
 
+export const scraperMeta = {
+    id: 'samehadaku',
+    name: 'Samehadaku',
+    domains: ['samehadaku', 'v2.samehadaku.how']
+};
+
+export const scrapeEpisodes = getSamehadakuEpisodes;
+
 export async function getSamehadakuEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
 
@@ -153,3 +161,9 @@ export async function getSamehadakuLatestUpdates() {
 }
 
 export { cache };
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+import { scrapeVideoServers } from "../extractors/videoExtractor.js";
+export const scrapeServers = scrapeVideoServers;
+export const scrapeLatestUpdates = getSamehadakuLatestUpdates;

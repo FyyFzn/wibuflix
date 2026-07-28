@@ -17,7 +17,7 @@ async function delay(ms) {
 
 export async function startBackgroundAnimeSync() {
     try {
-        const count = await Anime.countDocuments({ 'sources.samehadaku.url': { $exists: true, $ne: null } });
+        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
         
         if (count === 0) {
             log("[Anime Sync] Database Samehadaku kosong. Memulai sinkronisasi awal A-Z...");
@@ -174,7 +174,7 @@ export async function runSync(isInitial = false) {
 
                 const existingDocs = await Anime.find({
                     $or: [
-                        { 'sources.samehadaku.url': { $in: allUrls } },
+                        { sourceUrls: { $in: allUrls } },
                         { normalizedTitle: { $in: allNormTitles } }
                     ]
                 });
@@ -184,7 +184,7 @@ export async function runSync(isInitial = false) {
                 const malIdMap = new Map();
                 const processedMalIds = new Set();
                 existingDocs.forEach(doc => {
-                    if (doc.sources?.samehadaku?.url) urlMap.set(doc.sources.samehadaku.url, doc);
+                    if (doc.sourceUrls && doc.sourceUrls.length > 0) doc.sourceUrls.forEach(u => urlMap.set(u, doc));
                     if (doc.normalizedTitle) titleMap.set(doc.normalizedTitle, doc);
                     if (doc.malId) malIdMap.set(doc.malId, doc);
                 });
@@ -198,9 +198,7 @@ export async function runSync(isInitial = false) {
 
                     if (existing) {
                         if (!existing.isLocked) {
-                            const updateFields = {
-                                'sources.samehadaku': { url: anime.url }
-                            };
+                            const updateFields = {};
                             if (!existing.lastUpdated) {
                                 updateFields.lastUpdated = new Date(now - index * 1000);
                             }
@@ -212,16 +210,16 @@ export async function runSync(isInitial = false) {
                             bulkOperations.push({
                                 updateOne: {
                                     filter: { _id: existing._id },
-                                    update: { $set: updateFields }
+                                    update: { $set: updateFields, $addToSet: { sourceUrls: anime.url } }
                                 }
                             });
                         } else {
-                            const updateFields = { 'sources.samehadaku': { url: anime.url } };
+                            const updateFields = {};
                             if (!existing.lastUpdated) updateFields.lastUpdated = new Date(now - index * 1000);
                             bulkOperations.push({
                                 updateOne: {
                                     filter: { _id: existing._id },
-                                    update: { $set: updateFields }
+                                    update: { $set: updateFields, $addToSet: { sourceUrls: anime.url } }
                                 }
                             });
                         }
@@ -241,12 +239,12 @@ export async function runSync(isInitial = false) {
                                 if (existingByMal) malIdMap.set(metadata.malId, existingByMal);
                             }
                             if (existingByMal) {
-                                const updateFields = { 'sources.samehadaku': { url: anime.url } };
+                                const updateFields = {};
                                 if (!existingByMal.lastUpdated) updateFields.lastUpdated = new Date(now - index * 1000);
                                 bulkOperations.push({
                                     updateOne: {
                                         filter: { _id: existingByMal._id },
-                                        update: { $set: updateFields }
+                                        update: { $set: updateFields, $addToSet: { sourceUrls: anime.url } }
                                     }
                                 });
                                 updatedCount++;
@@ -266,7 +264,7 @@ export async function runSync(isInitial = false) {
                                     type: anime.tipe,
                                     score: metadata?.malScore || anime.skor,
                                     status: anime.status,
-                                    sources: { samehadaku: { url: anime.url } },
+                                    sourceUrls: [anime.url],
                                     lastUpdated: new Date(now - index * 1000)
                                 }
                             }

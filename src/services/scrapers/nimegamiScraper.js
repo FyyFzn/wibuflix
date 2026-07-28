@@ -395,3 +395,14 @@ export async function getNimegamiLatestUpdates() {
 }
 
 export { cache };
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+export const scraperMeta = {
+    id: 'nimegami',
+    name: 'Nimegami',
+    domains: ['nimegami']
+};
+export const scrapeEpisodes = getNimegamiEpisodes;
+export const scrapeServers = getNimegamiServers;
+export const scrapeLatestUpdates = getNimegamiLatestUpdates;

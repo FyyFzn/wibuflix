@@ -9,6 +9,13 @@ import { assertAndRespondContract } from '../../utils/contractValidator.js';
 
 const cache = getCache('kuronime', 3600);
 
+export const scraperMeta = {
+    id: 'kuronime',
+    name: 'Kuronime',
+    domains: ['kuronime']
+};
+
+export const scrapeEpisodes = getKuronimeEpisodes;
 
 /**
  * Mengambil daftar episode dari halaman detail anime Kuronime.
@@ -354,3 +361,8 @@ export async function getKuronimeLatestUpdates() {
     }
     return updates;
 }
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+export const scrapeServers = getKuronimeServers;
+export const scrapeLatestUpdates = getKuronimeLatestUpdates;

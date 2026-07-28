@@ -181,7 +181,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     try {
         const maxAttempts = source === 'queue' ? 3 : 5;
         let lastError = null;
-        let urlsObjForAttempt = preloadedUrlsObj;
+        let urlsArrayForAttempt = preloadedUrlsObj; // Now expected to be an Array
         const excludedServers = new Set();
         let hasFetchedOrch = false;
 
@@ -197,7 +197,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator agar Queue/Prefetch mendapat multi-provider seperti Smart Play.
                 // Pada percobaan > 1 atau jika provider masih kurang dari 3, panggil Orchestrator dengan fallback targetUrl & forceRefresh jika perlu.
-                if ((!hasFetchedOrch || !urlsObjForAttempt || Object.keys(urlsObjForAttempt).length < 3 || attempt > 1) && (uniqueId || seriesTitle || episodeUrl)) {
+                if ((!hasFetchedOrch || !urlsArrayForAttempt || urlsArrayForAttempt.length < 3 || attempt > 1) && (uniqueId || seriesTitle || episodeUrl)) {
                     hasFetchedOrch = true;
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
@@ -220,17 +220,17 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             const targetEp = animeData?.episodes?.find(e => 
                                 (epNum != null && e.num === epNum) || 
                                 (e.url && e.url === episodeUrl) || 
-                                (e.urls && Object.values(e.urls).includes(episodeUrl))
+                                (e.urls && e.urls.includes(episodeUrl))
                             );
-                            if (targetEp?.urls && Object.keys(targetEp.urls).length > 0) {
-                                urlsObjForAttempt = { ...(urlsObjForAttempt || {}), ...targetEp.urls };
-                                console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${Object.keys(urlsObjForAttempt).length} provider (${Object.keys(urlsObjForAttempt).join(', ')}) untuk multi-source fetch persis seperti Smart Play (ep ${epNum}).`);
+                            if (targetEp?.urls && targetEp.urls.length > 0) {
+                                urlsArrayForAttempt = Array.from(new Set([...(urlsArrayForAttempt || []), ...targetEp.urls]));
+                                console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${urlsArrayForAttempt.length} link untuk multi-source fetch persis seperti Smart Play (ep ${epNum}).`);
                             }
                         }
                     } catch (orchErr) {}
                 }
 
-                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsObjForAttempt, excludedServers, { seriesSlug: activeSlug, episodeSlug: activeEpSlug });
+                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsArrayForAttempt, excludedServers, { seriesSlug: activeSlug, episodeSlug: activeEpSlug });
                 matchedSource = result.matchedSource;
                 
                 if (activeSignal && activeSignal.aborted) {

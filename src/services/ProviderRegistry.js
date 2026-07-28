@@ -1,24 +1,12 @@
-import { getSamehadakuEpisodes, getSamehadakuLatestUpdates } from './scrapers/samehadakuScraper.js';
-import { scrapeVideoServers } from './extractors/videoExtractor.js';
-import * as otakudesu from './scrapers/otakudesuScraper.js';
-import { getKuronimeEpisodes, getKuronimeServers, getKuronimeLatestUpdates } from './scrapers/kuronimeScraper.js';
-import { getNanimeEpisodes, getNanimeServers, getNanimeLatestUpdates } from './scrapers/nanimeScraper.js';
-import { getNimegamiEpisodes, getNimegamiServers, getNimegamiLatestUpdates } from './scrapers/nimegamiScraper.js';
-import * as oploverz from './scrapers/oploverzScraper.js';
-import { getNeosatsuEpisodes, getNeosatsuServers, getNeosatsuLatestUpdates } from './scrapers/neosatsuScraperService.js';
-import { extractOtakuSlug } from '../utils/stringUtils.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-/**
- * ============================================================================
- * UNIVERSAL PROVIDER REGISTRY (Provider Gateway Pattern)
- * ============================================================================
- * Menghapus pengulangan rantai if-else di seluruh codebase (scrape.js,
- * episodeService.js, streamRankingService.js) dengan memusatkan identifikasi
- * URL dan pemanggilan fungsi getEpisodes & getServers ke dalam satu Single Source of Truth.
- */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Helper untuk menstandarkan skema server agar tidak ada perbedaan nama properti (id vs nume, tipe vs type)
-export function standardizeServers(servers = [], defaultSource = 'Samehadaku') {
+export function standardizeServers(servers = [], defaultSource = 'Unknown') {
     if (!Array.isArray(servers)) return [];
     return servers.map(s => {
         const idOrNume = s.id || s.nume || '';
@@ -45,197 +33,138 @@ export function standardizeServers(servers = [], defaultSource = 'Samehadaku') {
     });
 }
 
-const providers = [
-    // 1. Neosatsu
-    {
-        id: 'neosatsu',
-        name: 'Neosatsu',
-        matchUrl: (url) => url.includes('___neosatsu_ep___') || url.includes('neosatsu.com') || url.startsWith('neosatsu-label:') || url.startsWith('neosatsu-merge:'),
-        getEpisodes: async (url) => {
-            const cleanUrl = url.includes('___neosatsu_ep___') ? url.split('___neosatsu_ep___')[0] : url;
-            return await getNeosatsuEpisodes(cleanUrl);
-        },
-        getServers: async (url) => {
-            const neoData = await getNeosatsuServers(url);
-            return {
-                ...neoData,
-                judul: neoData?.judul || 'Tokusatsu',
-                judul_seri: neoData?.judul_seri || neoData?.judul || 'Tokusatsu',
-                servers: standardizeServers(neoData?.servers || [], 'Neosatsu')
-            };
-        },
-        getLatestUpdates: async () => await getNeosatsuLatestUpdates()
-    },
-    // 2. Otakudesu
-    {
-        id: 'otakudesu',
-        name: 'Otakudesu',
-        matchUrl: (url) => url.includes('otakudesu') || url.startsWith('/anime/') || url.startsWith('/api/otakudesu/servers'),
-        getEpisodes: async (url) => {
-            const slug = extractOtakuSlug(url);
-            return await otakudesu.getOtakuEpisodesFormatted(slug);
-        },
-        getServers: async (url) => {
-            let realUrl = url;
-            if (url.includes('?url=')) {
-                realUrl = decodeURIComponent(url.split('?url=')[1]);
-            }
-            const data = await otakudesu.getServersInternal(realUrl);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], 'Otakudesu')
-            };
-        },
-        getLatestUpdates: async () => await otakudesu.getOtakudesuLatestUpdates()
-    },
-    // 3. Kuronime
-    {
-        id: 'kuronime',
-        name: 'Kuronime',
-        matchUrl: (url) => url.includes('kuronime.sbs') || url.startsWith('/api/kuronime/'),
-        getEpisodes: async (url) => await getKuronimeEpisodes(url),
-        getServers: async (url) => {
-            let realUrl = url;
-            if (url.includes('?url=')) {
-                realUrl = decodeURIComponent(url.split('?url=')[1]);
-            }
-            const data = await getKuronimeServers(realUrl);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], 'Kuronime')
-            };
-        },
-        getLatestUpdates: async () => await getKuronimeLatestUpdates()
-    },
-    // 4. Nanime
-    {
-        id: 'nanime',
-        name: 'Nanime',
-        matchUrl: (url) => url.includes('nanimeid.net') || url.startsWith('/api/nanime/'),
-        getEpisodes: async (url) => await getNanimeEpisodes(url),
-        getServers: async (url) => {
-            let realUrl = url;
-            if (url.includes('?url=')) {
-                realUrl = decodeURIComponent(url.split('?url=')[1]);
-            }
-            const data = await getNanimeServers(realUrl);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], 'Nanime')
-            };
-        },
-        getLatestUpdates: async () => await getNanimeLatestUpdates()
-    },
-    // 5. Nimegami
-    {
-        id: 'nimegami',
-        name: 'Nimegami',
-        matchUrl: (url) => url.includes('nimegami.id') || url.startsWith('/api/nimegami/'),
-        getEpisodes: async (url) => await getNimegamiEpisodes(url),
-        getServers: async (url) => {
-            let realUrl = url;
-            if (url.includes('?url=')) {
-                realUrl = decodeURIComponent(url.split('?url=')[1]);
-            }
-            const data = await getNimegamiServers(realUrl);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], 'Nimegami')
-            };
-        },
-        getLatestUpdates: async () => await getNimegamiLatestUpdates()
-    },
-    // 6. Oploverz
-    {
-        id: 'oploverz',
-        name: 'Oploverz',
-        matchUrl: (url) => url.includes('oploverz.ltd') || url.includes('oploverz.site') || url.startsWith('/api/oploverz/'),
-        getEpisodes: async (url) => await oploverz.getOploverzEpisodes(url),
-        getServers: async (url) => {
-            let realUrl = url;
-            if (url.includes('?url=')) {
-                realUrl = decodeURIComponent(url.split('?url=')[1]);
-            }
-            const data = await oploverz.getOploverzServers(realUrl);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], 'Oploverz')
-            };
-        },
-        getLatestUpdates: async () => await oploverz.getOploverzLatestUpdates()
-    },
-    // 7. Samehadaku (Default/Primary)
-    {
-        id: 'samehadaku',
-        name: 'Samehadaku',
-        matchUrl: (url) => true, // Fallback utama jika tidak cocok dengan provider lain
-        getEpisodes: async (url) => await getSamehadakuEpisodes(url),
-        getServers: async (url) => {
-            const data = await scrapeVideoServers(url);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], 'Samehadaku')
-            };
-        },
-        getLatestUpdates: async () => await getSamehadakuLatestUpdates()
-    }
-];
+const plugins = [];
+let initialized = false;
 
-export class ProviderRegistry {
-    /**
-     * Cari provider yang cocok untuk suatu URL.
-     * Jika tidak ada yang cocok secara khusus, mengembalikan Samehadaku.
-     */
-    static getProviderForUrl(url) {
-        if (!url || typeof url !== 'string') return providers[providers.length - 1]; // Samehadaku
-        for (let i = 0; i < providers.length - 1; i++) {
-            if (providers[i].matchUrl(url)) {
-                return providers[i];
+export async function initPlugins() {
+    if (initialized) return;
+    initialized = true;
+    
+    // Temukan semua file scraper di folder scrapers/
+    const scrapersDir = path.join(__dirname, 'scrapers');
+    const files = fs.readdirSync(scrapersDir).filter(file => 
+        (file.endsWith('Scraper.js') || file.endsWith('ScraperService.js'))
+    );
+    
+    for (const file of files) {
+        try {
+            const module = await import(`./scrapers/${file}`);
+            if (module.scraperMeta) {
+                plugins.push({
+                    id: module.scraperMeta.id,
+                    name: module.scraperMeta.name,
+                    meta: module.scraperMeta,
+                    scrapeEpisodes: module.scrapeEpisodes || null,
+                    scrapeServers: module.scrapeServers || null,
+                    scrapeLatestUpdates: module.scrapeLatestUpdates || null
+                });
+                console.log(`[Provider Registry] 🔌 Plugin dimuat: ${module.scraperMeta.name}`);
             }
+        } catch (err) {
+            console.error(`[Provider Registry] Gagal memuat plugin ${file}:`, err.message);
         }
-        return providers[providers.length - 1]; // Samehadaku
-    }
-
-    /**
-     * Cari provider berdasarkan id (misal: 'otakudesu', 'kuronime').
-     */
-    static getProviderById(id) {
-        return providers.find(p => p.id === id) || providers[providers.length - 1];
-    }
-
-    /**
-     * Eksekusi getEpisodes dengan skema standar.
-     */
-    static async fetchEpisodes(url) {
-        const provider = this.getProviderForUrl(url);
-        return await provider.getEpisodes(url);
-    }
-
-    /**
-     * Eksekusi getServers dengan skema standar (selalu mengembalikan servers yang terstandarisasi).
-     */
-    static async fetchServers(url) {
-        const provider = this.getProviderForUrl(url);
-        return await provider.getServers(url);
-    }
-
-    /**
-     * Eksekusi getLatestUpdates untuk provider tertentu dengan skema DTO standar.
-     */
-    static async fetchLatestUpdates(providerId) {
-        const provider = this.getProviderById(providerId);
-        if (provider && typeof provider.getLatestUpdates === 'function') {
-            return await provider.getLatestUpdates();
-        }
-        return [];
-    }
-
-    /**
-     * Dapatkan semua daftar provider ID.
-     */
-    static getAllProviderIds() {
-        return providers.map(p => p.id);
     }
 }
 
-export default ProviderRegistry;
+export async function getPluginForUrl(url) {
+    if (!url) return null;
+    await initPlugins();
+    
+    const lowerUrl = url.toString().toLowerCase();
+    
+    // Manual fallback handling untuk format API lokal (/api/...)
+    if (lowerUrl.startsWith('/anime/') && !lowerUrl.includes('samehadaku')) {
+        return plugins.find(p => p.id === 'otakudesu');
+    }
+    if (lowerUrl.startsWith('neosatsu-label:') || lowerUrl.startsWith('neosatsu-merge:')) {
+        return plugins.find(p => p.id === 'neosatsu');
+    }
+
+    // Coba cocokkan URL dengan domain plugin
+    for (const plugin of plugins) {
+        if (plugin.meta.domains && plugin.meta.domains.some(domain => lowerUrl.includes(domain))) {
+            return plugin;
+        }
+    }
+    
+    return null;
+}
+
+export function getProviderIdFromUrlSync(url) {
+    if (!url) return 'unknown';
+    const lowerUrl = url.toString().toLowerCase();
+    
+    // Manual fallback handling untuk format API lokal (/api/...)
+    if (lowerUrl.startsWith('/anime/') && !lowerUrl.includes('samehadaku')) {
+        return 'otakudesu';
+    }
+    if (lowerUrl.startsWith('neosatsu-label:') || lowerUrl.startsWith('neosatsu-merge:')) {
+        return 'neosatsu';
+    }
+
+    // Coba cocokkan URL dengan domain plugin dari cache memori
+    for (const plugin of plugins) {
+        if (plugin.meta.domains && plugin.meta.domains.some(domain => lowerUrl.includes(domain))) {
+            return plugin.id;
+        }
+    }
+    
+    return 'unknown';
+}
+
+export class ProviderRegistry {
+    static async getAllProviderIds() {
+        await initPlugins();
+        return plugins.map(p => p.id);
+    }
+
+    static async getProviderDetails(providerId) {
+        await initPlugins();
+        const p = plugins.find(p => p.id === providerId);
+        if (!p) return null;
+        return {
+            id: p.id,
+            name: p.name,
+            matchUrl: (url) => {
+                const lower = url.toLowerCase();
+                return p.meta.domains.some(d => lower.includes(d));
+            }
+        };
+    }
+
+    static async fetchEpisodes(url) {
+        const plugin = await getPluginForUrl(url);
+        if (plugin && plugin.scrapeEpisodes) {
+            return await plugin.scrapeEpisodes(url);
+        }
+        console.warn(`[Registry] Tidak ada plugin yang bisa mengekstrak episode untuk URL: ${url}`);
+        return null;
+    }
+
+    static async fetchServers(url) {
+        const plugin = await getPluginForUrl(url);
+        if (plugin && plugin.scrapeServers) {
+            let realUrl = url;
+            // Beberapa provider dibungkus dengan URL proxy lokal
+            if (url.includes('?url=')) {
+                realUrl = decodeURIComponent(url.split('?url=')[1]);
+            }
+            const data = await plugin.scrapeServers(realUrl);
+            return {
+                ...data,
+                servers: standardizeServers(data?.servers || [], plugin.name)
+            };
+        }
+        console.warn(`[Registry] Tidak ada plugin yang bisa mengekstrak server untuk URL: ${url}`);
+        return { servers: [] };
+    }
+
+    static async fetchLatestUpdates(providerId) {
+        await initPlugins();
+        const plugin = plugins.find(p => p.id === providerId);
+        if (plugin && plugin.scrapeLatestUpdates) {
+            return await plugin.scrapeLatestUpdates();
+        }
+        return [];
+    }
+}

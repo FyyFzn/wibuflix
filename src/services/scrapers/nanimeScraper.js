@@ -3,9 +3,17 @@ import { getCache } from '../../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
 import Anime from '../../models/Anime.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
-import { PROVIDER_URLS, getNanimeSeriesUrl } from '../../config/providerUrls.js';
+import { PROVIDER_URLS, getProviderSeriesUrl } from '../../config/providerUrls.js';
 
-const cache = getCache('nanime', 3600);
+const cache = getCache('episodes', 3600);
+
+export const scraperMeta = {
+    id: 'nanime',
+    name: 'Nanime ID',
+    domains: ['nanimeid.net', 'nanime']
+};
+
+export const scrapeEpisodes = getNanimeEpisodes;
 
 let globalInertiaVersion = null;
 
@@ -117,9 +125,9 @@ export async function getNanimeEpisodes(animeUrl) {
             let epUrl = ep.url || ep.link;
             if (!epUrl) {
                 if (ep.slug) {
-                    epUrl = `${getNanimeSeriesUrl(anime.slug || '')}/${ep.slug}`;
+                    epUrl = `${getProviderSeriesUrl('NANIME', anime.slug || '')}/${ep.slug}`;
                 } else if (epNum !== undefined) {
-                    epUrl = `${getNanimeSeriesUrl(anime.slug || '')}/episode/${epNum}`;
+                    epUrl = `${getProviderSeriesUrl('NANIME', anime.slug || '')}/episode/${epNum}`;
                 }
             }
 
@@ -229,11 +237,11 @@ export async function getNanimeServers(episodeUrl) {
         let nav_next = null;
         if (episode.prev_episode || props.prev_episode) {
             const prev = episode.prev_episode || props.prev_episode;
-            nav_prev = prev.url || (prev.slug ? `${getNanimeSeriesUrl(anime.slug)}/${prev.slug}` : null);
+            nav_prev = prev.url || (prev.slug ? `${getProviderSeriesUrl('NANIME', anime.slug)}/${prev.slug}` : null);
         }
         if (episode.next_episode || props.next_episode) {
             const next = episode.next_episode || props.next_episode;
-            nav_next = next.url || (next.slug ? `${getNanimeSeriesUrl(anime.slug)}/${next.slug}` : null);
+            nav_next = next.url || (next.slug ? `${getProviderSeriesUrl('NANIME', anime.slug)}/${next.slug}` : null);
         }
 
         if (servers.length === 0) {
@@ -315,3 +323,8 @@ export async function getNanimeLatestUpdates() {
     }
     return updates;
 }
+
+
+// --- DYNAMIC PLUGIN SYSTEM ALIASES ---
+export const scrapeServers = getNanimeServers;
+export const scrapeLatestUpdates = getNanimeLatestUpdates;
