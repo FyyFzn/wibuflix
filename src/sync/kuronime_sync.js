@@ -62,6 +62,12 @@ export async function syncKuronime() {
 
         const now = Date.now();
         const bulkOps = [];
+        
+        // Buat Set berisi semua URL yang sudah ada di database (O(1) lookup)
+        const existingUrls = new Set();
+        existingAnimes.forEach(doc => {
+            if (doc.sourceUrls) doc.sourceUrls.forEach(u => existingUrls.add(u));
+        });
 
         for (let i = 0; i < list.length; i++) {
             // Unblock event loop agar API tidak mati!
@@ -69,6 +75,11 @@ export async function syncKuronime() {
             
             const anime = list[i];
             const normTitle = normalizeTitleForMatch(anime.title);
+
+            // Skip proses (O(1)) jika URL anime ini sudah ada di database!
+            if (existingUrls.has(anime.url)) {
+                continue;
+            }
 
             let matchedId = null;
             let bestScore = 0;
