@@ -95,7 +95,7 @@ backgroundQueue.setProcessor(async (item) => {
     }
     
     // Jalankan prefetchOneEpisode dengan source 'queue' dan bawa slugsToCheck, episodeTitle, dan uniqueId yang sudah resolved
-    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle, item.uniqueId);
+    const result = await prefetchOneEpisode(item.seriesSlug, item.episodeUrl, item.seriesTitle, 'queue', null, slugsToCheck, item.episodeTitle, item.uniqueId, null, item.urls);
     if (!result.success) {
         // Jika gagal karena error beneran, lemparkan error untuk trigger retry
         if (result.reason === 'Already processing or failed' || result.reason === 'Already extracting') {

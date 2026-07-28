@@ -13,7 +13,7 @@ class QueueManager extends EventEmitter {
         this.processor = processorFn;
     }
 
-    async add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId) {
+    async add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId, urls) {
         // Cek jika sudah ada
         let task = await QueueTask.findOne({ episodeUrl });
         if (task) {
@@ -23,6 +23,7 @@ class QueueManager extends EventEmitter {
                 task.progress = 'Masuk ke antrean ulang (Prioritas)...';
                 task.priority = Date.now(); // Jadikan prioritas utama agar langsung dikerjakan
                 if (seriesUrl && !task.seriesUrl) task.seriesUrl = seriesUrl; // update if missing
+                if (urls && !task.urls) task.urls = urls; // update if missing
                 await task.save();
                 setImmediate(() => this.processNext());
             }
@@ -38,6 +39,7 @@ class QueueManager extends EventEmitter {
             seriesTitle,
             episodeTitle,
             uniqueId,
+            urls,
             status: 'PENDING',
             priority: 0
         });
