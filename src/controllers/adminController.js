@@ -133,7 +133,7 @@ export async function searchCatalogCards(req, res) {
         const list = await Anime.find(filter)
             .sort({ updatedAt: -1 })
             .limit(40)
-            .select('title aliases image type score status isLocked malId tmdbId sources updatedAt');
+            .select('title aliases image type score status isLocked malId tmdbId sources sourceUrls updatedAt');
         res.json({ status: 'ok', data: list });
     } catch (error) {
         console.error('[Admin CatalogSearch] Error:', error.message);
