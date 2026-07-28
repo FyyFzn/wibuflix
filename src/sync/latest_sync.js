@@ -32,7 +32,7 @@ export async function runLatestSync() {
     log(`===========================================\n`);
 
     try {
-        const providerIds = ProviderRegistry.getAllProviderIds();
+        const providerIds = await ProviderRegistry.getAllProviderIds();
         for (const providerId of providerIds) {
             log(`[Latest Sync] Mengambil update terbaru dari ${providerId}...`);
             try {
