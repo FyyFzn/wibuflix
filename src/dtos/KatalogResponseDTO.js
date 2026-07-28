@@ -6,8 +6,17 @@
 export class KatalogResponseDTO {
     constructor(item = {}) {
         let finalUrl = item.url || '';
-        if (!finalUrl && item.sourceUrls && item.sourceUrls.length > 0) {
-            finalUrl = item.sourceUrls[0];
+        
+        // Backward Compatibility: Jika sourceUrls kosong, coba ekstrak dari objek sources lama
+        let mergedUrls = item.sourceUrls || [];
+        if (mergedUrls.length === 0 && item.sources) {
+            mergedUrls = Object.values(item.sources)
+                .map(s => s && s.url)
+                .filter(Boolean);
+        }
+
+        if (!finalUrl && mergedUrls.length > 0) {
+            finalUrl = mergedUrls[0];
         }
         
         let finalId = item.id || (item._id ? item._id.toString() : '');
@@ -32,6 +41,7 @@ export class KatalogResponseDTO {
         this.status = item.status || 'Completed';
         this.id = finalId || item.id || '';
         this.sources = item.sources || {};
+        this.sourceUrls = mergedUrls;
     }
 
     static from(item) {
