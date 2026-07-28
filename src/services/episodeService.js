@@ -3,6 +3,8 @@ import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtak
 import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
 
+const activeScrapeLocks = new Map();
+
 /**
  * Mencegah episode ganda berdasarkan nomor atau judul episode dan me-merge URL dari berbagai provider.
  */
