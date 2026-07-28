@@ -75,7 +75,7 @@ export async function resolveInitialAlternative({ targetUrl, seriesTitle, episod
                 const currentUrlsArray = Array.isArray(updatedUrlsObj) ? updatedUrlsObj : (updatedUrlsObj ? Object.values(updatedUrlsObj) : []);
                 updatedUrlsObj = Array.from(new Set([...currentUrlsArray, ...epUrlArray]));
 
-                for (const pUrl of epUrlArray) {
+                for (const pUrl of updatedUrlsObj) {
                     if (pUrl && pUrl !== targetUrl && !checkUrlBlacklisted(pUrl, { seriesSlug, episodeSlug, oldSeriesSlug })) {
                         const prov = getProviderKey(pUrl) || 'unknown';
                         if (prov !== currentProv) {
