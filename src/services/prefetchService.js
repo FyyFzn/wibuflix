@@ -217,14 +217,21 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                             if (!animeData || !animeData.episodes || animeData.episodes.length === 0) {
                                 animeData = await getUnifiedAnimeEpisodes({ targetUrl: episodeUrl, forceRefresh: forceRefreshOrch }).catch(() => null);
                             }
-                            const targetEp = animeData?.episodes?.find(e => 
-                                (epNum != null && e.num === epNum) || 
-                                (e.url && e.url === episodeUrl) || 
-                                (e.urls && e.urls.includes(episodeUrl))
-                            );
-                            if (targetEp?.urls && targetEp.urls.length > 0) {
-                                urlsArrayForAttempt = Array.from(new Set([...(urlsArrayForAttempt || []), ...targetEp.urls]));
-                                console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${urlsArrayForAttempt.length} link untuk multi-source fetch persis seperti Smart Play (ep ${epNum}).`);
+                            const targetEp = animeData?.episodes?.find(e => {
+                                if (epNum != null && e.num === epNum) return true;
+                                if (e.url && e.url === episodeUrl) return true;
+                                if (e.urls) {
+                                    const epUrlsArray = Array.isArray(e.urls) ? e.urls : Object.values(e.urls);
+                                    if (epUrlsArray.includes(episodeUrl)) return true;
+                                }
+                                return false;
+                            });
+                            if (targetEp?.urls) {
+                                const epUrlsArray = Array.isArray(targetEp.urls) ? targetEp.urls : Object.values(targetEp.urls);
+                                if (epUrlsArray.length > 0) {
+                                    urlsArrayForAttempt = Array.from(new Set([...(urlsArrayForAttempt || []), ...epUrlsArray]));
+                                    console.info(`${attemptPrefix} ✓ Orchestrator memperbarui URL menjadi ${urlsArrayForAttempt.length} link untuk multi-source fetch persis seperti Smart Play (ep ${epNum}).`);
+                                }
                             }
                         }
                     } catch (orchErr) {}
