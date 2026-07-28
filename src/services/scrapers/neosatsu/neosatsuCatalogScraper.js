@@ -38,6 +38,9 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
 
             for (const pUrl of staticPages) {
                 try {
+                    // Delay 2 detik agar tidak terkena 429 (Too Many Requests) dari Neosatsu
+                    await new Promise(r => setTimeout(r, 2000));
+                    
                     const { data } = await axios.get(pUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                     const $ = cheerio.load(data);
 
