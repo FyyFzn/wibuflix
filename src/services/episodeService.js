@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle, parseEpisodeText } from '../utils/stringUtils.js';
+import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle } from '../utils/stringUtils.js';
 import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
 
