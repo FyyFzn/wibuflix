@@ -121,15 +121,16 @@ async function processLatestUpdatesWithGuard(updates, providerName) {
         if (shouldUpdateTimestamp) {
             setFields.lastUpdated = new Date(now - index * 1000);
         }
-        if (providerName === 'nimegami' && item.url) {
-            setFields['sources.nimegami.url'] = item.url;
+        const updateOp = { $set: setFields };
+        if (item.url) {
+            updateOp.$addToSet = { sourceUrls: item.url };
         }
 
-        if (Object.keys(setFields).length > 0) {
+        if (Object.keys(setFields).length > 0 || updateOp.$addToSet) {
             bulkOps.push({
                 updateOne: {
                     filter: { _id: doc._id },
-                    update: { $set: setFields }
+                    update: updateOp
                 }
             });
             updatedCount++;
