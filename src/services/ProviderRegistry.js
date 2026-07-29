@@ -132,6 +132,57 @@ export class ProviderRegistry {
         };
     }
 
+    /**
+     * Mencari plugin berdasarkan URL (sync, menggunakan plugins yang sudah ter-load).
+     * Mengembalikan objek provider dengan method getServers() dan getEpisodes(), atau null.
+     */
+    static getProviderForUrl(url) {
+        if (!url) return null;
+        const lowerUrl = url.toString().toLowerCase();
+
+        for (const p of plugins) {
+            if (p.meta.domains && p.meta.domains.some(domain => lowerUrl.includes(domain))) {
+                return ProviderRegistry._wrapPlugin(p);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Mencari plugin berdasarkan ID provider (sync).
+     * Mengembalikan objek provider dengan method getServers() dan getEpisodes(), atau null.
+     */
+    static getProviderById(providerId) {
+        if (!providerId) return null;
+        const p = plugins.find(pl => pl.id === providerId);
+        if (!p) return null;
+        return ProviderRegistry._wrapPlugin(p);
+    }
+
+    /**
+     * Helper internal: membungkus plugin mentah menjadi interface provider yang seragam.
+     */
+    static _wrapPlugin(p) {
+        return {
+            id: p.id,
+            name: p.name,
+            getServers: async (url) => {
+                let realUrl = url;
+                if (url && url.includes('?url=')) {
+                    realUrl = decodeURIComponent(url.split('?url=')[1]);
+                }
+                const data = await p.scrapeServers(realUrl);
+                return {
+                    ...data,
+                    servers: standardizeServers(data?.servers || [], p.name)
+                };
+            },
+            getEpisodes: async (url) => {
+                return await p.scrapeEpisodes(url);
+            }
+        };
+    }
+
     static async fetchEpisodes(url) {
         const plugin = await getPluginForUrl(url);
         if (plugin && plugin.scrapeEpisodes) {

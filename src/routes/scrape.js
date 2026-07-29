@@ -2,7 +2,7 @@ import express from 'express';
 import { scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
 import * as otakudesu from '../services/scrapers/otakudesuScraper.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
-import { ProviderRegistry } from '../services/ProviderRegistry.js';
+import { ProviderRegistry, initPlugins } from '../services/ProviderRegistry.js';
 
 const router = express.Router();
 
@@ -32,6 +32,7 @@ router.get('/api/scrape', async (req, res) => {
 
         // --- MULTIPLE URLS SCENARIO ---
         if (urlsObj && typeof urlsObj === 'object') {
+            await initPlugins();
             const fetchTasks = [];
             for (const [providerId, provUrl] of Object.entries(urlsObj)) {
                 if (!provUrl || typeof provUrl !== 'string') continue;
@@ -57,7 +58,11 @@ router.get('/api/scrape', async (req, res) => {
         }
 
         // --- SINGLE URL SCENARIO ---
+        await initPlugins();
         const provider = ProviderRegistry.getProviderForUrl(targetUrl);
+        if (!provider) {
+            return res.status(422).json({ status: 'error', message: `Tidak ada provider yang cocok untuk URL: ${targetUrl}` });
+        }
         data = await provider.getServers(targetUrl);
 
         // Coba cari alternatif di Otakudesu (Fuzzy Search Fallback)

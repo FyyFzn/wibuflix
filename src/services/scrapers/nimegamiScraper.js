@@ -10,13 +10,32 @@ import { PROVIDER_URLS } from '../../config/providerUrls.js';
 const cache = getCache('nimegami', 3600);
 
 /**
- * Mengikis daftar episode dari halaman utama anime Nimegami
- * Menerapkan Virtual Episode Routing (?ep=X) dan 3-Layer Smart Episode vs Batch Filtering.
+ * Decode atribut `data` base64 JSON dari li.select-eps Nimegami.
+ * Format: [{format: "360p", url: ["https://..."]}, ...]
+ */
+function decodeEpisodeData(base64Str) {
+    if (!base64Str) return null;
+    try {
+        const decoded = Buffer.from(base64Str, 'base64').toString('utf8');
+        return JSON.parse(decoded);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Mengikis daftar episode dari halaman anime Nimegami.
+ *
+ * Struktur HTML yang benar:
+ *   div.streaming_eps_box > div.list_eps_stream > li.select-eps[id="play_eps_N"][data="BASE64_JSON"]
+ *
+ * Catatan: Setiap <li> berisi teks "Episode N" dan atribut `data` berisi JSON
+ * yang di-encode base64 dengan format [{format, url: [...]}, ...].
  */
 export async function getNimegamiEpisodes(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
 
-    // Hilangkan parameter ep jika ada, tapi pertahankan dl=X untuk pagination
+    // Normalisasi URL: hilangkan ?ep parameter jika ada
     let cleanUrl = targetUrl;
     try {
         const u = new URL(targetUrl);
@@ -25,14 +44,15 @@ export async function getNimegamiEpisodes(targetUrl) {
     } catch {
         cleanUrl = targetUrl.split('?')[0];
     }
-    const cacheKey = `nimegami_eps_${cleanUrl}`;
+
+    const cacheKey = `nimegami_eps_v2_${cleanUrl}`;
     const cachedData = cache.get(cacheKey);
     if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Nimegami Episodes Cache Hit] ${cacheKey}`);
         return cachedData;
     }
 
-    console.log(`\n[Nimegami Fast Fetch] ${cleanUrl}`);
+    console.log(`\n[Nimegami Episodes] Fetching: ${cleanUrl}`);
 
     let slot;
     try {
@@ -45,135 +65,76 @@ export async function getNimegamiEpisodes(targetUrl) {
             throw new Error("Target URL returned 404");
         }
 
-        let rawTitle = cleanSeriesTitle($('title').text() || '');
-        rawTitle = rawTitle.replace(/\s*:\s*Episode\s*\d+.*$/i, '').replace(/\s*-\s*Nimegami.*$/i, '').trim();
+        // Ambil judul seri dari h1.title (paling akurat)
+        let rawTitle = $('h1.title').first().text().trim() ||
+                       $('meta[property="og:title"]').attr('content') ||
+                       cleanSeriesTitle($('title').text() || '');
+        rawTitle = rawTitle
+            .replace(/\s*-\s*Nimegami.*$/i, '')
+            .replace(/\s*:\s*Episode\s*\d+.*$/i, '')
+            .replace(/\s+Sub\s+Indo.*$/i, '')
+            .replace(/\s+BD\s+Sub.*$/i, '')
+            .replace(/\s*:\s*Episode\s+\d+\s*[-\u2013]\s*\d+.*$/i, '')
+            .trim();
+        rawTitle = cleanSeriesTitle(rawTitle);
 
-        const coverImg = 
+        const coverImg =
             $('meta[property="og:image"]').attr('content') ||
-            $('.thumbnail img, .cover img, .entry-content img').first().attr('src') || '';
+            $('.coverthumbnail img, .thumbnail img').first().attr('src') || '';
 
         const daftar_episode = [];
-        const seenEpNums = new Set();
-        const baseSlugUrl = cleanUrl.replace(/\/$/, '');
-        const visitedPages = new Set([baseSlugUrl]);
-        const pagesQueue = [];
 
-        const checkAndQueuePagination = ($cheerio) => {
-            $cheerio('a').each((_, el) => {
-                let link = $cheerio(el).attr('href');
-                if (!link || link.startsWith('#') || link.startsWith('javascript:')) return;
+        // === SELECTOR UTAMA ===
+        // Semua episode ada dalam li.select-eps di div.list_eps_stream
+        $('div.list_eps_stream li.select-eps, .streaming_eps_box li.select-eps').each((_, el) => {
+            const $el = $(el);
+            const epText = $el.text().trim();          // "Episode 1", "Episode 2", dst.
+            const epId   = $el.attr('id') || '';       // "play_eps_1"
+            const dataAttr = $el.attr('data') || '';   // base64 JSON stream URLs
 
-                if (link.includes('dl=')) {
-                    const match = link.match(/dl=(\d+)/i);
-                    if (match) {
-                        const pageNum = parseInt(match[1], 10);
-                        if (pageNum >= 2 && pageNum <= 50) {
-                            const dlUrl = `${cleanUrl}?dl=${pageNum}`;
-                            if (!visitedPages.has(dlUrl)) {
-                                pagesQueue.push(dlUrl);
-                                visitedPages.add(dlUrl);
-                            }
-                        }
-                    }
-                    return;
-                }
+            // Ekstrak nomor episode dari attribute id (lebih reliabel dari teks)
+            let epNum = null;
+            const idMatch = epId.match(/play_eps_(\d+)/i);
+            if (idMatch) {
+                epNum = parseInt(idMatch[1], 10);
+            } else {
+                const textMatch = epText.match(/(?:episode|ep)\s*(\d+)/i);
+                if (textMatch) epNum = parseInt(textMatch[1], 10);
+            }
 
-                if (link.startsWith('/')) {
-                    link = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}${link}`;
-                } else if (!link.startsWith('http')) {
-                    link = `${baseSlugUrl}/${link}`;
+            if (epNum === null) return; // Skip jika tidak ada nomor episode (mis. batch/OVA tanpa nomor)
+
+            // URL virtual: baseUrl?ep=N — untuk kompatibilitas dengan sistem Virtual Routing
+            const episodeVirtualUrl = `${cleanUrl.replace(/\/$/, '')}?ep=${epNum}`;
+
+            // Pre-populate cache per-episode dari data attribute (agar getServers tidak perlu fetch ulang)
+            if (dataAttr) {
+                const streamData = decodeEpisodeData(dataAttr);
+                if (streamData && Array.isArray(streamData) && streamData.length > 0) {
+                    const baseUrlNormalized = cleanUrl.replace(/\/$/, '');
+                    cache.set(`nimegami_ep_data_${baseUrlNormalized}_ep${epNum}`, streamData);
                 }
-                const cleanLink = link.split('?')[0].replace(/\/$/, '');
-                if (cleanLink.startsWith(baseSlugUrl) && cleanLink !== baseSlugUrl && !visitedPages.has(cleanLink)) {
-                    if (/\/(?:page\/)?(\d+)$/i.test(cleanLink)) {
-                        const match = cleanLink.match(/\/(?:page\/)?(\d+)$/i);
-                        const pageNum = parseInt(match[1], 10);
-                        if (pageNum >= 2 && pageNum <= 50) {
-                            pagesQueue.push(`${cleanLink}/`);
-                            visitedPages.add(cleanLink);
-                        }
-                    }
-                }
+            }
+
+            daftar_episode.push({
+                judul: epText || `Episode ${epNum}`,
+                url: episodeVirtualUrl
             });
-        };
-
-        checkAndQueuePagination($);
-
-        // 3-Layer Smart Filtering: Lapis 1 (Label & Heading RegEx Filter)
-        $('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, tr').each((_, el) => {
-            const labelText = $(el).text().trim();
-
-            if (/batch|complete|paket|all\s*eps|01\s*-\s*\d+|1\s*-\s*\d+|zip|rar/i.test(labelText)) {
-                return;
-            }
-
-            const epMatch = labelText.match(/(?:episode|ep|eps)\s*(\d+)/i);
-            if (epMatch) {
-                const epNum = parseInt(epMatch[1], 10);
-                if (!seenEpNums.has(epNum)) {
-                    seenEpNums.add(epNum);
-                    const separator = cleanUrl.includes('?') ? '&' : '?';
-                    daftar_episode.push({
-                        judul: `Episode ${epNum}`,
-                        url: `${cleanUrl}${separator}ep=${epNum}`
-                    });
-                }
-            }
         });
 
-        // Looping untuk mengambil episode dari halaman lanjutan jika anime memiliki banyak episode (misal Inazuma Eleven)
-        let maxPages = 20;
-        while (pagesQueue.length > 0 && maxPages > 0) {
-            maxPages--;
-            const nextPageUrl = pagesQueue.shift();
-            console.log(`[Nimegami Episodes Pagination] Mengambil halaman lanjutan: ${nextPageUrl}`);
-            let nextSlot;
-            try {
-                const nextRes = await fetchWithCF(nextPageUrl, { fetchTimeout: 10000 });
-                nextSlot = nextRes.slot;
-                const next$ = nextRes.$;
-
-                checkAndQueuePagination(next$);
-
-                next$('.download, .sorasdd, .list-download, .entry-content').find('h2, h3, h4, h5, strong, b, p, tr').each((_, el) => {
-                    const labelText = next$(el).text().trim();
-                    if (/batch|complete|paket|all\s*eps|01\s*-\s*\d+|1\s*-\s*\d+|zip|rar/i.test(labelText)) {
-                        return;
-                    }
-                    const epMatch = labelText.match(/(?:episode|ep|eps)\s*(\d+)/i);
-                    if (epMatch) {
-                        const epNum = parseInt(epMatch[1], 10);
-                        if (!seenEpNums.has(epNum)) {
-                            seenEpNums.add(epNum);
-                            const separator = nextPageUrl.includes('?') ? '&' : '?';
-                            daftar_episode.push({
-                                judul: `Episode ${epNum}`,
-                                url: `${nextPageUrl}${separator}ep=${epNum}`
-                            });
-                        }
-                    }
-                });
-            } catch (err) {
-                console.warn(`[Nimegami Episodes Pagination] Gagal memuat ${nextPageUrl}:`, err.message);
-            } finally {
-                if (nextSlot) releaseToPool(nextSlot);
-            }
-        }
-
-        // Urutkan episode dari yang awal hingga akhir atau sebaliknya (biasanya descending atau ascending)
+        // Urutkan ascending berdasarkan nomor episode
         daftar_episode.sort((a, b) => {
-            const numA = parseInt(a.judul.replace(/\D/g, ''), 10) || 0;
-            const numB = parseInt(b.judul.replace(/\D/g, ''), 10) || 0;
+            const numA = parseInt(a.url.match(/[?&]ep=(\d+)/)?.[1] || '0', 10);
+            const numB = parseInt(b.url.match(/[?&]ep=(\d+)/)?.[1] || '0', 10);
             return numA - numB;
         });
 
         const result = { judul_seri: rawTitle, cover_scraper: coverImg, daftar_episode };
 
-        // Lapis 3: Zero-Data & Strict-Caching Guard
         if (daftar_episode.length > 0) {
             cache.set(cacheKey, result);
         } else {
-            console.warn(`[Nimegami] Peringatan: 0 episode tunggal ditemukan di ${cleanUrl}. Hasil tidak disimpan ke cache agar dapat di-retry/fallback.`);
+            console.warn(`[Nimegami] Peringatan: 0 episode ditemukan di ${cleanUrl}. Tidak di-cache.`);
         }
 
         return result;
@@ -185,133 +146,143 @@ export async function getNimegamiEpisodes(targetUrl) {
 }
 
 /**
- * Mengikis server streaming/download untuk episode tertentu berdasarkan Virtual Routing (?ep=X)
+ * Mengambil server streaming untuk episode tertentu berdasarkan Virtual URL (?ep=N).
+ *
+ * Data stream diambil dari:
+ *   1. Cache per-episode yang di-populate oleh getNimegamiEpisodes (paling cepat)
+ *   2. Fetch ulang halaman jika cache kosong, cari li[id="play_eps_N"] dan decode data attribute
  */
 export async function getNimegamiServers(episodeUrl) {
     if (!episodeUrl) throw new Error("Parameter 'url' wajib diisi!");
 
-    const cacheKey = `nimegami_srv_${episodeUrl}`;
+    const cacheKey = `nimegami_srv_v2_${episodeUrl}`;
     const cachedData = cache.get(cacheKey);
-    if (cachedData) {
-        return cachedData;
-    }
+    if (cachedData) return cachedData;
 
     const urlObj = new URL(episodeUrl);
     const targetEpNum = urlObj.searchParams.get('ep');
     urlObj.searchParams.delete('ep');
-    const baseUrl = urlObj.toString();
+    const baseUrl = urlObj.toString().replace(/\/$/, '');
 
-    console.log(`[Nimegami] Fetching servers for Ep ${targetEpNum} from: ${baseUrl}`);
+    console.log(`[Nimegami] Fetching servers Ep ${targetEpNum} dari: ${baseUrl}`);
 
-    let slot;
-    try {
-        const fetchRes = await fetchWithCF(baseUrl, { fetchTimeout: 10000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-
-        let judul = cleanSeriesTitle($('title').text() || '');
-        if (targetEpNum) {
-            judul = `${judul} - Episode ${targetEpNum}`;
-        }
-
-        const servers = [];
-        const seenServers = new Set();
-
-        const allowedHostKeywords = ['kraken', 'pdrain', 'vidhide', 'filedon', 'gofile', 'acefile', 'mega', 'pucuk', 'pixeldrain', 'wibufile', 'filemoon', 'filelions', 'moonplayer', 'mirrorupload', 'desudrive', 'ondrive', 'mirror', 'zippyshare', 'filesim', 'hxfile', 'mp4upload', 'racaty', 'cloudmail', 'vstream', 'streamhide', 'yourupload', 'filecloud', 'desustream', 'berkasdrive', 'drive', 'google', 'anonfiles', 'bayfiles', 'letupload', 'uptobox', 'mediafire', 'streamhub', 'voe', 'streamsb', 'uqload', 'odrive', 'sendwire', 'mixdrop', 'dood', 'streamtape', 'abysscdn', 'kurodrive', 'solidfiles', 'tusfiles', 'usercloud', 'userscloud', 'ulozto', 'clicknupload', 'hexupload', 'rapidgator', 'turbobit', 'nitroflare', 'filerio', 'dailyuploads', 'downace', 'filescdn', 'indishare', 'bdupload', 'uptostream', 'streamango', 'openload', 'verystream', 'clipwatching', 'vidoza', 'vidia', 'filechan', 'letsupload', 'yandex', 'mail.ru', 'dropapk', 'megaup', 'otakudesu', 'samehadaku', 'kuronime', 'nanime', 'embed', 'player', 'video', 'stream'];
-        const blockedKeywords = /batch|zip|rar|7z|gdrive|mega\.nz|zippyshare|mediafire|google/i;
-
-        $('.download, .sorasdd, .list-download, .entry-content, .box-download, #LinkDownload, .list_dl').find('h2, h3, h4, h5, strong, b, p, tr, li, div').each((_, el) => {
-            const text = $(el).text().trim();
-            if (/batch|01\s*-\s*\d+/i.test(text)) return;
-
-            const epMatch = text.match(/(?:episode|ep|eps)\s*(\d+)/i);
-            if (epMatch && (!targetEpNum || parseInt(epMatch[1], 10) === parseInt(targetEpNum, 10))) {
-                let linkElements = $(el).find('a');
-                if (linkElements.length === 0) {
-                    linkElements = $(el).nextUntil('h1, h2, h3, h4, h5, hr, tr').find('a');
-                }
-                if (linkElements.length === 0 && $(el).parent().length > 0) {
-                    linkElements = $(el).parent().find('a');
-                }
-
-                linkElements.each((__, aEl) => {
-                    let href = $(aEl).attr('href');
-                    const linkText = $(aEl).text().trim();
-
-                    if (!href || href.startsWith('#') || blockedKeywords.test(href) || blockedKeywords.test(linkText)) {
-                        return;
-                    }
-
-                    // Decode base64 shortlink if nimegami uses ?url=
-                    if (href.includes('url=')) {
-                        try {
-                            const urlParam = new URL(href.startsWith('http') ? href : `${PROVIDER_URLS.NIMEGAMI.BASE_URL}${href}`).searchParams.get('url');
-                            if (urlParam) {
-                                const decoded = Buffer.from(urlParam, 'base64').toString('utf8');
-                                if (decoded.startsWith('http')) {
-                                    href = decoded;
-                                } else if (urlParam.startsWith('http')) {
-                                    href = urlParam;
-                                }
-                            }
-                        } catch (e) {}
-                    }
-
-                    const hostMatch = allowedHostKeywords.find(h => href.toLowerCase().includes(h) || linkText.toLowerCase().includes(h));
-                    if (hostMatch) {
-                        let resText = 'MP4';
-                        const parentText = $(aEl).parent().text() || '';
-                        if (parentText.includes('1080p') || linkText.includes('1080p')) resText = '1080p';
-                        else if (parentText.includes('720p') || linkText.includes('720p')) resText = '720p';
-                        else if (parentText.includes('480p') || linkText.includes('480p')) resText = '480p';
-                        else if (parentText.includes('360p') || linkText.includes('360p')) resText = '360p';
-
-                        let normalizedHref = href;
-                        const isEmbedHost = ['filemoon', 'filelions', 'moonplayer', 'wibufile'].some(h => hostMatch.includes(h) || linkText.toLowerCase().includes(h));
-                        if (isEmbedHost && normalizedHref.match(/\/f\/[^/]+\/?$/)) {
-                            normalizedHref = normalizedHref.replace(/\/f\//, '/e/');
-                        }
-                        const label = linkText.length > 2 && !/^\d+p$/i.test(linkText) ? linkText : hostMatch.charAt(0).toUpperCase() + hostMatch.slice(1);
-                        const srvKey = `${resText}-${label}-${normalizedHref}`;
-                        if (!seenServers.has(srvKey)) {
-                            seenServers.add(srvKey);
-                            servers.push({
-                                nama: `${resText} MP4`,
-                                namaHost: label,
-                                iframeUrl: normalizedHref,
-                                type: 'direct',
-                                aktif: servers.length === 0
-                            });
-                        }
-                    }
-                });
-            }
-        });
-
-        let nav_prev = null;
-        let nav_next = null;
-        if (targetEpNum && !isNaN(targetEpNum)) {
-            const epNum = parseInt(targetEpNum, 10);
-            if (epNum > 1) {
-                const uPrev = new URL(baseUrl);
-                uPrev.searchParams.set('ep', epNum - 1);
-                nav_prev = uPrev.toString();
-            }
-            const uNext = new URL(baseUrl);
-            uNext.searchParams.set('ep', epNum + 1);
-            nav_next = uNext.toString();
-        }
-
-        const result = { judul, servers, nav_prev, nav_next };
-        if (servers.length > 0) {
-            cache.set(cacheKey, result);
-        }
-        return result;
-    } catch (err) {
-        throw err;
-    } finally {
-        if (slot) releaseToPool(slot);
+    // 1. Coba ambil dari cache per-episode
+    let streamData = null;
+    const cacheKeysToTry = [
+        `nimegami_ep_data_${baseUrl}_ep${targetEpNum}`,
+        `nimegami_ep_data_${baseUrl.replace(/\/$/, '')}_ep${targetEpNum}`,
+        `nimegami_ep_data_${baseUrl}//_ep${targetEpNum}`
+    ];
+    for (const k of cacheKeysToTry) {
+        streamData = cache.get(k);
+        if (streamData) break;
     }
+
+    // 2. Jika tidak ada di cache, fetch ulang halaman
+    if (!streamData) {
+        let slot;
+        try {
+            const fetchRes = await fetchWithCF(baseUrl, { fetchTimeout: 10000 });
+            slot = fetchRes.slot;
+            const $ = fetchRes.$;
+
+            if (targetEpNum) {
+                // Cari li dengan id yang tepat
+                const $li = $(`li.select-eps[id="play_eps_${targetEpNum}"]`);
+                if ($li.length > 0) {
+                    streamData = decodeEpisodeData($li.attr('data') || '');
+                }
+
+                // Fallback: iterasi semua li dan cocokkan nomor
+                if (!streamData) {
+                    $('div.list_eps_stream li.select-eps, .streaming_eps_box li.select-eps').each((_, el) => {
+                        const $el = $(el);
+                        const idAttr = $el.attr('id') || '';
+                        const idMatch = idAttr.match(/play_eps_(\d+)/i);
+                        if (idMatch && parseInt(idMatch[1], 10) === parseInt(targetEpNum, 10)) {
+                            streamData = decodeEpisodeData($el.attr('data') || '');
+                            return false; // break each
+                        }
+                    });
+                }
+            } else {
+                // Tanpa nomor episode, ambil episode pertama
+                const $first = $('div.list_eps_stream li.select-eps').first();
+                if ($first.length > 0) {
+                    streamData = decodeEpisodeData($first.attr('data') || '');
+                }
+            }
+        } catch (err) {
+            throw err;
+        } finally {
+            if (slot) releaseToPool(slot);
+        }
+    }
+
+    if (!streamData || !Array.isArray(streamData) || streamData.length === 0) {
+        console.warn(`[Nimegami] Tidak ada data stream untuk Ep ${targetEpNum} di ${baseUrl}`);
+        return { judul: `Episode ${targetEpNum || '?'}`, servers: [], nav_prev: null, nav_next: null };
+    }
+
+    // Transformasi stream data ke format servers standar
+    const servers = [];
+    const seenKeys = new Set();
+
+    for (const item of streamData) {
+        const format = item.format || 'MP4';
+        const urls = Array.isArray(item.url) ? item.url : (item.url ? [item.url] : []);
+
+        for (const streamUrl of urls) {
+            if (!streamUrl) continue;
+
+            let hostName = 'Direct';
+            try {
+                const h = new URL(streamUrl);
+                const parts = h.hostname.replace('www.', '').split('.');
+                hostName = parts[0];
+                hostName = hostName.charAt(0).toUpperCase() + hostName.slice(1);
+            } catch {}
+
+            const srvKey = `${format}-${streamUrl}`;
+            if (seenKeys.has(srvKey)) continue;
+            seenKeys.add(srvKey);
+
+            servers.push({
+                nama: `${format} MP4`,
+                namaHost: hostName,
+                iframeUrl: streamUrl,
+                type: 'direct',
+                aktif: servers.length === 0
+            });
+        }
+    }
+
+    // Navigasi prev / next
+    let nav_prev = null;
+    let nav_next = null;
+    if (targetEpNum && !isNaN(targetEpNum)) {
+        const epNum = parseInt(targetEpNum, 10);
+        if (epNum > 1) {
+            nav_prev = `${baseUrl}?ep=${epNum - 1}`;
+        }
+        nav_next = `${baseUrl}?ep=${epNum + 1}`;
+    }
+
+    // Judul episode: ambil dari cache episodes jika ada
+    const epsCacheKey = `nimegami_eps_v2_${baseUrl}`;
+    const epsCache = cache.get(epsCacheKey);
+    const seriTitle = epsCache?.judul_seri || '';
+    const judulEpisode = seriTitle
+        ? `${seriTitle} - Episode ${targetEpNum}`
+        : `Episode ${targetEpNum || '?'}`;
+
+    const result = { judul: judulEpisode, servers, nav_prev, nav_next };
+
+    if (servers.length > 0) {
+        cache.set(cacheKey, result);
+    }
+
+    return result;
 }
 
 /**
@@ -395,7 +366,6 @@ export async function getNimegamiLatestUpdates() {
 }
 
 export { cache };
-
 
 // --- DYNAMIC PLUGIN SYSTEM ALIASES ---
 export const scraperMeta = {

@@ -170,6 +170,10 @@ async function executeScraperStrategy(targetUrl) {
     if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
         targetUrl = targetUrl.split('___neosatsu_ep___')[0];
     }
+
+    // Identifikasi provider ID dari URL untuk keperluan logika per-provider
+    const { getProviderIdFromUrlSync } = await import('./ProviderRegistry.js');
+    const providerName = getProviderIdFromUrlSync(targetUrl);
     
     const data = await ProviderRegistry.fetchEpisodes(targetUrl);
     
@@ -177,8 +181,6 @@ async function executeScraperStrategy(targetUrl) {
         console.warn(`[Scraper Factory] Tidak ada fungsi scraper yang terdaftar untuk URL: ${targetUrl}`);
         return { judul_seri: 'Unknown', daftar_episode: [] };
     }
-
-    if (!data) return { judul_seri: 'Unknown', daftar_episode: [] };
 
     // 1. Standarisasi Judul Seri
     data.judul_seri = cleanSeriesTitle(data.judul_seri);
@@ -395,7 +397,7 @@ export async function getEpisodeServiceData({ targetUrl, providerUrls = {}, forc
         }
     }
 
-    const lockKey = targetUrl || dbAnime?._id?.toString() || urlSamehadaku || urlOtakudesu || 'global_scrape';
+    const lockKey = targetUrl || dbAnime?._id?.toString() || 'global_scrape';
     if (activeScrapeLocks.has(lockKey)) {
         console.log(`[EpisodeService] Menggunakan hasil dari scraping yang sedang berjalan (Lock Key: ${lockKey})`);
         const data = await activeScrapeLocks.get(lockKey);
