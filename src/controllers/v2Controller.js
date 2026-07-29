@@ -11,6 +11,15 @@ export async function getV2Episodes(req, res) {
     const id = req.query.id;
     const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
 
+    let providerUrls = {};
+    if (req.query.urls) {
+        try {
+            providerUrls = typeof req.query.urls === 'string' ? JSON.parse(req.query.urls) : req.query.urls;
+        } catch (e) {
+            console.warn('[v2Controller] Failed to parse urls parameter', e.message);
+        }
+    }
+
     if (!slug && !targetUrl && !id) {
         return res.status(400).json({
             status: 'error',
@@ -23,7 +32,8 @@ export async function getV2Episodes(req, res) {
             targetUrl,
             slug,
             id,
-            forceRefresh
+            forceRefresh,
+            providerUrls
         });
 
         if (!res.headersSent) {

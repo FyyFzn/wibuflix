@@ -40,8 +40,8 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                         return await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
                     } catch (e) {
                         if (e.response && e.response.status === 429) {
-                            console.warn(`[Neosatsu Scraper] 429 Too Many Requests on ${url}. Retrying in 5 seconds...`);
-                            await new Promise(r => setTimeout(r, 5000));
+                            console.warn(`[Neosatsu Scraper] 429 Too Many Requests on ${url}. Retrying in 10 seconds...`);
+                            await new Promise(r => setTimeout(r, 10000));
                         } else {
                             throw e;
                         }
@@ -54,8 +54,8 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
 
             for (const pUrl of staticPages) {
                 try {
-                    // Delay 2 detik agar tidak terkena 429 (Too Many Requests) dari Neosatsu
-                    await new Promise(r => setTimeout(r, 2000));
+                    // Delay 10 detik agar tidak terkena 429 (Too Many Requests) dari Neosatsu / Blogger
+                    await new Promise(r => setTimeout(r, 10000));
                     
                     const { data } = await fetchNeosatsu(pUrl);
                     const $ = cheerio.load(data);
@@ -125,7 +125,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             for (const feed of labelFeeds) {
                 try {
                     console.debug(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
-                    await new Promise(r => setTimeout(r, 2000)); // Add delay here as well
+                    await new Promise(r => setTimeout(r, 10000)); // Add 10s delay to avoid 429
 
                     const fUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
                     const { data } = await fetchNeosatsu(fUrl);

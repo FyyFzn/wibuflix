@@ -61,7 +61,7 @@ export const orchestratorCache = new LRUMemoryCache(1500, 3600000);
  * Menerima slug/ID atau URL tunggal, mencari di DB, menggabungkan semua provider secara paralel,
  * dan mengembalikan struktur data bersih siap render.
  */
-export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefresh = false }) {
+export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefresh = false, providerUrls = {} }) {
     let queryUrl = targetUrl;
     if (typeof queryUrl === 'string' && queryUrl.includes('___neosatsu_ep___')) {
         queryUrl = queryUrl.split('___neosatsu_ep___')[0];
@@ -91,8 +91,14 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
         }
     }
 
-    if (!queryUrl) {
-        throw new Error("Anime tidak ditemukan atau parameter pencarian (url/slug/id) tidak valid.");
+    if (!queryUrl && Object.keys(providerUrls).length === 0) {
+        throw new Error("Anime tidak ditemukan atau parameter pencarian (url/slug/id/urls) tidak valid.");
+    }
+
+    // Jika queryUrl kosong tapi ada providerUrls, pakai providerUrls pertama sebagai key cache dan fallback url
+    const firstUrl = Object.values(providerUrls)[0];
+    if (!queryUrl && firstUrl) {
+        queryUrl = firstUrl;
     }
 
     const cacheKey = `v2_episodes_${queryUrl}`;
@@ -109,7 +115,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
     // 3. Panggil pipeline penggabungan multi-sumber dari episodeService
     // Backend secara otomatis membaca dbAnime.sources dan mengikis Samehadaku, Otakudesu, Kuronime, Nanime ID!
     console.log(`[Orchestrator] Memproses dan menggabungkan episode multi-sumber untuk: ${queryUrl}`);
-    const rawResult = await getEpisodeServiceData({ targetUrl: queryUrl, forceRefresh });
+    const rawResult = await getEpisodeServiceData({ targetUrl: queryUrl, providerUrls, forceRefresh });
 
     if (!rawResult || rawResult.status === 'error') {
         throw new Error(rawResult?.message || "Gagal mengambil daftar episode dari sumber.");
