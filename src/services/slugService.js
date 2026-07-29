@@ -30,8 +30,30 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
         if (episodeUrl.includes('?url=')) {
             realEpUrl = decodeURIComponent(episodeUrl.split('?url=')[1]);
         }
-        const cleanUrl = realEpUrl.replace(/\/$/, '');
+
+        // Pisahkan query string sebelum mengekstrak slug path
+        // Ini penting untuk URL virtual seperti Nimegami: https://nimegami.id/black-lagoon-s2/?ep=1
+        // tanpa ini, split('/').pop() akan menghasilkan "?ep=1" bukan "black-lagoon-s2"
+        let urlPathOnly = realEpUrl;
+        let urlQueryStr = '';
+        const qIdx = realEpUrl.indexOf('?');
+        if (qIdx !== -1) {
+            urlPathOnly = realEpUrl.substring(0, qIdx);
+            urlQueryStr = realEpUrl.substring(qIdx);
+        }
+
+        const cleanUrl = urlPathOnly.replace(/\/$/, '');
         episodeSlug = cleanUrl.split('/').pop() || 'uncategorized_ep';
+
+        // Nimegami menggunakan Virtual Episode Routing (?ep=N) bukan path episode terpisah.
+        // Normalisasi episodeSlug agar mengandung nomor episode dari query string.
+        if (realEpUrl.includes('nimegami') && urlQueryStr) {
+            const epMatch = urlQueryStr.match(/[?&]ep=(\d+)/);
+            if (epMatch) {
+                // Format: {anime-slug}-episode-{N} agar konsisten dengan provider lain
+                episodeSlug = `${episodeSlug}-episode-${epMatch[1]}`;
+            }
+        }
 
         // Kuronime menggunakan prefix "nonton-" di URL episode (misal: /nonton-baki-dou-episode-1/)
         // Hapus prefix ini dari episodeSlug agar nama folder di Azure konsisten dengan provider lain
