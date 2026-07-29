@@ -122,6 +122,46 @@ export async function getNimegamiEpisodes(targetUrl) {
             });
         });
 
+        // === SELECTOR KEDUA (Fallback untuk postingan Batch / Download Only) ===
+        if (daftar_episode.length === 0) {
+            $('h4, h3, .download_box .title, .batch-dlcuy .title').each((_, headerEl) => {
+                const epText = $(headerEl).text().trim();
+                const epNumMatch = epText.match(/(?:episode|ep)\s*(\d+)/i);
+                
+                if (epNumMatch && !epText.toLowerCase().includes('batch')) {
+                    const epNum = parseInt(epNumMatch[1], 10);
+                    
+                    const ulEl = $(headerEl).next('ul');
+                    if (ulEl.length > 0) {
+                        const streamData = [];
+                        ulEl.find('li').each((_, liEl) => {
+                            const format = $(liEl).find('strong').text().trim().replace(/p$/i, 'P'); 
+                            const urls = [];
+                            $(liEl).find('a').each((_, aEl) => {
+                                urls.push($(aEl).attr('href'));
+                            });
+                            if (urls.length > 0) {
+                                streamData.push({ format, url: urls });
+                            }
+                        });
+                        
+                        if (streamData.length > 0) {
+                            const baseUrlNormalized = cleanUrl.replace(/\/$/, '');
+                            cache.set(`nimegami_ep_data_${baseUrlNormalized}_ep${epNum}`, streamData);
+                            
+                            // Hindari duplikasi jika format HTML berulang
+                            if (!daftar_episode.find(ep => ep.url === `${baseUrlNormalized}?ep=${epNum}`)) {
+                                daftar_episode.push({
+                                    judul: epText,
+                                    url: `${baseUrlNormalized}?ep=${epNum}`
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // Urutkan ascending berdasarkan nomor episode
         daftar_episode.sort((a, b) => {
             const numA = parseInt(a.url.match(/[?&]ep=(\d+)/)?.[1] || '0', 10);
