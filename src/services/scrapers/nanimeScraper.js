@@ -42,19 +42,23 @@ export async function fetchNanimeInertia(url) {
         }
         return response.data;
     } catch (err) {
-        // Jika 409 Conflict (Inertia version mismatch/missing), fallback ambil HTML normal
-        if (err.response?.status === 409 || !globalInertiaVersion) {
-            console.log(`[Inertia 409] Version mismatch/missing pada ${url}. Mengambil HTML untuk membaca data-page & version baru...`);
-            const htmlRes = await axios.get(url, {
-                headers: {
-                    'Cookie': cookie,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Referer': `${PROVIDER_URLS.NANIME.BASE_URL}/`
-                },
-                timeout: 20000
-            });
-            const html = htmlRes.data;
+        // Jika 409 Conflict atau error server (termasuk 522 Cloudflare Timeout), fallback ambil HTML via Puppeteer
+        if (err.response?.status === 409 || err.response?.status === 403 || err.response?.status >= 500 || !globalInertiaVersion) {
+            console.log(`[Inertia Fallback] Terjadi error ${err.response?.status || 'Unknown'} pada ${url}. Mengambil HTML via Puppeteer...`);
+            let html = '';
+            try {
+                const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
+                const fetchRes = await fetchWithCF(url, { forcePuppeteer: true, timeout: 30000 });
+                html = fetchRes.html;
+                if (fetchRes.slot) {
+                    const { releaseToPool } = await import('../../puppeteer/pool.js');
+                    releaseToPool(fetchRes.slot);
+                }
+            } catch (fallbackErr) {
+                console.error(`[Inertia Fallback Error] Gagal mengambil HTML via Puppeteer: ${fallbackErr.message}`);
+                throw err;
+            }
+
             const match = html.match(/data-page="([^"]+)"/) || html.match(/data-page='([^']+)'/);
             if (match && match[1]) {
                 const decodedJson = match[1].replace(/&quot;/g, '"');

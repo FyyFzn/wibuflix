@@ -122,11 +122,15 @@ export async function fetchWithCF(url, options = {}) {
             // agar Cloudflare langsung mengenali session ini sebagai sudah terverifikasi
             await injectCFCookies(page, url);
 
-            // ⚠️ FIX 2: Gunakan 'networkidle2' bukan 'domcontentloaded'
-            // CF challenge butuh request JS tambahan setelah DOM siap
-            const response = await page.goto(url, { waitUntil: 'networkidle2', timeout }).catch(async () => {
-                // Jika networkidle2 timeout, coba domcontentloaded sebagai fallback
-                return page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+            // ⚠️ FIX 2: Gunakan 'domcontentloaded' dan handle frame detached
+            // CF challenge butuh request JS tambahan, jika me-refresh otomatis akan trigger 'Navigating frame was detached'
+            const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout }).catch(async (e) => {
+                if (e.message && (e.message.includes('Navigating frame was detached') || e.message.includes('Execution context was destroyed'))) {
+                    // Biarkan saja, browser sedang me-refresh ke halaman challenge
+                    return null;
+                }
+                // Jika error lain (timeout), coba lagi tanpa waitUntil
+                return page.goto(url, { timeout }).catch(() => null);
             });
 
             if (response && response.status() === 404) {
@@ -156,9 +160,10 @@ export async function fetchWithCF(url, options = {}) {
                 slot = await acquireFromPool(hostname);
                 const retryPage = slot.page;
                 await injectCFCookies(retryPage, url);
-                await retryPage.goto(url, { waitUntil: 'networkidle2', timeout }).catch(() =>
-                    retryPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
-                );
+                await retryPage.goto(url, { waitUntil: 'domcontentloaded', timeout }).catch(async (e) => {
+                    if (e.message && (e.message.includes('Navigating frame was detached') || e.message.includes('Execution context was destroyed'))) return null;
+                    return retryPage.goto(url, { timeout }).catch(() => null);
+                });
                 await waitForCloudflare(retryPage);
                 if (url.includes('kuronime')) {
                     await retryPage.waitForFunction(() => {

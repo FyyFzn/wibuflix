@@ -34,6 +34,22 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                 `${neosatsuBase}/p/power-rangers-series.html`
             ];
 
+            const fetchNeosatsu = async (url) => {
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        return await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+                    } catch (e) {
+                        if (e.response && e.response.status === 429) {
+                            console.warn(`[Neosatsu Scraper] 429 Too Many Requests on ${url}. Retrying in 5 seconds...`);
+                            await new Promise(r => setTimeout(r, 5000));
+                        } else {
+                            throw e;
+                        }
+                    }
+                }
+                throw new Error(`Max retries reached for 429 on ${url}`);
+            };
+
             const uniqueCheck = new Set();
 
             for (const pUrl of staticPages) {
@@ -41,7 +57,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                     // Delay 2 detik agar tidak terkena 429 (Too Many Requests) dari Neosatsu
                     await new Promise(r => setTimeout(r, 2000));
                     
-                    const { data } = await axios.get(pUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+                    const { data } = await fetchNeosatsu(pUrl);
                     const $ = cheerio.load(data);
 
                     let tipe = 'Series';
@@ -109,8 +125,10 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             for (const feed of labelFeeds) {
                 try {
                     console.debug(`[Neosatsu Scraper] Fetching JSON Feed for Label: ${feed.label}...`);
+                    await new Promise(r => setTimeout(r, 2000)); // Add delay here as well
+
                     const fUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
-                    const { data } = await axios.get(fUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+                    const { data } = await fetchNeosatsu(fUrl);
                     
                     if (data && data.feed && data.feed.entry) {
                         data.feed.entry.forEach(entry => {
