@@ -11,7 +11,7 @@ class LRUMemoryCache {
         this.max = max;
         this.ttl = ttl;
         this.cache = new Map();
-        
+
         this.cleanupInterval = setInterval(() => {
             const now = Date.now();
             for (const [key, item] of this.cache.entries()) {
@@ -122,12 +122,12 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
     // 4. Transformasi ke format Unified Thin Client
     const unifiedEpisodes = sanitizedDaftarEpisode.map((ep, idx) => {
         const titleLower = (ep.judul || '').toLowerCase().trim();
-        const isOvaTitle = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(titleLower) || 
-                           /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(titleLower) ||
-                           /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(titleLower);
+        const isOvaTitle = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(titleLower) ||
+            /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(titleLower) ||
+            /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(titleLower);
         const epNum = isOvaTitle ? null : (ep.num != null ? ep.num : extractEpNum(ep.judul));
         const epId = epNum != null ? `ep_${epNum}` : `idx_${idx}`;
-        
+
         let urlsObj = ep.urls || {};
         if (urlsObj instanceof Map || typeof urlsObj.entries === 'function') {
             urlsObj = Object.fromEntries(urlsObj);
