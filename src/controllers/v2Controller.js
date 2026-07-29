@@ -20,10 +20,10 @@ export async function getV2Episodes(req, res) {
         }
     }
 
-    if (!slug && !targetUrl && !id) {
+    if (!slug && !targetUrl && !id && Object.keys(providerUrls).length === 0) {
         return res.status(400).json({
             status: 'error',
-            message: "Parameter 'slug', 'id', atau 'url' wajib diisi untuk mengambil episode!"
+            message: "Parameter 'slug', 'id', 'url', atau 'urls' wajib diisi untuk mengambil episode!"
         });
     }
 
