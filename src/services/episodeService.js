@@ -165,6 +165,7 @@ export async function findAnimeInDatabase({ targetUrl, providerUrls = {} }) {
 /**
  * Strategy Pattern Gateway: Mendelegasikan scraping berdasarkan provider URL
  * dan menerapkan standarisasi judul & format episode secara terpadu.
+ * Jika scraper timeout atau gagal, return kosong agar provider lain tetap bisa dipakai.
  */
 async function executeScraperStrategy(targetUrl) {
     if (typeof targetUrl === 'string' && targetUrl.includes('___neosatsu_ep___')) {
@@ -175,7 +176,13 @@ async function executeScraperStrategy(targetUrl) {
     const { getProviderIdFromUrlSync } = await import('./ProviderRegistry.js');
     const providerName = getProviderIdFromUrlSync(targetUrl);
     
-    const data = await ProviderRegistry.fetchEpisodes(targetUrl);
+    let data;
+    try {
+        data = await ProviderRegistry.fetchEpisodes(targetUrl);
+    } catch (err) {
+        console.warn(`[Scraper Factory] ⚠️ Scraper gagal/timeout untuk ${providerName} (${targetUrl}): ${err.message}`);
+        return { judul_seri: 'Unknown', daftar_episode: [] };
+    }
     
     if (!data) {
         console.warn(`[Scraper Factory] Tidak ada fungsi scraper yang terdaftar untuk URL: ${targetUrl}`);
@@ -239,9 +246,9 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
     let allResults = await Promise.all(scrapePromises);
     allResults = allResults.filter(r => r && r.daftar_episode && r.daftar_episode.length > 0);
 
-    // ZERO DATA LOSS FALLBACK: Jika hasil gabungan kosong tapi targetUrl ada, ambil langsung
-    if (allResults.length === 0 && targetUrl) {
-        console.log(`[Scraper Fallback] Multi-source merge mengembalikan 0 episode. Mengambil langsung dari targetUrl: ${targetUrl}`);
+    // ZERO DATA LOSS FALLBACK: Jika hasil gabungan kosong dan targetUrl belum pernah di-scrape sebelumnya
+    if (allResults.length === 0 && targetUrl && !urlsToScrape.has(targetUrl)) {
+        console.log(`[Scraper Fallback] Multi-source merge kosong. Mencoba targetUrl yang belum discrape: ${targetUrl}`);
         const fallbackRes = await executeScraperStrategy(targetUrl).catch(() => null);
         if (fallbackRes && fallbackRes.daftar_episode && fallbackRes.daftar_episode.length > 0) {
             allResults.push(fallbackRes);
@@ -358,48 +365,78 @@ async function finalizeScrapedData(data, dbAnime) {
 }
 
 /**
+ * Helper: konversi episodesList dari Mongoose ke plain object
+ */
+function buildEpisodeData(dbAnime) {
+    const rawCleanEpsList = dbAnime.episodesList.map(ep => {
+        const epObj = ep.toObject ? ep.toObject({ flattenMaps: true }) : { ...ep };
+        if (epObj.urls && (epObj.urls instanceof Map || typeof epObj.urls.entries === 'function')) {
+            epObj.urls = Object.fromEntries(epObj.urls);
+        }
+        return epObj;
+    });
+    return {
+        judul_seri: dbAnime.title,
+        daftar_episode: sanitizeContaminatedEpisodeCards(rawCleanEpsList),
+        cover_scraper: dbAnime.image,
+        mal: {
+            malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
+            synopsis: dbAnime.synopsis || null,
+            status: dbAnime.status,
+            genres: dbAnime.genres || [],
+            episodes: dbAnime.episodesCount,
+            year: dbAnime.year,
+            cover: dbAnime.image,
+            malId: dbAnime.malId
+        }
+    };
+}
+
+/**
  * Logika utama dari Service:
- * Mengambil episode dari database (jika ada & masih relevan) atau menjalankan scraping real-time.
+ * Prinsip: "serve dulu, refresh belakangan"
+ * - Jika episodesList ADA isinya → langsung serve dari DB (tidak peduli provider apa)
+ * - Jika data sudah stale (>1 jam) → trigger background refresh tanpa blokir response
+ * - Jika episodesList KOSONG → scrape real-time (blokir hingga selesai)
  */
 export async function getEpisodeServiceData({ targetUrl, providerUrls = {}, forceRefresh = false }) {
     const dbAnime = await findAnimeInDatabase({ targetUrl, providerUrls });
 
-    if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0 && !forceRefresh) {
-        const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
-        
-        if (cacheAge <= 3600000) {
-            console.log(`[Cache] Menggunakan cache episode terbaru untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit)`);
-            const rawCleanEpsList = dbAnime.episodesList.map(ep => {
-                const epObj = ep.toObject ? ep.toObject({ flattenMaps: true }) : { ...ep };
-                if (epObj.urls && (epObj.urls instanceof Map || typeof epObj.urls.entries === 'function')) {
-                    epObj.urls = Object.fromEntries(epObj.urls);
-                }
-                return epObj;
-            });
-            const cleanEpsList = sanitizeContaminatedEpisodeCards(rawCleanEpsList);
-            const data = {
-                judul_seri: dbAnime.title,
-                daftar_episode: cleanEpsList,
-                cover_scraper: dbAnime.image,
-                mal: {
-                    malScore: dbAnime.malScore && dbAnime.malScore !== '-' ? dbAnime.malScore : dbAnime.score,
-                    synopsis: dbAnime.synopsis || null,
-                    status: dbAnime.status,
-                    genres: dbAnime.genres || [],
-                    episodes: dbAnime.episodesCount,
-                    year: dbAnime.year,
-                    cover: dbAnime.image,
-                    malId: dbAnime.malId
-                }
-            };
+    const hasEpisodes = dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0;
 
-            return { status: 'success', data, source: 'database' };
+    if (hasEpisodes && !forceRefresh) {
+        const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
+        const isStale = cacheAge > 3600000; // > 1 jam
+
+        // Serve dari DB sekarang — tidak peduli provider apa, tidak peduli umur data
+        const data = buildEpisodeData(dbAnime);
+        console.log(`[Cache] ✅ Serve dari DB untuk: ${dbAnime.title} (Umur: ${Math.floor(cacheAge / 60000)} menit${isStale ? ' — stale, trigger background refresh' : ''})`);
+
+        if (isStale) {
+            // Background refresh: tidak blokir response, scrape di belakang layar
+            const lockKey = dbAnime._id.toString();
+            if (!activeScrapeLocks.has(lockKey)) {
+                const refreshPromise = (async () => {
+                    try {
+                        await scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls });
+                        console.log(`[Cache] 🔄 Background refresh selesai untuk: ${dbAnime.title}`);
+                    } catch (err) {
+                        console.warn(`[Cache] Background refresh gagal untuk ${dbAnime.title}: ${err.message}`);
+                    } finally {
+                        activeScrapeLocks.delete(lockKey);
+                    }
+                })();
+                activeScrapeLocks.set(lockKey, refreshPromise);
+            }
         }
+
+        return { status: 'success', data, source: 'database' };
     }
 
+    // episodesList kosong → perlu scrape real-time (first-time load)
     const lockKey = targetUrl || dbAnime?._id?.toString() || 'global_scrape';
     if (activeScrapeLocks.has(lockKey)) {
-        console.log(`[EpisodeService] Menggunakan hasil dari scraping yang sedang berjalan (Lock Key: ${lockKey})`);
+        console.log(`[EpisodeService] Menunggu scraping yang sedang berjalan (Lock Key: ${lockKey})`);
         const data = await activeScrapeLocks.get(lockKey);
         return { status: 'success', data, source: 'scraper' };
     }
@@ -417,3 +454,5 @@ export async function getEpisodeServiceData({ targetUrl, providerUrls = {}, forc
     const data = await scrapePromise;
     return { status: 'success', data, source: 'scraper' };
 }
+
+

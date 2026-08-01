@@ -99,7 +99,7 @@ export async function getKatalog(pageParams, searchParam, typeFilter = '', tabPa
                         type: 1,
                         score: 1,
                         status: 1,
-                        sources: 1
+                        sourceUrls: 1
                     }
                 },
                 { $skip: skip },

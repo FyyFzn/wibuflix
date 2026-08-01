@@ -183,10 +183,13 @@ export class ProviderRegistry {
         };
     }
 
-    static async fetchEpisodes(url) {
+    static async fetchEpisodes(url, timeoutMs = 20000) {
         const plugin = await getPluginForUrl(url);
         if (plugin && plugin.scrapeEpisodes) {
-            return await plugin.scrapeEpisodes(url);
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`[${plugin.name}] Scrape timeout setelah ${timeoutMs / 1000}s untuk: ${url}`)), timeoutMs)
+            );
+            return await Promise.race([plugin.scrapeEpisodes(url), timeoutPromise]);
         }
         console.warn(`[Registry] Tidak ada plugin yang bisa mengekstrak episode untuk URL: ${url}`);
         return null;
