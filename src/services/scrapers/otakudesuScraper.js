@@ -85,7 +85,7 @@ export async function getOtakuEpisodesFormatted(slug) {
             const epSlug = epParts[epParts.length - 1];
             return {
                 judul: formatEpisodeTitle(ep.title),
-                url: `/api/otakudesu/servers?url=${encodeURIComponent(ep.url)}`,
+                url: ep.url,
                 slug: epSlug
             };
         })
@@ -243,9 +243,9 @@ export async function getServersInternal(url) {
             if (!href || href === '#') return;
 
             if (text.includes('prev') || text.includes('sebelumnya')) {
-                nav_prev = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+                nav_prev = href;
             } else if (text.includes('next') || text.includes('selanjutnya')) {
-                nav_next = `/api/otakudesu/servers?url=${encodeURIComponent(href)}`;
+                nav_next = href;
             }
         });
 
