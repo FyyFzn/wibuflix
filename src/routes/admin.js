@@ -24,5 +24,7 @@ router.post('/api/admin/merge-anime', adminCtrl.mergeAnimeCards);
 router.post('/api/admin/force-mal-id', adminCtrl.forceMalIdOnCard);
 router.post('/api/admin/rename-anime', adminCtrl.renameAnimeCard);
 router.post('/api/admin/force-enrich-card', adminCtrl.forceEnrichCards);
+router.get('/api/admin/anime-details/:id', adminCtrl.getAnimeDetails);
+router.post('/api/admin/split-url', adminCtrl.splitAnimeUrl);
 
 export default router;

@@ -373,4 +373,90 @@ export async function forceEnrichCards(req, res) {
     }
 }
 
+// 14. Get Anime Details for Modal (`GET /api/admin/anime-details/:id`)
+export async function getAnimeDetails(req, res) {
+    try {
+        const Anime = (await import('../models/Anime.js')).default;
+        const anime = await Anime.findById(req.params.id);
+        if (!anime) return res.status(404).json({ error: 'Anime tidak ditemukan' });
+        
+        res.json({
+            status: 'ok',
+            data: {
+                _id: anime._id,
+                title: anime.title,
+                image: anime.image,
+                type: anime.type,
+                sourceUrls: anime.sourceUrls || []
+            }
+        });
+    } catch (error) {
+        console.error('[Admin API] getAnimeDetails Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+}
 
+// 15. Split URL from Anime Card (`POST /api/admin/split-url`)
+export async function splitAnimeUrl(req, res) {
+    try {
+        const { animeId, urlToSplit } = req.body;
+        if (!animeId || !urlToSplit) return res.status(400).json({ error: 'animeId dan urlToSplit wajib diisi' });
+
+        const Anime = (await import('../models/Anime.js')).default;
+        
+        // Cek anime sumber
+        const sourceAnime = await Anime.findById(animeId);
+        if (!sourceAnime) return res.status(404).json({ error: 'Anime sumber tidak ditemukan' });
+
+        // Cek apakah URL benar-benar ada di anime tersebut
+        if (!sourceAnime.sourceUrls || !sourceAnime.sourceUrls.includes(urlToSplit)) {
+            return res.status(400).json({ error: 'URL tidak ada di kartu anime ini' });
+        }
+
+        // Hapus URL dari kartu lama (pull)
+        await Anime.findByIdAndUpdate(animeId, {
+            $pull: { sourceUrls: urlToSplit }
+        });
+
+        // Buat judul baru menggunakan stringUtils (mengambil dari slug URL)
+        const { cleanSeriesTitle } = await import('../utils/stringUtils.js');
+        // Asumsi struktur umum: /anime/slug-name/
+        let slug = urlToSplit;
+        
+        if (urlToSplit.includes('___neosatsu_ep___')) {
+            slug = urlToSplit.split('___neosatsu_ep___')[0];
+        }
+        
+        // Buang trailing slash
+        if (slug.endsWith('/')) slug = slug.slice(0, -1);
+        const parts = slug.split('/');
+        let rawName = parts.pop();
+        if (rawName === 'html' || rawName.includes('.html')) { // untuk neosatsu
+            rawName = rawName.replace('.html', '');
+        }
+
+        // Bersihkan tanda hubung menjadi spasi
+        let newTitle = cleanSeriesTitle(rawName.replace(/-/g, ' '));
+        if (!newTitle) newTitle = 'Unknown Split Anime';
+
+        // Buat dokumen baru dengan URL yang dipisahkan
+        const newAnime = new Anime({
+            title: newTitle,
+            normalizedTitle: newTitle.toLowerCase(),
+            sourceUrls: [urlToSplit],
+            tmdbEnriched: false, // Biarkan sistem auto-enrich nanti
+            isToku: urlToSplit.toLowerCase().includes('neosatsu')
+        });
+
+        await newAnime.save();
+
+        res.json({
+            status: 'ok',
+            message: `URL berhasil dipisah menjadi kartu baru dengan judul "${newTitle}".`
+        });
+
+    } catch (error) {
+        console.error('[Admin API] splitAnimeUrl Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+}
