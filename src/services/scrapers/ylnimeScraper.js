@@ -152,42 +152,82 @@ export async function getYlnimeServers(episodeUrl) {
             'Episode';
 
         // Ekstrak data streams dari JavaScript (YLnime V2)
-        $('script').each((i, el) => {
-            const code = $(el).html();
-            if (code && code.includes('const streams =')) {
-                const match = code.match(/const\s+streams\s*=\s*(\[.*?\]);/s);
-                if (match && match[1]) {
-                    try {
-                        const streamsJson = JSON.parse(match[1]);
-                        streamsJson.forEach((s) => {
-                            if (!s.link) return;
-                            let type = s.link.includes('.mp4') ? 'mp4' : (s.link.includes('.m3u8') ? 'hls' : 'iframe');
-                            let nama = `YLnime ${s.reso || ''}`.trim();
-                            if (s.link.includes('pixeldrain') || s.link.includes('pxl')) {
-                                nama = 'Pixeldrain';
-                                type = 'iframe';
-                            }
-                            
-                            servers.push({
-                                nama: nama,
-                                post: '',
-                                nume: `${servers.length + 1}`,
-                                id: `${servers.length + 1}`,
-                                type: type,
-                                tipe: type,
-                                iframeUrl: s.link,
-                                url: s.link,
-                                namaHost: 'YLnime Stream',
-                                provider: 'ylnime',
-                                source: 'ylnime'
+        const parseStreams = (htmlText) => {
+            const result = [];
+            const $html = cheerio.load(htmlText);
+            $html('script').each((i, el) => {
+                const code = $html(el).html();
+                if (code && code.includes('const streams =')) {
+                    const match = code.match(/const\s+streams\s*=\s*(\[.*?\]);/s);
+                    if (match && match[1]) {
+                        try {
+                            const streamsJson = JSON.parse(match[1]);
+                            streamsJson.forEach((s) => {
+                                if (!s.link) return;
+                                let type = s.link.includes('.mp4') ? 'mp4' : (s.link.includes('.m3u8') ? 'hls' : 'iframe');
+                                let nama = `YLnime ${s.reso || ''}`.trim();
+                                if (s.link.includes('pixeldrain') || s.link.includes('pxl')) {
+                                    nama = 'Pixeldrain';
+                                    type = 'iframe';
+                                }
+                                result.push({
+                                    nama: nama,
+                                    post: '',
+                                    type: type,
+                                    tipe: type,
+                                    iframeUrl: s.link,
+                                    url: s.link,
+                                    namaHost: 'YLnime Stream',
+                                    provider: 'ylnime',
+                                    source: 'ylnime'
+                                });
                             });
-                        });
-                    } catch (err) {
-                        console.error("[YlnimeScraper] Gagal parse JSON streams:", err.message);
+                        } catch (err) {}
                     }
                 }
+            });
+            return result;
+        };
+
+        const seenUrls = new Set();
+        
+        // Ekstrak dari halaman utama (biasanya default 720p)
+        const defaultStreams = parseStreams(data);
+        defaultStreams.forEach(s => {
+            if (!seenUrls.has(s.url)) {
+                seenUrls.add(s.url);
+                servers.push({ ...s, nume: `${servers.length + 1}`, id: `${servers.length + 1}` });
             }
         });
+
+        // Cari tombol resolusi lain dan ambil secara paralel (untuk mendapatkan 1080p, dll)
+        const resoLinks = [];
+        $('a').each((i, el) => {
+            let href = $(el).attr('href');
+            if (href && href.includes('reso=')) {
+                if (href.startsWith('?')) {
+                    href = `index.php${href}`;
+                }
+                const resoUrl = href.startsWith('http') ? href : `https://ylnime.com/${href.replace(/^\/?/, '')}`;
+                resoLinks.push(resoUrl);
+            }
+        });
+
+        if (resoLinks.length > 0) {
+            const promises = resoLinks.map(link => axios.get(link, { headers: AX_HEADERS, timeout: 15000 }).catch(() => null));
+            const results = await Promise.all(promises);
+            for (const res of results) {
+                if (res && res.data) {
+                    const extraStreams = parseStreams(res.data);
+                    extraStreams.forEach(s => {
+                        if (!seenUrls.has(s.url)) {
+                            seenUrls.add(s.url);
+                            servers.push({ ...s, nume: `${servers.length + 1}`, id: `${servers.length + 1}` });
+                        }
+                    });
+                }
+            }
+        }
 
         // Cari iframe embed (fallback)
         $('iframe').each((idx, el) => {
