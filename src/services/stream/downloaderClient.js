@@ -219,8 +219,21 @@ export async function downloadChunked(url, headers, tempFilePath, totalSize, num
 
 export async function downloadFromMega(megaUrl, tempFilePath, globalAbort, blobPath) {
     uploadProgressCache.set(blobPath, 'Menyiapkan unduhan Mega...');
+    
+    // Unwrap the proxy URL if it exists
+    let finalUrl = megaUrl;
+    if (finalUrl.includes('/api/proxy/mega')) {
+        try {
+            const urlObj = new URL(finalUrl);
+            const rawUrl = urlObj.searchParams.get('url');
+            if (rawUrl) finalUrl = decodeURIComponent(rawUrl);
+        } catch(e) {
+            console.warn(`[FFmpegStream] Gagal mengekstrak raw URL dari Mega proxy: ${e.message}`);
+        }
+    }
+
     const { File } = await import('megajs');
-    const file = File.fromURL(megaUrl);
+    const file = File.fromURL(finalUrl);
     await file.loadAttributes();
     
     const totalMegaSize = file.size || 0;
