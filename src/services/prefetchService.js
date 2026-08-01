@@ -118,6 +118,26 @@ export function isCurrentlyExtracting(checkSlugs, episodeSlugs) {
     return false;
 }
 
+/**
+ * Cek apakah ada ekstraksi yang sedang berjalan untuk sebuah series.
+ * Mencegah OOM dari Prefetch Window yang paralel dengan retry loop.
+ */
+export function hasActiveExtractionForSeries(seriesSlug) {
+    if (!seriesSlug) return false;
+    const malPrefixMatch = seriesSlug.match(/^(mal-\d+|db-[0-9a-fA-F]{24})/);
+    const prefix = malPrefixMatch ? malPrefixMatch[1] : seriesSlug.replace(/^mal-\d+_/, '');
+    
+    for (const key of activeExtractions) {
+        if (malPrefixMatch) {
+            if (key.startsWith(prefix)) return true;
+        } else {
+            const cleanKey = key.replace(/^mal-\d+_/, '');
+            if (cleanKey.startsWith(`${prefix}/`)) return true;
+        }
+    }
+    return false;
+}
+
 export function addActiveExtractions(checkSlugs, episodeSlugs) {
     const sList = Array.isArray(checkSlugs) ? checkSlugs : [checkSlugs].filter(Boolean);
     const eList = Array.isArray(episodeSlugs) ? episodeSlugs : [episodeSlugs].filter(Boolean);
@@ -352,7 +372,7 @@ export async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitl
                 }
 
                 // Jika ada upload aktif lainnya di series ini, tunggu dulu sebelum mulai prefetch
-                let activeUploadExists = hasActiveUploadForSeries(seriesSlug);
+                let activeUploadExists = hasActiveUploadForSeries(seriesSlug) || hasActiveExtractionForSeries(seriesSlug);
                 let globalUploadCount = getActiveUploadCount();
                 let waitAttempts = 0;
                 const maxWaitAttempts = 30; // Maksimal tunggu 5 menit (30 x 10 detik) untuk mencegah Thread Blocking abadi / zombie process
@@ -364,7 +384,7 @@ export async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitl
                     }
 
                     if (activeUploadExists) {
-                        console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki upload yang berjalan. Menunda prefetch ${episodeSlug}... (${waitAttempts + 1}/${maxWaitAttempts})`);
+                        console.info(`[PrefetchWindow] Series ${seriesSlug} masih memiliki proses ekstraksi/upload yang berjalan. Menunda prefetch ${episodeSlug}... (${waitAttempts + 1}/${maxWaitAttempts})`);
                     } else if (globalUploadCount >= 3) {
                         console.info(`[PrefetchWindow] VPS sedang sibuk (ada ${globalUploadCount} upload berjalan). Menunda prefetch ${episodeSlug}... (${waitAttempts + 1}/${maxWaitAttempts})`);
                     }
@@ -372,7 +392,7 @@ export async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitl
                     await new Promise(r => setTimeout(r, 10000)); // Cek setiap 10 detik
                     waitAttempts++;
 
-                    activeUploadExists = hasActiveUploadForSeries(seriesSlug);
+                    activeUploadExists = hasActiveUploadForSeries(seriesSlug) || hasActiveExtractionForSeries(seriesSlug);
                     globalUploadCount = getActiveUploadCount();
                 }
 
