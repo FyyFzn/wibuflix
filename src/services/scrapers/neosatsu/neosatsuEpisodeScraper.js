@@ -1,7 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { decryptNeosatsuLink, normalizeGDriveUrl } from '../../../utils/neosatsuUtils.js';
-import { cache, IGNORED_CATS, cleanTitle } from './neosatsuShared.js';
+import { cache, IGNORED_CATS, cleanTitle, fetchWithBackoff } from './neosatsuShared.js';
 import { PROVIDER_URLS } from '../../../config/providerUrls.js';
 
 /**
@@ -45,7 +45,7 @@ export async function getNeosatsuEpisodes(targetUrl) {
 
             console.info(`[Neosatsu Scraper] Fetching Label/Search Feed: ${feedUrl}`);
 
-            const { data: feedData } = await axios.get(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+            const { data: feedData } = await fetchWithBackoff(feedUrl, 4, 15000);
             if (feedData && feedData.feed && feedData.feed.entry) {
                 // FILTER HANYA YANG COCOK DENGAN TARGET TITLE! (Memisahkan Series dan Movie)
                 allEntries = feedData.feed.entry.filter(entry => {
@@ -61,7 +61,7 @@ export async function getNeosatsuEpisodes(targetUrl) {
         }
         // Fallback untuk URL lama yang sudah tersimpan di database/bookmark
         else {
-            const { data: html } = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+            const { data: html } = await fetchWithBackoff(targetUrl, 4, 15000);
             const $ = cheerio.load(html);
             judulSeri = $('h1.entry-title').text().trim().replace(/Subtitle Indonesia.*$/i, '').trim() || 'Tokusatsu Series';
             cover = $('.thumbnail img').first().attr('src') || $('meta[property="og:image"]').attr('content') || '';
@@ -79,7 +79,7 @@ export async function getNeosatsuEpisodes(targetUrl) {
             if (seriesLabel) {
                 feedUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(seriesLabel)}?alt=json&max-results=500`;
                 console.info(`[Neosatsu Scraper] Fallback Merging via Label: ${feedUrl}`);
-                const { data } = await axios.get(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
+                const { data } = await fetchWithBackoff(feedUrl, 4, 15000);
                 if (data && data.feed && data.feed.entry) {
                     allEntries = data.feed.entry;
                 }

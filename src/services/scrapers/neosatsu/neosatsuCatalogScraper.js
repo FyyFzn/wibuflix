@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { searchTokusatsu } from '../../metadata/tmdb.js';
 import { filterByTokuType } from '../../../utils/neosatsuUtils.js';
-import { cache, IGNORED_CATS, cleanTitle } from './neosatsuShared.js';
+import { cache, IGNORED_CATS, cleanTitle, fetchWithBackoff } from './neosatsuShared.js';
 import { PROVIDER_URLS } from '../../../config/providerUrls.js';
 
 /**
@@ -34,30 +34,12 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                 `${neosatsuBase}/p/power-rangers-series.html`
             ];
 
-            const fetchNeosatsu = async (url) => {
-                for (let i = 0; i < 3; i++) {
-                    try {
-                        return await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 60000 });
-                    } catch (e) {
-                        if (e.response && e.response.status === 429) {
-                            console.warn(`[Neosatsu Scraper] 429 Too Many Requests on ${url}. Retrying in 10 seconds...`);
-                            await new Promise(r => setTimeout(r, 10000));
-                        } else {
-                            throw e;
-                        }
-                    }
-                }
-                throw new Error(`Max retries reached for 429 on ${url}`);
-            };
-
             const uniqueCheck = new Set();
 
             for (const pUrl of staticPages) {
                 try {
-                    // Delay 10 detik agar tidak terkena 429 (Too Many Requests) dari Neosatsu / Blogger
-                    await new Promise(r => setTimeout(r, 10000));
-                    
-                    const { data } = await fetchNeosatsu(pUrl);
+                    // Gunakan fetchWithBackoff dengan delay acak untuk mencegah 429
+                    const { data } = await fetchWithBackoff(pUrl, 4, 15000);
                     const $ = cheerio.load(data);
 
                     let tipe = 'Series';
@@ -128,7 +110,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
                     await new Promise(r => setTimeout(r, 10000)); // Add 10s delay to avoid 429
 
                     const fUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default/-/${encodeURIComponent(feed.label)}?alt=json&max-results=500`;
-                    const { data } = await fetchNeosatsu(fUrl);
+                    const { data } = await fetchWithBackoff(fUrl, 4, 15000);
                     
                     if (data && data.feed && data.feed.entry) {
                         data.feed.entry.forEach(entry => {
@@ -213,10 +195,7 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
             const feedUrl = `${PROVIDER_URLS.NEOSATSU.BASE_URL}/feeds/posts/default?q=${encodeURIComponent(searchParam)}&alt=json&max-results=${maxResults}&start-index=${startIndex}`;
             console.info(`[Neosatsu Scraper] Local Miss. Fallback API (Search): ${feedUrl}`);
 
-            const { data } = await axios.get(feedUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 60000
-            });
+            const { data } = await fetchWithBackoff(feedUrl, 4, 15000);
 
             const animeList = [];
             const uniqueAnimeMap = new Map();
