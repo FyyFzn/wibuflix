@@ -257,7 +257,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                     } catch (orchErr) {}
                 }
 
-                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsArrayForAttempt, excludedServers, { seriesSlug: activeSlug, episodeSlug: activeEpSlug });
+                const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsArrayForAttempt, excludedServers, { seriesSlug: activeSlug, episodeSlug: activeEpSlug }, activeSignal);
                 matchedSource = result.matchedSource;
                 
                 if (activeSignal && activeSignal.aborted) {
@@ -267,6 +267,12 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 }
 
                 if (!matchedSource) {
+                    if (result.error === 'UPLOAD_CANCELLED') {
+                        console.info(`${attemptPrefix} Pencarian dibatalkan oleh pengguna (cancel/exit app).`);
+                        removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                        return { success: false, reason: 'UPLOAD_CANCELLED' };
+                    }
+                    
                     console.info(`${attemptPrefix} Tidak ada server untuk: ${episodeSlug}`);
                     if (attempt === maxAttempts) {
                         markUploadFailed(activeSlug, episodeSlug);

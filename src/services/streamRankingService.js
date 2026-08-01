@@ -143,7 +143,7 @@ export function checkUrlBlacklisted(url, currentSlugs = null) {
     return false;
 }
 
-export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set(), slugs = null) {
+export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, logPrefix, req = null, preloadedUrlsObj = null, excludedServers = new Set(), slugs = null, abortSignal = null) {
     let matchedSource = null;
     try {
         const isServerExcluded = (nameOrHost, currentSlugs = slugs) => {
@@ -250,9 +250,19 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
         //          Jika TIDAK ada hasil dari provider cepat → tunggu Kuronime penuh (max 45 detik)
         let servers = [];
 
+        if (abortSignal && abortSignal.aborted) {
+            console.info(`${logPrefix} Proses dibatalkan pengguna sebelum menunggu provider cepat.`);
+            return { matchedSource: null, error: 'UPLOAD_CANCELLED' };
+        }
+
         if (fetchTasks.length > 0) {
             const fastResults = await Promise.all(fetchTasks);
             servers = fastResults.flat();
+        }
+
+        if (abortSignal && abortSignal.aborted) {
+            console.info(`${logPrefix} Proses dibatalkan pengguna sebelum menunggu provider lambat.`);
+            return { matchedSource: null, error: 'UPLOAD_CANCELLED' };
         }
 
         if (slowFetchTasks.length > 0) {
@@ -324,6 +334,11 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             }
 
             for (const srv of groups[resVal]) {
+                if (abortSignal && abortSignal.aborted) {
+                    console.info(`${logPrefix} Proses pencarian dibatalkan oleh pengguna (abortSignal).`);
+                    return { matchedSource: null, error: 'UPLOAD_CANCELLED' };
+                }
+                
                 try {
                     if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
                         console.warn(`${logPrefix} Melewati ${srv.namaHost} karena sedang di-blacklist.`);
