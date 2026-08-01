@@ -24,77 +24,72 @@ export async function getNeosatsuCatalog(page = 1, searchParam = '', typeFilter 
         } else {
             console.debug(`[Neosatsu Scraper] Fetching Static Catalogs for Cache...`);
             const neosatsuBase = PROVIDER_URLS.NEOSATSU.BASE_URL;
-            const staticPages = [
-                `${neosatsuBase}/p/kamen-rider-series.html`,
-                `${neosatsuBase}/p/kamen-rider-movie.html`,
-                `${neosatsuBase}/p/super-sentai-series.html`,
-                `${neosatsuBase}/p/super-sentai-movie.html`,
-                `${neosatsuBase}/p/ultraman-series.html`,
-                `${neosatsuBase}/p/ultraman-movie.html`,
-                `${neosatsuBase}/p/power-rangers-series.html`
-            ];
-
             const uniqueCheck = new Set();
 
-            for (const pUrl of staticPages) {
-                try {
-                    // Gunakan fetchWithBackoff dengan delay acak untuk mencegah 429
-                    const { data } = await fetchWithBackoff(pUrl, 4, 15000);
-                    const $ = cheerio.load(data);
+            try {
+                // Gunakan JSON Feed untuk menghindari 429 Too Many Requests dari halaman statis
+                const { data } = await fetchWithBackoff(`${neosatsuBase}/feeds/pages/default?alt=json&max-results=50`, 3, 15000);
+                if (data && data.feed && data.feed.entry) {
+                    for (const entry of data.feed.entry) {
+                        const pageTitle = entry.title.$t.toLowerCase();
+                        
+                        // Hanya proses halaman yang relevan (Kamen Rider, Super Sentai, dll)
+                        if (!pageTitle.includes('series') && !pageTitle.includes('movie')) continue;
 
-                    let tipe = 'Series';
-                    if (pUrl.includes('movie')) tipe = 'Movie';
+                        let tipe = 'Series';
+                        if (pageTitle.includes('movie')) tipe = 'Movie';
 
-                    $('a').each((i, el) => {
-                        const href = $(el).attr('href');
-                        let title = $(el).attr('title') || $(el).text().trim();
-                        // Bersihkan judul dari embel-embel batch, eps, tamat, dsb
-                        title = cleanTitle(title);
-                        let img = $(el).find('img').attr('src') || 'https://i.imgur.com/KxJ4L6J.jpeg'; // Default Neosatsu logo if text link
+                        const $ = cheerio.load(entry.content.$t);
 
-                        if (href && title && href !== 'javascript:void(0)' && title.length > 5) {
-                            if (href.includes('/p/')) return; // Abaikan link navigasi page statis
-                            const tLower = title.toLowerCase();
+                        $('a').each((i, el) => {
+                            const href = $(el).attr('href');
+                            let title = $(el).attr('title') || $(el).text().trim();
+                            title = cleanTitle(title);
+                            let img = $(el).find('img').attr('src') || 'https://i.imgur.com/KxJ4L6J.jpeg';
 
-                            // Deteksi Special / V-Cinema dari judul
-                            let finalTipe = tipe;
-                            if (tLower.includes('special') || tLower.includes(' sp')) finalTipe = 'Special';
-                            else if (tLower.includes('v-cinema') || tLower.includes('returns')) finalTipe = 'V-Cinema';
-                            // Super Sentai jarang menggunakan kata "Super Sentai" di judulnya, biasanya hanya "Sentai" atau "Ranger"
-                            if (tLower.includes('kamen rider') || tLower.includes('sentai') || tLower.includes('ranger') || tLower.includes('ultraman') || tLower.includes('garo') || pUrl.includes('super-sentai')) {
-                                let endpoint = href;
-                                let status = 'Completed';
+                            if (href && title && href !== 'javascript:void(0)' && title.length > 5) {
+                                if (href.includes('/p/')) return; // Abaikan link navigasi page statis
+                                const tLower = title.toLowerCase();
 
-                                if (href.startsWith('/search/label/')) {
-                                    const match = href.match(/\/search\/label\/([^?&]+)/);
-                                    if (match) {
-                                        const label = decodeURIComponent(match[1]);
-                                        endpoint = `neosatsu-merge:${title}||${label}`;
+                                let finalTipe = tipe;
+                                if (tLower.includes('special') || tLower.includes(' sp')) finalTipe = 'Special';
+                                else if (tLower.includes('v-cinema') || tLower.includes('returns')) finalTipe = 'V-Cinema';
+                                
+                                if (tLower.includes('kamen rider') || tLower.includes('sentai') || tLower.includes('ranger') || tLower.includes('ultraman') || tLower.includes('garo') || pageTitle.includes('super-sentai')) {
+                                    let endpoint = href;
+                                    let status = 'Completed';
+
+                                    if (href.startsWith('/search/label/')) {
+                                        const match = href.match(/\/search\/label\/([^?&]+)/);
+                                        if (match) {
+                                            const label = decodeURIComponent(match[1]);
+                                            endpoint = `neosatsu-merge:${title}||${label}`;
+                                        }
+                                        status = 'Ongoing';
+                                    } else if (href.startsWith('/')) {
+                                        endpoint = `${PROVIDER_URLS.NEOSATSU.BASE_URL}${href}`;
                                     }
-                                    status = 'Ongoing';
-                                } else if (href.startsWith('/')) {
-                                    endpoint = `${PROVIDER_URLS.NEOSATSU.BASE_URL}${href}`;
-                                }
 
-                                img = img.replace(/\/s\d+(-c)?\//, '/s1600/');
+                                    img = img.replace(/\/s\d+(-c)?\//, '/s1600/');
 
-                                if (!uniqueCheck.has(tLower)) {
-                                    uniqueCheck.add(tLower);
-                                    staticAnimeList.push({
-                                        title: title,
-                                        endpoint: endpoint,
-                                        thumb: img,
-                                        tipe: finalTipe,
-                                        skor: '-',
-                                        status: status
-                                    });
+                                    if (!uniqueCheck.has(tLower)) {
+                                        uniqueCheck.add(tLower);
+                                        staticAnimeList.push({
+                                            title: title,
+                                            endpoint: endpoint,
+                                            thumb: img,
+                                            tipe: finalTipe,
+                                            skor: '-',
+                                            status: status
+                                        });
+                                    }
                                 }
                             }
-                        }
-                    });
-                } catch (e) {
-                    console.error(`[Neosatsu Scraper] Failed to fetch static page ${pUrl}: ${e.message}`);
+                        });
+                    }
                 }
+            } catch (e) {
+                console.error(`[Neosatsu Scraper] Failed to fetch static pages feed: ${e.message}`);
             }
 
             // 1.5 Fetch dari JSON Feed untuk Label tertentu (Project RED, Toku Lain, Movie)
