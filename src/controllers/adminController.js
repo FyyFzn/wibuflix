@@ -35,16 +35,18 @@ export function clearMemoryCache(req, res) {
 
 // 5. Trigger Force Sync All Providers (`GET /api/force-sync`)
 export function triggerForceSync(req, res) {
-    res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku, Otakudesu, Kuronime & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
+    res.json({ status: 'ok', message: 'Sinkronisasi paksa (Samehadaku, Otakudesu, Kuronime, YLnime & Unified DB) sedang dijalankan di latar belakang. Proses ini memakan waktu beberapa menit.' });
 
     Promise.all([
         import('../sync/otaku_sync.js'),
-        import('../sync/kuronime_sync.js')
-    ]).then(([ { syncOtakudesu }, { syncKuronime } ]) => {
+        import('../sync/kuronime_sync.js'),
+        import('../sync/ylnime_sync.js')
+    ]).then(([ { syncOtakudesu }, { syncKuronime }, { syncYlnime } ]) => {
         Promise.all([
             runSync(true),
             syncOtakudesu(),
-            syncKuronime()
+            syncKuronime(),
+            syncYlnime()
         ]).then(() => {
             console.log('[ForceSync] Raw Sync selesai. Memulai Unified Sync...');
             return syncUnified();
@@ -98,13 +100,15 @@ export async function triggerFactoryReset(req, res) {
         
         const { syncOtakudesu } = await import('../sync/otaku_sync.js');
         const { syncKuronime } = await import('../sync/kuronime_sync.js');
+        const { syncYlnime } = await import('../sync/ylnime_sync.js');
 
         res.json({ status: 'ok', message: 'BERHASIL! Semua Database MongoDB (Anime & TMDB Cache) telah DIHANCURKAN. Memulai scraping total dari titik nol...' });
 
         Promise.all([
             runSync(true),
             syncOtakudesu(),
-            syncKuronime()
+            syncKuronime(),
+            syncYlnime()
         ]).then(() => {
             console.log('[FactoryReset] Raw Sync selesai. Memulai Unified Sync...');
             return syncUnified();

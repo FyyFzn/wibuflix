@@ -54,6 +54,13 @@ export const PROVIDER_URLS = {
         CATALOG_URL: 'https://www.neosatsu.com/p/kamen-rider-series.html',
         SERIES_PATH: '/2024/01/{slug}.html',
         DOMAIN_KEYWORDS: ['neosatsu']
+    },
+    YLNIME: {
+        NAME: 'YLnime',
+        BASE_URL: 'https://ylnime.com',
+        CATALOG_URL: 'https://ylnime.com/anime-list.php',
+        SERIES_PATH: '/index.php?series={slug}',
+        DOMAIN_KEYWORDS: ['ylnime.com', 'ylnime']
     }
 };
 
