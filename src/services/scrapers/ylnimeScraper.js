@@ -62,8 +62,16 @@ export async function getYlnimeEpisodes(animeUrl) {
             const href = $(el).attr('href') || '';
             if (!href) return;
 
-            const fullUrl = href.startsWith('http') ? href : `${BASE_URL}/${href.replace(/^\//, '')}`;
-            const title = $(el).text().trim() || `Episode`;
+            let fullUrl = href.startsWith('http') ? href : `${BASE_URL}/${href.replace(/^\//, '')}`;
+            // Fix issue: YLnime requires index.php in episode URL, otherwise it redirects to homepage
+            if (fullUrl.includes('?series=') && !fullUrl.includes('index.php')) {
+                fullUrl = fullUrl.replace('?', 'index.php?');
+            }
+            
+            let title = $(el).text().trim() || `Episode`;
+            
+            // Hapus teks setelah baris baru (biasanya berisi tanggal rilis)
+            title = title.replace(/\n[\s\S]*/, '').trim();
             const epNum = extractEpNum(title) ?? extractEpNum(href);
 
             if (epNum != null && seenNums.has(epNum)) return;
@@ -143,16 +151,57 @@ export async function getYlnimeServers(episodeUrl) {
             $('title').text().replace(/[-|].*$/, '').trim() ||
             'Episode';
 
-        // Cari iframe embed
+        // Ekstrak data streams dari JavaScript (YLnime V2)
+        $('script').each((i, el) => {
+            const code = $(el).html();
+            if (code && code.includes('const streams =')) {
+                const match = code.match(/const\s+streams\s*=\s*(\[.*?\]);/s);
+                if (match && match[1]) {
+                    try {
+                        const streamsJson = JSON.parse(match[1]);
+                        streamsJson.forEach((s) => {
+                            if (!s.link) return;
+                            let type = s.link.includes('.mp4') ? 'mp4' : (s.link.includes('.m3u8') ? 'hls' : 'iframe');
+                            let nama = `YLnime ${s.reso || ''}`.trim();
+                            if (s.link.includes('pixeldrain') || s.link.includes('pxl')) {
+                                nama = 'Pixeldrain';
+                                type = 'iframe';
+                            }
+                            
+                            servers.push({
+                                nama: nama,
+                                post: '',
+                                nume: `${servers.length + 1}`,
+                                id: `${servers.length + 1}`,
+                                type: type,
+                                tipe: type,
+                                iframeUrl: s.link,
+                                url: s.link,
+                                namaHost: 'YLnime Stream',
+                                provider: 'ylnime',
+                                source: 'ylnime'
+                            });
+                        });
+                    } catch (err) {
+                        console.error("[YlnimeScraper] Gagal parse JSON streams:", err.message);
+                    }
+                }
+            }
+        });
+
+        // Cari iframe embed (fallback)
         $('iframe').each((idx, el) => {
             const src = $(el).attr('src') || $(el).attr('data-src') || '';
             if (!src) return;
+            
+            // Cek duplikat dengan hasil streams
+            if (servers.some(s => s.url === src)) return;
 
             servers.push({
-                nama: `Server ${idx + 1}`,
+                nama: `Server ${servers.length + 1}`,
                 post: '',
-                nume: `${idx + 1}`,
-                id: `${idx + 1}`,
+                nume: `${servers.length + 1}`,
+                id: `${servers.length + 1}`,
                 type: 'iframe',
                 tipe: 'iframe',
                 aktif: true,
