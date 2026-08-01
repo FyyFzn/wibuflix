@@ -6,16 +6,16 @@ import { checkUploadStatusWithFallback } from '../services/stream/blobStorageSer
 import { cancelUpload, getUploadProgress } from '../services/stream/uploadProgressService.js';
 
 // POST /api/queue/add
-export async function queueAddHandler(req, res) {
-    try {
-        let { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId, urls } = req.body;
-        if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
-        
-        uniqueId = await resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, uniqueId);
-        const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
-        
-        // Pass urls (urlsObj) to background queue so prefetch can failover correctly
-        const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId, urls);
+    export async function queueAddHandler(req, res) {
+        try {
+            let { episodeUrl, seriesUrl, seriesTitle, episodeTitle, uniqueId, urls, cover } = req.body;
+            if (!episodeUrl) return res.status(400).json({ success: false, error: "episodeUrl diperlukan" });
+            
+            uniqueId = await resolveCanonicalUniqueId(seriesUrl, episodeUrl, seriesTitle, uniqueId);
+            const { seriesSlug, episodeSlug } = extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episodeTitle);
+            
+            // Pass urls (urlsObj) to background queue so prefetch can failover correctly
+            const item = await backgroundQueue.add(episodeUrl, seriesUrl, seriesSlug, seriesTitle, episodeTitle, uniqueId, urls, cover);
         res.json({ success: true, item });
     } catch (e) {
         console.error(`[Queue Add Error]:`, e.message);
