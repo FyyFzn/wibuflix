@@ -147,6 +147,9 @@ export async function syncUnified() {
                 if (itemErr.name === 'DocumentNotFoundError') {
                     // Dokumen dihapus secara concurrent oleh proses lain (misal reset database)
                     log(`[UnifiedSync] Peringatan: Dokumen "${anime.title}" tidak ditemukan saat disave (mungkin telah dihapus/dilebur proses lain).`);
+                } else if (itemErr.name === 'VersionError') {
+                    // Dokumen diubah oleh proses lain (misal scraper berjalan bersamaan)
+                    log(`[UnifiedSync] Peringatan: Race condition pada "${anime.title}". Akan dicoba lagi pada siklus berikutnya.`);
                 } else {
                     console.error(`[UnifiedSync] Error pada item "${anime.title}":`, itemErr.message);
                 }
