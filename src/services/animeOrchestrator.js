@@ -107,8 +107,13 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
     if (!forceRefresh) {
         const cachedData = orchestratorCache.get(cacheKey);
         if (cachedData && cachedData.episodes && cachedData.episodes.length > 0) {
-            console.log(`[Orchestrator] Menggunakan LRU Cache untuk: ${queryUrl}`);
-            return cachedData;
+            const expectedCount = dbAnime ? (dbAnime.episodesCount || 0) : 0;
+            if (expectedCount <= cachedData.total_episodes) {
+                console.log(`[Orchestrator] Menggunakan LRU Cache untuk: ${queryUrl}`);
+                return cachedData;
+            } else {
+                console.log(`[Orchestrator] LRU Cache bypass (DB: ${expectedCount} vs Cache: ${cachedData.total_episodes}) untuk: ${queryUrl}`);
+            }
         }
     }
 

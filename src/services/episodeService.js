@@ -403,8 +403,11 @@ export async function getEpisodeServiceData({ targetUrl, providerUrls = {}, forc
     const dbAnime = await findAnimeInDatabase({ targetUrl, providerUrls });
 
     const hasEpisodes = dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0;
+    const dbEpisodesCount = hasEpisodes ? dbAnime.episodesList.length : 0;
+    const expectedEpisodesCount = dbAnime && dbAnime.episodesCount ? dbAnime.episodesCount : 0;
+    const isMissingEpisodes = expectedEpisodesCount > dbEpisodesCount;
 
-    if (hasEpisodes && !forceRefresh) {
+    if (hasEpisodes && !forceRefresh && !isMissingEpisodes) {
         const cacheAge = Date.now() - new Date(dbAnime.updatedAt || dbAnime.lastUpdated || 0).getTime();
         const isStale = cacheAge > 3600000; // > 1 jam
 
