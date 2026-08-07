@@ -39,6 +39,18 @@ export async function getKuronimeEpisodes(animeUrl) {
         $ = fetchRes.$;
         slot = fetchRes.slot;
 
+        // AUTO-REDIRECT: Jika dipanggil menggunakan URL episode (dari latest_sync),
+        // cari URL detail anime dan scrape halaman tersebut alih-alih halaman episode.
+        if (!animeUrl.includes('/anime/')) {
+            const extractedAnimeUrl = $('a[href*="/anime/"]').first().attr('href');
+            if (extractedAnimeUrl && extractedAnimeUrl !== animeUrl) {
+                console.log(`[Kuronime] URL berupa halaman episode. Redirect scraping ke: ${extractedAnimeUrl}`);
+                if (slot) releaseToPool(slot);
+                slot = null;
+                return await getKuronimeEpisodes(extractedAnimeUrl);
+            }
+        }
+
         const judul = cleanSeriesTitle(($('h1.entry-title').text() || $('h1[itemprop="name"]').text() || '').trim());
         const cover = $('img[itemprop="image"]').attr('src') || $('.thumb img').attr('src') || '';
 
@@ -49,7 +61,8 @@ export async function getKuronimeEpisodes(animeUrl) {
             const a = $(el).find('a').first();
             const href = a.attr('href');
             const epTitle = $(el).find('.lchx').text().trim() || $(el).find('.epl-num').text().trim() || a.text().trim();
-            if (href && epTitle && !seenUrls.has(href)) {
+            // PENTING: Filter out URL anime detail (sidebar widget sering tertangkap oleh selector)
+            if (href && epTitle && !seenUrls.has(href) && !href.includes('/anime/')) {
                 seenUrls.add(href);
                 daftar_episode.push({
                     judul: formatEpisodeTitle(epTitle),
