@@ -68,8 +68,8 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
     }
 
     // 1. Jika diberikan slug atau id, cari dokumen di MongoDB untuk mendapatkan URL utama
+    let dbAnime = null;
     if (!queryUrl && (slug || id)) {
-        let dbAnime = null;
         if (id && id.match(/^[0-9a-fA-F]{24}$/)) {
             dbAnime = await Anime.findById(id);
         } else if (slug) {
