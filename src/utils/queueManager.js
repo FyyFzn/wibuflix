@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
 import QueueTask from '../models/QueueTask.js';
-import { getActiveUploadCount, cancelUpload } from '../services/stream/uploadProgressService.js';
 
 class QueueManager extends EventEmitter {
     constructor() {
@@ -158,11 +157,11 @@ class QueueManager extends EventEmitter {
             );
 
             // Retry mechanism via counter custom
-            const currentRetries = nextItem.priority < 0 ? Math.abs(nextItem.priority) : 0;
+            const currentRetries = nextItem.retryCount || 0;
             if (!isFatalError && currentRetries < 2) {
                 console.info(`[Queue Retry] Mengulang ${nextItem.episodeTitle} (Percobaan ke-${currentRetries + 2})...`);
                 nextItem.status = 'PENDING';
-                nextItem.priority = -(currentRetries + 1); // Menggunakan minus priority untuk retry
+                nextItem.retryCount = currentRetries + 1;
                 nextItem.progress = `Gagal: ${err.message}. Menunggu dicoba ulang...`;
                 await nextItem.save();
             } else {

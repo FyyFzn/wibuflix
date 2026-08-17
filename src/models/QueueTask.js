@@ -17,6 +17,7 @@ const QueueTaskSchema = new mongoose.Schema({
     },
     progress: { type: String, default: '' },
     priority: { type: Number, default: 0 },
+    retryCount: { type: Number, default: 0 },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });

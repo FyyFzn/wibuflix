@@ -1,5 +1,7 @@
-import fs from 'fs';
 import { uploadCache, globalBlacklistCache, uploadProgressCache, activeUploadControllers, failureCountCache } from './streamStateStore.js';
+import { cleanTempFilesAsync } from '../../utils/tempFileCleanupWorker.js';
+
+export { cleanTempFilesAsync };
 import { getBlobPath, deleteBlobFromAzure } from './blobStorageService.js';
 
 export function isMegaBlacklisted() {
@@ -108,21 +110,7 @@ export function getActiveUploadCount() {
     return count;
 }
 
-/**
- * Membersihkan file sementara secara asinkron tanpa memblokir Event Loop Node.js (Asynchronous Disk Cleanup).
- */
-export async function cleanTempFilesAsync(tempFilePath, hlsOutputDir = null) {
-    if (tempFilePath) {
-        fs.promises.unlink(tempFilePath).catch(() => {});
-        for (let i = 0; i < 32; i++) {
-            const chunkPath = `${tempFilePath}.part${i}`;
-            fs.promises.unlink(chunkPath).catch(() => {});
-        }
-    }
-    if (hlsOutputDir) {
-        fs.promises.rm(hlsOutputDir, { recursive: true, force: true }).catch(() => {});
-    }
-}
+
 
 /**
  * Membatalkan proses upload yang sedang berjalan

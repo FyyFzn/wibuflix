@@ -3,7 +3,7 @@ import path from 'path';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import pLimit from 'p-limit';
-import { uploadProgressCache, globalBlacklistCache } from './streamStateStore.js';
+import { uploadProgressCache } from './streamStateStore.js';
 import { uploadSegmentStaged, uploadRemainingFilesToAzure } from './azureSegmentUploader.js';
 
 /**
@@ -84,10 +84,6 @@ export async function transcodeAndMonitorHLS({
         ffmpegProcess.on('close', (code) => {
             globalAbort.signal.removeEventListener('abort', onAbort);
             if (code !== 0 && !isUploadError) {
-                if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
-                    console.warn('[FFmpegStream] Mega FFmpeg error. Blacklisting Mega for 10 minutes.');
-                    globalBlacklistCache.set('mega_blacklist', true, 600);
-                }
                 reject(new Error(`FFmpeg Gagal (exit code ${code}):\n${ffmpegStderr}`));
                 return;
             }
@@ -99,10 +95,6 @@ export async function transcodeAndMonitorHLS({
             streamSource.on('error', (err) => {
                 isUploadError = true;
                 try { ffmpegProcess.kill(); } catch(e){}
-                if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
-                    console.warn('[FFmpegStream] Mega stream putus. Blacklisting Mega for 10 minutes.');
-                    globalBlacklistCache.set('mega_blacklist', true, 600);
-                }
                 reject(new Error(`Stream putus: ${err.message}`));
             });
         }
@@ -130,10 +122,6 @@ export async function transcodeAndMonitorHLS({
                     
                     const totalTsCount = totalUploadedChunksRef.count + finalTsFiles.length;
                     if (totalTsCount <= 2 && !blobPath.includes('trailer')) {
-                        if (videoUrl && videoUrl.includes('/api/proxy/mega')) {
-                            console.warn('[FFmpegStream] Mega failed to provide segments. Blacklisting Mega for 10 minutes.');
-                            globalBlacklistCache.set('mega_blacklist', true, 600);
-                        }
                         reject(new Error('Koneksi terputus di tengah jalan: Hanya mendapatkan 1-2 segmen video. Silakan coba server lain.'));
                         return;
                     }

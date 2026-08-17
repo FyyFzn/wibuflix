@@ -8,6 +8,7 @@ import { startBackgroundNanimeSync } from '../sync/nanime_sync.js';
 import { startBackgroundNimegamiSync } from '../sync/nimegami_sync.js';
 import { startBackgroundOploverzSync } from '../sync/oploverz_sync.js';
 import { startBackgroundYlnimeSync } from '../sync/ylnime_sync.js';
+import { scheduledCleanup } from '../utils/tempFileCleanupWorker.js';
 
 export function initScheduler() {
     const log = global.forceLog || console.log;
@@ -47,34 +48,7 @@ export function initScheduler() {
     }, 10000);
 
     // 3. Pembersihan file sampah temporer (Garbage Collection) setiap 12 jam
-    import('fs').then(fs => {
-        import('path').then(path => {
-            import('os').then(os => {
-                const cleanStaleTempFiles = () => {
-                    const tmpDir = path.join(os.tmpdir(), 'wibuflix_temp');
-                    if (!fs.existsSync(tmpDir)) return;
-                    fs.readdir(tmpDir, (err, files) => {
-                        if (err) return;
-                        const now = Date.now();
-                        files.forEach(file => {
-                            if (file.startsWith('hls_') || file.includes('.part')) {
-                                const filePath = path.join(tmpDir, file);
-                                fs.stat(filePath, (statErr, stats) => {
-                                    if (stats && (now - stats.mtimeMs > 4 * 60 * 60 * 1000)) {
-                                        fs.rm(filePath, { recursive: true, force: true }, () => {
-                                            log(`[CleanUp] 🧹 Hapus file/folder sampah lawas: ${file}`);
-                                        });
-                                    }
-                                });
-                            }
-                        });
-                    });
-                };
-                cleanStaleTempFiles(); // Jalankan sekali saat start
-                setInterval(cleanStaleTempFiles, 12 * 60 * 60 * 1000);
-            });
-        });
-    }).catch(() => {});
+    scheduledCleanup();
 
     log('✅ [Scheduler] Semua background jobs & garbage collector berhasil dijadwalkan!');
 }
