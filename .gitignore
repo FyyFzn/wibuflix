@@ -14,3 +14,12 @@ data/
 jikan_cache.json
 otakudesu_test.json
 README.md
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
