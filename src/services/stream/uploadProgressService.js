@@ -129,7 +129,7 @@ export function cancelUpload(seriesSlug, episodeSlug) {
 
         activeUploadControllers.delete(blobPath);
         uploadCache.del(blobPath);
-        uploadProgressCache.delete(blobPath);
+        uploadProgressCache.del(blobPath);
     }
 }
 
@@ -146,7 +146,7 @@ export async function invalidateAndDeleteBlob(seriesSlug, episodeSlug) {
             console.info(`[UploadProgress] 🗑️ Menghapus blob rusak/tanpa sub: ${blobPath}`);
             cancelUpload(sSlug, eSlug);
             uploadCache.del(blobPath);
-            failureCountCache.delete(blobPath);
+            failureCountCache.del(blobPath);
 
             await deleteBlobFromAzure(blobPath);
         }

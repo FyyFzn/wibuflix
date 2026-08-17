@@ -87,7 +87,7 @@ class BoundedLRUMap extends Map {
 
 export const uploadCache = getCache('azure-uploads', 86400); // 24 hours TTL
 export const globalBlacklistCache = getCache('global-blacklist', 3600); // 1 hour TTL
-export const uploadProgressCache = new BoundedLRUMap(500, 7200000); // max 500 items, 2 jam TTL
+export const uploadProgressCache = getCache('upload-progress', 7200); // 2 hours TTL
 export const activeUploadControllers = new BoundedLRUMap(100, 7200000, (key, val) => {
     if (val && typeof val === 'object') {
         const ctrl = val.abortController || val;
@@ -100,4 +100,4 @@ export const activeUploadControllers = new BoundedLRUMap(100, 7200000, (key, val
         }
     }
 }); // max 100 items, 2 jam TTL, auto abort & cleanup saat evict
-export const failureCountCache = new BoundedLRUMap(500, 86400000); // max 500 items, 24 jam TTL
+export const failureCountCache = getCache('failure-count', 86400); // 24 hours TTL

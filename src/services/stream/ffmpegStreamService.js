@@ -143,15 +143,15 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             console.info(`[FFmpegStream] Berhasil mengunggah versi HLS ke Azure secara Estafet: ${blobPath}`);
             uploadCache.set(blobPath, 'READY');
-            uploadProgressCache.delete(blobPath);
+            uploadProgressCache.del(blobPath);
             activeUploadControllers.delete(blobPath);
-            failureCountCache.delete(blobPath);
+            failureCountCache.del(blobPath);
 
         } catch (err) {
             if (globalAbort.signal.aborted || err.message === 'UPLOAD_CANCELLED' || err.code === 'ERR_CANCELED') {
                 console.info(`[FFmpegStream] Upload dibatalkan: ${blobPath}`);
                 uploadCache.del(blobPath);
-                uploadProgressCache.delete(blobPath);
+                uploadProgressCache.del(blobPath);
             } else {
                 console.error(`[FFmpegStream] Gagal memproses ${blobPath} dari URL ${videoUrl}:`, err.message);
                 if (videoUrl && (videoUrl.includes('/api/proxy/mega') || videoUrl.toLowerCase().includes('mega.nz'))) {
@@ -159,7 +159,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     globalBlacklistCache.set('mega_blacklist', true, 600);
                 }
                 markUploadFailed(seriesSlug, episodeSlug);
-                uploadProgressCache.delete(blobPath);
+                uploadProgressCache.del(blobPath);
             }
             if (containerClient) {
                 try {

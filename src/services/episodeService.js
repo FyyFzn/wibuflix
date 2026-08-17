@@ -13,13 +13,18 @@ const activeScrapeLocks = new Map();
  * Memeriksa jika ada kartu episode normal (misal Episode 1) namun memiliki URL dari provider lain
  * yang mengarah ke OVA/Special, atau judul OVA yang keliru dilabeli sebagai nomor episode normal.
  */
+// OVA/Special detection regexes — compiled once at module load, reused across all functions
+const OVA_TITLE_RE = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
+const OVA_WORD_RE  = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
+const OVA_PAREN_RE = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
+const OVA_URL_RE   = /(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i;
+
 export function sanitizeContaminatedEpisodeCards(episodesList) {
     if (!episodesList || !Array.isArray(episodesList)) return [];
-    
-    const ovaTitleRegex = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
-    const ovaWordRegex = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
-    const ovaParenthesisRegex = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
-    const ovaUrlRegex = /(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i;
+    const ovaTitleRegex = OVA_TITLE_RE;
+    const ovaWordRegex = OVA_WORD_RE;
+    const ovaParenthesisRegex = OVA_PAREN_RE;
+    const ovaUrlRegex = OVA_URL_RE;
 
     return episodesList.map(ep => {
         const epObj = ep && typeof ep === 'object' ? { ...ep } : {};
@@ -57,14 +62,11 @@ export function deduplicateEpisodes(episodes) {
     const sanitized = sanitizeContaminatedEpisodeCards(episodes);
     const dedupeMap = new Map();
 
-    const ovaTitleRegex = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
-    const ovaWordRegex = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
-    const ovaParenthesisRegex = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
-
     for (const ep of sanitized) {
         const titleLower = (ep.judul || '').toLowerCase().trim();
-        const isOvaCandidate = ovaTitleRegex.test(titleLower) || ovaWordRegex.test(titleLower) || ovaParenthesisRegex.test(titleLower);
-        const epNum = isOvaCandidate ? null : extractEpNum(ep.judul);
+        const isOvaCandidate = OVA_TITLE_RE.test(titleLower) || OVA_WORD_RE.test(titleLower) || OVA_PAREN_RE.test(titleLower);
+        // ep.num is already set correctly by sanitizeContaminatedEpisodeCards — trust it directly
+        const epNum = ep.num;
         const key = typeof epNum === 'number' && !isNaN(epNum) ? `ep_${epNum}` : titleLower;
         
         if (!dedupeMap.has(key)) {
@@ -117,7 +119,8 @@ export async function findAnimeInDatabase({ targetUrl, providerUrls = {} }) {
     dbAnime = await Anime.findOne({ sourceUrls: { $in: urlsArray } });
 
     // 2. Backward Compatibility: Cari berdasarkan skema lama jika belum ketemu
-    if (!dbAnime) {
+    // (Peringatan: Query ini sangat lambat karena tidak memiliki index dan melakukan full collection scan)
+    if (!dbAnime && process.env.LEGACY_DB_FALLBACK === 'true') {
         const legacyOrQuery = urlsArray.map(url => ({ "url": url })); // fallback dasar
         
         for (const provider of Object.values(PROVIDER_URLS)) {
@@ -262,9 +265,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
     for (const res of allResults) {
         for (const ep of res.daftar_episode) {
             const titleLower = (ep.judul || '').toLowerCase().trim();
-            const isOvaTitle = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(titleLower) || 
-                               /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(titleLower) ||
-                               /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(titleLower);
+            const isOvaTitle = OVA_TITLE_RE.test(titleLower) || OVA_WORD_RE.test(titleLower) || OVA_PAREN_RE.test(titleLower);
             const actualNum = isOvaTitle ? null : ep.num;
 
             if (actualNum != null && typeof actualNum === 'number' && !isNaN(actualNum)) {

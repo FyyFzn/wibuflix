@@ -201,9 +201,10 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
     try {
         const maxAttempts = source === 'queue' ? 3 : 5;
         let lastError = null;
-        let urlsArrayForAttempt = preloadedUrlsObj; // Now expected to be an Array
+        let urlsArrayForAttempt = preloadedUrlsObj;
         const excludedServers = new Set();
         let hasFetchedOrch = false;
+        let allProvidersFailed = false; // Only force-refresh Orchestrator if all providers returned zero servers
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -215,15 +216,15 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 const attemptPrefix = attempt > 1 ? `${logPrefix} [Retry ${attempt}/${maxAttempts}]` : logPrefix;
 
-                // BUGFIX: Selalu cek dan gabungkan URL dari Orchestrator agar Queue/Prefetch mendapat multi-provider seperti Smart Play.
-                // Pada percobaan > 1 atau jika provider masih kurang dari 3, panggil Orchestrator dengan fallback targetUrl & forceRefresh jika perlu.
-                if ((!hasFetchedOrch || !urlsArrayForAttempt || urlsArrayForAttempt.length < 3 || attempt > 1) && (uniqueId || seriesTitle || episodeUrl)) {
+                // Only force-refresh Orchestrator if all providers returned zero usable servers on the last attempt.
+                // A retry caused by an upload error (Azure/FFmpeg) does NOT need a re-scrape — URLs are still valid.
+                const forceRefreshOrch = allProvidersFailed;
+                if ((!hasFetchedOrch || !urlsArrayForAttempt || urlsArrayForAttempt.length < 3 || forceRefreshOrch) && (uniqueId || seriesTitle || episodeUrl)) {
                     hasFetchedOrch = true;
                     try {
                         const epNum = extractEpNum(episodeTitle || episodeUrl);
                         if (epNum != null || episodeUrl || episodeTitle) {
                             const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
-                            const forceRefreshOrch = attempt > 1; // Jika retry attempt > 1, minta force refresh dari Orchestrator
                             let animeData = null;
                             if (orchSlug || seriesTitle) {
                                 animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: forceRefreshOrch }).catch(async () => {
@@ -259,6 +260,7 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
 
                 const result = await findBestVideoSource(episodeUrl, seriesTitle, episodeTitle, attemptPrefix, null, urlsArrayForAttempt, excludedServers, { seriesSlug: activeSlug, episodeSlug: activeEpSlug }, activeSignal);
                 matchedSource = result.matchedSource;
+                allProvidersFailed = !matchedSource && result.error !== 'UPLOAD_CANCELLED';
                 
                 if (activeSignal && activeSignal.aborted) {
                     console.info(`${attemptPrefix} Dibatalkan oleh pengguna saat mencari source video.`);
@@ -342,7 +344,7 @@ export async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitl
     if (validUrls.length === 0) return;
 
     const cleanSeries = seriesSlug.replace(/^mal-\d+_/, '');
-    const loopKey = `${cleanSeries}-${validUrls.join(',')}`;
+    const loopKey = `${cleanSeries}-${validUrls[0]}`;
     if (activePrefetchLoops.has(loopKey)) return;
     activePrefetchLoops.add(loopKey);
 
