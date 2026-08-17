@@ -26,22 +26,52 @@ export async function enrichStreamMetadata(data, targetUrl, seriesTitle, episode
                 }
             };
         } else if (epNum != null || seriesTitle || uniqueId) {
-            const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
-            let animeData = null;
-            if (orchSlug || seriesTitle) {
-                animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: false }).catch(() => null);
-            }
-            if (!animeData?.daftar_episode?.length && !animeData?.episodes?.length) {
-                animeData = await getUnifiedAnimeEpisodes({ targetUrl, forceRefresh: false }).catch(() => null);
+            let epList = [];
+            
+            // OPTIMIZATION: Try to get episodes from the database first to avoid triggering Orchestrator scraping
+            try {
+                const { findAnimeInDatabase } = await import('../episodeService.js');
+                let dbAnime = await findAnimeInDatabase({ targetUrl });
+                
+                if (!dbAnime && uniqueId) {
+                    const Anime = (await import('../../models/Anime.js')).default;
+                    const rawId = uniqueId.toString().trim();
+                    const malMatch = rawId.match(/^mal-(\d+)/);
+                    if (malMatch) {
+                        dbAnime = await Anime.findOne({ malId: parseInt(malMatch[1], 10) });
+                    }
+                }
+                
+                if (dbAnime && dbAnime.episodesList && dbAnime.episodesList.length > 0) {
+                    epList = dbAnime.episodesList;
+                }
+            } catch (e) {
+                console.warn('[streamMetadataEnricher] DB fallback error:', e.message);
             }
 
-            const epList = animeData?.daftar_episode || animeData?.episodes || [];
+            if (epList.length === 0) {
+                const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
+                let animeData = null;
+                if (orchSlug || seriesTitle) {
+                    animeData = await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: false }).catch(() => null);
+                }
+                if (!animeData?.daftar_episode?.length && !animeData?.episodes?.length) {
+                    animeData = await getUnifiedAnimeEpisodes({ targetUrl, forceRefresh: false }).catch(() => null);
+                }
+
+                epList = animeData?.daftar_episode || animeData?.episodes || [];
+            }
+
             if (epList.length > 0) {
-                let idx = epList.findIndex(e => 
-                    (epNum != null && e.num === epNum) || 
-                    (e.url && e.url === targetUrl) || 
-                    (e.urls && Object.values(e.urls).includes(targetUrl))
-                );
+                let idx = epList.findIndex(e => {
+                    let urlsObj = e.urls || {};
+                    if (urlsObj instanceof Map || typeof urlsObj.entries === 'function') {
+                        urlsObj = Object.fromEntries(urlsObj);
+                    }
+                    return (epNum != null && e.num === epNum) || 
+                           (e.url && e.url === targetUrl) || 
+                           (Object.values(urlsObj).includes(targetUrl));
+                });
                 if (idx !== -1) {
                     targetEp = epList[idx];
                     const isDesc = epList.length > 1 && (epList[0].num || 0) > (epList[epList.length - 1].num || 0);
@@ -60,10 +90,14 @@ export async function enrichStreamMetadata(data, targetUrl, seriesTitle, episode
             enriched.judul = targetEp?.judul || episodeTitle;
         }
         if (prevEp) {
-            enriched.nav_prev = prevEp.url || prevEp.urls?.samehadaku || prevEp.urls?.otakudesu || prevEp.urls?.kuronime || null;
+            let pUrls = prevEp.urls || {};
+            if (pUrls instanceof Map || typeof pUrls.entries === 'function') pUrls = Object.fromEntries(pUrls);
+            enriched.nav_prev = prevEp.url || pUrls.samehadaku || pUrls.otakudesu || pUrls.kuronime || null;
         }
         if (nextEp) {
-            enriched.nav_next = nextEp.url || nextEp.urls?.samehadaku || nextEp.urls?.otakudesu || nextEp.urls?.kuronime || null;
+            let nUrls = nextEp.urls || {};
+            if (nUrls instanceof Map || typeof nUrls.entries === 'function') nUrls = Object.fromEntries(nUrls);
+            enriched.nav_next = nextEp.url || nUrls.samehadaku || nUrls.otakudesu || nUrls.kuronime || null;
             if (enriched.nav_next && typeof enriched.nav_next === 'string' && enriched.nav_next !== targetUrl) {
                 const { seriesSlug: sSlug } = extractSlugs(targetUrl, null, seriesTitle, uniqueId, null);
                 if (sSlug && typeof triggerPrefetchWindow === 'function') {
@@ -96,7 +130,9 @@ export async function enrichStreamMetadata(data, targetUrl, seriesTitle, episode
         ];
 
         if (targetEp?.urls) {
-            for (const [prov, pUrl] of Object.entries(targetEp.urls)) {
+            let tUrls = targetEp.urls || {};
+            if (tUrls instanceof Map || typeof tUrls.entries === 'function') tUrls = Object.fromEntries(tUrls);
+            for (const [prov, pUrl] of Object.entries(tUrls)) {
                 if (pUrl) {
                     servers.push({
                         nama: `${prov.toUpperCase()} · Mirror`,
