@@ -362,9 +362,23 @@ export async function getKuronimeLatestUpdates() {
             const title = $(el).find('.bsuxtt h2').text().trim();
             const ep = $(el).find('.bt .ep').text().trim();
             const href = $(el).find('a').attr('href');
-            if (title && ep && href && !seenUrls.has(href)) {
-                seenUrls.add(href);
-                updates.push({ title, status: ep, url: href });
+            if (title && ep && href) {
+                let seriesHref = href;
+                // Transform episode URL to Series URL
+                // e.g. https://kuronime.sbs/nonton-one-piece-episode-1070/ -> https://kuronime.sbs/anime/one-piece/
+                if (href.includes('/nonton-') && href.match(/-episode-\d+/i)) {
+                    const slugMatch = href.match(/\/nonton-(.*?)-episode-\d+/i);
+                    if (slugMatch && slugMatch[1]) {
+                        const baseUrlMatch = href.match(/^(https?:\/\/[^\/]+)/);
+                        const baseUrl = baseUrlMatch ? baseUrlMatch[1] : PROVIDER_URLS.KURONIME.BASE_URL;
+                        seriesHref = `${baseUrl}/anime/${slugMatch[1]}/`;
+                    }
+                }
+                
+                if (!seenUrls.has(seriesHref)) {
+                    seenUrls.add(seriesHref);
+                    updates.push({ title, status: ep, url: seriesHref });
+                }
             }
         });
     } catch (e) {
