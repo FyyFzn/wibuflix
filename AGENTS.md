@@ -303,7 +303,8 @@ The agent must flag and refactor a file if any of the following conditions are m
 
 ## Mandatory Git Commit Protocol
 
-**Every completed task must end with a git commit. No exceptions.**
+> [!IMPORTANT]
+> **Every completed task must end with a git commit. No exceptions.**
 
 This ensures every change is a revertable checkpoint. If a deployment or runtime regression is detected, the last known-good state can be restored immediately with `git revert` or `git checkout`.
 
@@ -354,5 +355,6 @@ feat(blobStorageService): add checkUploadStatusWithFallback for multi-slug looku
 - One logical change = one commit.
 - If a task touches multiple files for the same concern (e.g., moving a function between modules), that is one commit.
 - If a task touches files for different concerns, split into separate commits.
-- Do not commit without first verifying the server starts (`node server-prod.js` or `node src/server.js`).
+- For backend changes, do not commit without first verifying the server starts (`node server-prod.js` or `node src/server.js`).
+- For frontend changes, do not worry about checking if everything works in the app. All you need to do before committing is verify types compile by running `npx tsc --noEmit` in the frontend directory.
 - Never force-push to `main` or `master`.
