@@ -198,7 +198,7 @@ async function executeScraperStrategy(targetUrl) {
     // 2. Standarisasi & Pembersihan Daftar Episode (Unified Pipeline)
     if (data.daftar_episode && Array.isArray(data.daftar_episode)) {
         data.daftar_episode = data.daftar_episode
-            .filter(ep => !ep.judul.toLowerCase().includes('batch'))
+            .filter(ep => !ep.judul.toLowerCase().includes('batch') && !ep.judul.toLowerCase().includes('index.php'))
             .map(ep => {
                 const rawNum = extractEpNum(ep.judul);
                 const finalJudul = providerName === 'neosatsu' && typeof rawNum !== 'number' 
@@ -304,7 +304,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
     }
 
     const mergedEps = Array.from(epMap.values());
-    mergedEps.sort((a, b) => b.num - a.num); // Urutkan dari episode terbaru (terbesar) ke terlama (terkecil)
+    mergedEps.sort((a, b) => a.num - b.num); // Urutkan dari episode terlama (terkecil) ke terbaru (terbesar)
 
     let finalDaftarEpisode = [...mergedEps, ...noNumEps];
     if (finalDaftarEpisode.length > 0) {

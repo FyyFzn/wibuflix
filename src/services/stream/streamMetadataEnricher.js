@@ -74,7 +74,8 @@ export async function enrichStreamMetadata(data, targetUrl, seriesTitle, episode
                 });
                 if (idx !== -1) {
                     targetEp = epList[idx];
-                    const isDesc = epList.length > 1 && (epList[0].num || 0) > (epList[epList.length - 1].num || 0);
+                    const numberedEps = epList.filter(e => e.num != null);
+                    const isDesc = numberedEps.length > 1 && numberedEps[0].num > numberedEps[numberedEps.length - 1].num;
                     if (isDesc) {
                         nextEp = idx > 0 ? epList[idx - 1] : null;
                         prevEp = idx < epList.length - 1 ? epList[idx + 1] : null;
