@@ -30,6 +30,18 @@ export function sweepOrphanedTempFiles() {
             });
         });
     });
+
+    // Membersihkan sisa profile puppeteer yang terbengkalai
+    const osTmpDir = os.tmpdir();
+    fs.readdir(osTmpDir, (err, files) => {
+        if (err) return;
+        files.forEach(file => {
+            if (file.startsWith('puppeteer_dev_chrome_profile') || file.startsWith('puppeteer_dev_profile')) {
+                const fullPath = path.join(osTmpDir, file);
+                fs.rm(fullPath, { recursive: true, force: true }, () => {});
+            }
+        });
+    });
 }
 
 /**
@@ -66,6 +78,26 @@ export function scheduledCleanup() {
                         if (stats && (now - stats.mtimeMs > 4 * 60 * 60 * 1000)) {
                             fs.rm(filePath, { recursive: true, force: true }, () => {
                                 console.log(`[CleanUp] 🧹 Hapus file/folder sampah lawas: ${file}`);
+                            });
+                        }
+                    });
+                }
+            });
+        });
+
+        // Membersihkan sisa profil Chrome Puppeteer
+        const osTmpDir = os.tmpdir();
+        fs.readdir(osTmpDir, (err, files) => {
+            if (err) return;
+            const now = Date.now();
+            files.forEach(file => {
+                if (file.startsWith('puppeteer_dev_chrome_profile') || file.startsWith('puppeteer_dev_profile')) {
+                    const filePath = path.join(osTmpDir, file);
+                    fs.stat(filePath, (statErr, stats) => {
+                        // Hapus profile yang lebih lama dari 4 jam
+                        if (stats && (now - stats.mtimeMs > 4 * 60 * 60 * 1000)) {
+                            fs.rm(filePath, { recursive: true, force: true }, () => {
+                                console.log(`[CleanUp] 🧹 Hapus sisa profil browser: ${file}`);
                             });
                         }
                     });
