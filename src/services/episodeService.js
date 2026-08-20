@@ -262,9 +262,28 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
     const epMap = new Map();
     const noNumEps = [];
 
+    // Defence-in-depth: regex to detect series-navigation labels that scrapers may
+    // accidentally include (e.g. Otakudesu sidebar links like
+    // "Grand Blue Season 1 Subtitle Indonesia").
+    // These are never valid episode titles — drop them unconditionally here.
+    const SERIES_NAV_TITLE_RE = /(?:subtitle\s*indonesia|sub\s*indo)/i;
+    const HAS_EP_MARKER_RE    = /\b(?:episode|ep|eps|ova|oad|special|sp|movie|film|\d)\b/i;
+
     for (const res of allResults) {
         for (const ep of res.daftar_episode) {
-            const titleLower = (ep.judul || '').toLowerCase().trim();
+            const titleRaw = (ep.judul || '').trim();
+            const titleLower = titleRaw.toLowerCase();
+
+            // Cross-season series-navigation guard
+            if (SERIES_NAV_TITLE_RE.test(titleRaw)) {
+                console.warn(`[EpisodeService] 🛡️ Membuang judul navigasi seri ("${titleRaw}")`);
+                continue;
+            }
+            if (/\bseason\b/i.test(titleRaw) && !HAS_EP_MARKER_RE.test(titleRaw)) {
+                console.warn(`[EpisodeService] 🛡️ Membuang judul lintas-musim ("${titleRaw}")`);
+                continue;
+            }
+
             const isOvaTitle = OVA_TITLE_RE.test(titleLower) || OVA_WORD_RE.test(titleLower) || OVA_PAREN_RE.test(titleLower);
             const actualNum = isOvaTitle ? null : ep.num;
 

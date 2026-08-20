@@ -77,18 +77,52 @@ export async function getOtakuEpisodesFormatted(slug) {
             .join(' ');
     }
 
+    // Filter episodes: reject cross-season sidebar navigation links that Otakudesu library
+    // mistakenly includes in the episode list.
+    // Guard 1: anime detail URLs (/anime/...) are series pages, not episode pages.
+    // Guard 2: titles still containing "Subtitle Indonesia" / "Sub Indo" are series-nav labels.
+    // Guard 3: titles with no episode-number marker and containing "Season" are series-nav labels.
+    const EPISODE_MARKER_RE = /\b(?:episode|ep|eps|ova|oad|special|sp|movie|film|\d)\b/i;
+    const SERIES_NAV_RE = /(?:subtitle\s*indonesia|sub\s*indo)/i;
+
+    const rawEpisodes = (details.episodes || []);
+    const cleanedEpisodes = rawEpisodes.reduce((acc, ep) => {
+        // Guard 1: reject anime detail URLs
+        let urlPath;
+        try { urlPath = new URL(ep.url).pathname; } catch { urlPath = ep.url; }
+        if (urlPath.includes('/anime/')) {
+            console.warn(`[Otakudesu] ⚠️ Menolak URL seri (bukan episode): ${ep.url}`);
+            return acc;
+        }
+
+        const formattedTitle = formatEpisodeTitle(ep.title);
+
+        // Guard 2: reject titles that still contain SEO series-nav keywords
+        if (SERIES_NAV_RE.test(formattedTitle)) {
+            console.warn(`[Otakudesu] ⚠️ Menolak judul navigasi seri ("${formattedTitle}") dari: ${ep.url}`);
+            return acc;
+        }
+
+        // Guard 3: reject titles that have no episode marker and contain "Season" — these are cross-season sidebar links
+        if (!EPISODE_MARKER_RE.test(formattedTitle) && /\bseason\b/i.test(formattedTitle)) {
+            console.warn(`[Otakudesu] ⚠️ Menolak judul seri lintas-musim ("${formattedTitle}") dari: ${ep.url}`);
+            return acc;
+        }
+
+        const epParts = ep.url.split('/').filter(Boolean);
+        const epSlug = epParts[epParts.length - 1];
+        acc.push({
+            judul: formattedTitle,
+            url: ep.url,
+            slug: epSlug
+        });
+        return acc;
+    }, []);
+
     const result = {
         judul_seri: cleanSeriesTitle(finalTitle),
         cover_scraper: details.thumb || '',
-        daftar_episode: (details.episodes || []).map(ep => {
-            const epParts = ep.url.split('/').filter(Boolean);
-            const epSlug = epParts[epParts.length - 1];
-            return {
-                judul: formatEpisodeTitle(ep.title),
-                url: ep.url,
-                slug: epSlug
-            };
-        })
+        daftar_episode: cleanedEpisodes
     };
 
     if (result.daftar_episode && result.daftar_episode.length > 0) {
