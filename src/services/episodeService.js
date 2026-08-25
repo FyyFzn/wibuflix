@@ -325,7 +325,30 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
     const mergedEps = Array.from(epMap.values());
     mergedEps.sort((a, b) => a.num - b.num); // Urutkan dari episode terlama (terkecil) ke terbaru (terbesar)
 
-    let finalDaftarEpisode = [...mergedEps, ...noNumEps];
+    // Cross-check: drop any noNumEps entry (movie/OVA label) whose URLs are already
+    // fully covered by a numbered episode in epMap. This handles the case where
+    // different sites label the same single episode differently — e.g., Samehadaku
+    // calls it "Episode 1" (num: 1) while Kuronime calls it "Movie" (num: null).
+    // Collecting all URLs present in numbered episodes for fast O(1) lookup.
+    const numberedEpUrlSet = new Set();
+    for (const ep of mergedEps) {
+        for (const url of (ep.urls || [])) {
+            if (url) numberedEpUrlSet.add(url);
+        }
+    }
+
+    const filteredNoNumEps = noNumEps.filter(ep => {
+        const epUrls = (ep.urls || []).filter(Boolean);
+        if (epUrls.length === 0) return true; // No URLs to cross-check — keep it
+        const allCovered = epUrls.every(url => numberedEpUrlSet.has(url));
+        if (allCovered) {
+            console.info(`[EpisodeService] 🎬 Membuang entri duplikat OVA/Movie "${ep.judul}" karena URL-nya sudah tercakup dalam episode bernomor.`);
+            return false;
+        }
+        return true;
+    });
+
+    let finalDaftarEpisode = [...mergedEps, ...filteredNoNumEps];
     if (finalDaftarEpisode.length > 0) {
         finalDaftarEpisode = deduplicateEpisodes(finalDaftarEpisode);
     }

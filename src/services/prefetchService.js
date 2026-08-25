@@ -10,6 +10,12 @@ import { getUnifiedAnimeEpisodes } from './animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
 import { backgroundQueue } from '../utils/queueManager.js';
 
+// OVA/Movie detection regexes — used in triggerPrefetchWindow to guard against
+// redundant prefetch of movie/OVA duplicate entries in single-episode movie anime.
+const _OVA_TITLE_RE = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
+const _OVA_WORD_RE  = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
+const _OVA_PAREN_RE = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
+
 export const proxyCache = getCache('proxy-cache', 3600); // Bersih otomatis setelah 1 jam
 export const activeExtractions = new Set();
 export const prefetchControllersMap = new Map();
@@ -363,6 +369,35 @@ export async function triggerPrefetchWindow(seriesSlug, upcomingUrls, seriesTitl
                         if (s && !checkSlugs.includes(s)) checkSlugs.push(s);
                     }
                 }
+
+                // Defense-in-depth: skip prefetch for OVA/movie-titled episodes (num: null).
+                // This catches cases where the enricher guard doesn't apply — e.g., nextEpisodeUrl
+                // sent directly from the frontend. Uses the orchestrator LRU cache (zero I/O if warm).
+                // On a cold cache miss we proceed rather than blocking legitimate prefetches.
+                try {
+                    const orchSlug = uniqueId ? uniqueId.toString().replace(/^(mal-|db-)/, '') : seriesTitle;
+                    const cachedAnime = orchSlug || seriesTitle
+                        ? await getUnifiedAnimeEpisodes({ slug: orchSlug || seriesTitle, forceRefresh: false }).catch(() => null)
+                        : null;
+                    if (cachedAnime?.episodes?.length > 0 || cachedAnime?.daftar_episode?.length > 0) {
+                        const epList = cachedAnime.episodes || cachedAnime.daftar_episode;
+                        const matchedEp = epList.find(e => {
+                            const urlsObj = e.urls && typeof e.urls === 'object' ? (e.urls instanceof Map ? Object.fromEntries(e.urls) : e.urls) : {};
+                            const urlValues = Array.isArray(urlsObj) ? urlsObj : Object.values(urlsObj);
+                            return e.url === epUrl || urlValues.includes(epUrl);
+                        });
+                        if (matchedEp && matchedEp.num == null) {
+                            const titleToCheck = matchedEp.judul || matchedEp.title || '';
+                            if (_OVA_TITLE_RE.test(titleToCheck) || _OVA_WORD_RE.test(titleToCheck) || _OVA_PAREN_RE.test(titleToCheck)) {
+                                console.info(`[PrefetchWindow] 🎬 Skip prefetch untuk "${titleToCheck}" (num: null, OVA/Movie) — entri ini adalah duplikat movie yang dihasilkan oleh scraper berbeda.`);
+                                continue;
+                            }
+                        }
+                    }
+                } catch (_guardErr) {
+                    // Guard gagal — lanjutkan prefetch agar tidak memblokir episode yang sah
+                }
+
                 const checkInfo = await checkUploadStatusWithFallback(checkSlugs, episodeSlugsToCheck);
                 const status = checkInfo.status;
 

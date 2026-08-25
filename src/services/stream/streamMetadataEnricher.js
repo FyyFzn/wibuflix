@@ -3,6 +3,12 @@ import { extractEpNum } from '../../utils/stringUtils.js';
 import { extractSlugs } from '../slugService.js';
 import { triggerPrefetchWindow } from '../prefetchService.js';
 
+// OVA/Movie detection regexes — mirroring the patterns in episodeService.js
+// Defined locally to avoid cross-layer imports (stream/* must not import from services/*)
+const OVA_TITLE_RE = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
+const OVA_WORD_RE  = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
+const OVA_PAREN_RE = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
+
 /**
  * Helper: Memperkaya data stream dengan metadata (nav_prev, nav_next, servers, judul)
  * dari cache/orchestrator sehingga frontend (Thin Client) tidak perlu memanggil /api/scrape di background.
@@ -100,9 +106,21 @@ export async function enrichStreamMetadata(data, targetUrl, seriesTitle, episode
             if (nUrls instanceof Map || typeof nUrls.entries === 'function') nUrls = Object.fromEntries(nUrls);
             enriched.nav_next = nextEp.url || nUrls.samehadaku || nUrls.otakudesu || nUrls.kuronime || null;
             if (enriched.nav_next && typeof enriched.nav_next === 'string' && enriched.nav_next !== targetUrl) {
-                const { seriesSlug: sSlug } = extractSlugs(targetUrl, null, seriesTitle, uniqueId, null);
-                if (sSlug && typeof triggerPrefetchWindow === 'function') {
-                    triggerPrefetchWindow(sSlug, [enriched.nav_next], seriesTitle, null, uniqueId);
+                // Only prefetch numbered episodes. Skip OVA/movie-titled entries (num === null)
+                // to prevent redundant background uploads for movie-only anime where different
+                // scrapers label the same single episode differently (e.g. "Episode 1" vs "Movie").
+                const nextIsMovieOrOva = nextEp.num == null && (
+                    OVA_TITLE_RE.test(nextEp.judul || nextEp.title || '') ||
+                    OVA_WORD_RE.test(nextEp.judul || nextEp.title || '') ||
+                    OVA_PAREN_RE.test(nextEp.judul || nextEp.title || '')
+                );
+                if (!nextIsMovieOrOva) {
+                    const { seriesSlug: sSlug } = extractSlugs(targetUrl, null, seriesTitle, uniqueId, null);
+                    if (sSlug && typeof triggerPrefetchWindow === 'function') {
+                        triggerPrefetchWindow(sSlug, [enriched.nav_next], seriesTitle, null, uniqueId);
+                    }
+                } else {
+                    console.info(`[streamMetadataEnricher] 🎬 Skip prefetch untuk "${nextEp.judul || nextEp.title}" (num: null, OVA/Movie) — nav_next tetap diset untuk navigasi.`);
                 }
             }
         }
