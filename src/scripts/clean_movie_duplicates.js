@@ -40,20 +40,24 @@ function flattenUrls(urlsField) {
     return [];
 }
 
-function removeDuplicateMovieEntries(episodesList) {
+function removeDuplicateMovieEntries(episodesList, episodesCount) {
     const rawEps = episodesList.map(ep =>
         ep.toObject ? ep.toObject({ flattenMaps: true }) : { ...ep }
     );
 
     // Build URL set from all numbered episodes
     const numberedEpUrlSet = new Set();
-    for (const ep of rawEps) {
-        if (ep.num != null && !isNaN(ep.num)) {
-            for (const url of flattenUrls(ep.urls)) {
-                numberedEpUrlSet.add(url);
-            }
+    const numberedEps = rawEps.filter(ep => ep.num != null && !isNaN(ep.num));
+    for (const ep of numberedEps) {
+        for (const url of flattenUrls(ep.urls)) {
+            numberedEpUrlSet.add(url);
         }
     }
+
+    const expectedEpCount = episodesCount || 0;
+    const numberedEpCount = numberedEps.length;
+    // True when numbered episodes already satisfy the expected count from MAL/DB
+    const numberedEpsCoversAll = expectedEpCount > 0 && numberedEpCount >= expectedEpCount;
 
     const dropped = [];
     const kept = rawEps.filter(ep => {
@@ -63,14 +67,23 @@ function removeDuplicateMovieEntries(episodesList) {
         const title = (ep.judul || ep.title || '').trim();
         if (!isOvaOrMovieTitle(title)) return true; // Not a movie/OVA label — keep
 
+        // (a) URL cross-check: all URLs already present in numbered episodes
         const epUrls = flattenUrls(ep.urls);
-        if (epUrls.length === 0) return true; // No URLs to cross-check — keep
-
-        const allCovered = epUrls.every(url => numberedEpUrlSet.has(url));
-        if (allCovered) {
-            dropped.push(title);
+        if (epUrls.length > 0 && epUrls.every(url => numberedEpUrlSet.has(url))) {
+            dropped.push(`${title} [URL overlap]`);
             return false;
         }
+
+        // (b) Strict single-episode movie: episodesCount === 1 means this is a movie with exactly
+        //     one watchable entry. Any extra OVA/movie-titled entry is definitionally a duplicate label
+        //     for the same content (e.g. "Episode Movie" from ylnime alongside "Episode 1" from nimegami).
+        //     We do NOT apply this to multi-episode series (episodesCount > 1) because their OVAs are
+        //     genuinely separate content.
+        if (expectedEpCount === 1 && numberedEpCount >= 1) {
+            dropped.push(`${title} [single-episode movie duplicate]`);
+            return false;
+        }
+
         return true;
     });
 
@@ -94,7 +107,7 @@ function removeDuplicateMovieEntries(episodesList) {
         for (const doc of candidates) {
             if (!doc.episodesList || doc.episodesList.length === 0) continue;
 
-            const { kept, dropped } = removeDuplicateMovieEntries(doc.episodesList);
+            const { kept, dropped } = removeDuplicateMovieEntries(doc.episodesList, doc.episodesCount);
 
             if (dropped.length > 0) {
                 console.log(`[CLEAN] "${doc.title}" — removing ${dropped.length} duplicate movie entry/entries:`);

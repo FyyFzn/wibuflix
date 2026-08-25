@@ -19,6 +19,10 @@ const OVA_WORD_RE  = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
 const OVA_PAREN_RE = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
 const OVA_URL_RE   = /(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i;
 
+function isOvaOrMovieTitle(title) {
+    return OVA_TITLE_RE.test(title) || OVA_WORD_RE.test(title) || OVA_PAREN_RE.test(title);
+}
+
 export function sanitizeContaminatedEpisodeCards(episodesList) {
     if (!episodesList || !Array.isArray(episodesList)) return [];
     const ovaTitleRegex = OVA_TITLE_RE;
@@ -325,11 +329,17 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
     const mergedEps = Array.from(epMap.values());
     mergedEps.sort((a, b) => a.num - b.num); // Urutkan dari episode terlama (terkecil) ke terbaru (terbesar)
 
-    // Cross-check: drop any noNumEps entry (movie/OVA label) whose URLs are already
-    // fully covered by a numbered episode in epMap. This handles the case where
-    // different sites label the same single episode differently — e.g., Samehadaku
-    // calls it "Episode 1" (num: 1) while Kuronime calls it "Movie" (num: null).
-    // Collecting all URLs present in numbered episodes for fast O(1) lookup.
+    // Cross-check: drop any noNumEps entry (movie/OVA label) if:
+    //   (a) Its URLs are already fully covered by a numbered episode (same URL, different label), OR
+    //   (b) The numbered episodes already satisfy the expected count from the DB (epMap.size >= episodesCount).
+    //       This handles the case where different scrapers give *different* episode-page URLs to the
+    //       same single movie — e.g., Nimegami calls it "Episode 1" and Ylnime calls it "Episode Movie",
+    //       with completely different URLs but the same underlying video content.
+    const expectedEpCount = dbAnime?.episodesCount || 0;
+    const numberedEpCount = mergedEps.length;
+    const numberedEpsCoversAll = expectedEpCount > 0 && numberedEpCount >= expectedEpCount;
+
+    // Collect all URLs from numbered episodes for fast O(1) lookup (used by check (a) below)
     const numberedEpUrlSet = new Set();
     for (const ep of mergedEps) {
         for (const url of (ep.urls || [])) {
@@ -339,12 +349,23 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
 
     const filteredNoNumEps = noNumEps.filter(ep => {
         const epUrls = (ep.urls || []).filter(Boolean);
-        if (epUrls.length === 0) return true; // No URLs to cross-check — keep it
-        const allCovered = epUrls.every(url => numberedEpUrlSet.has(url));
-        if (allCovered) {
-            console.info(`[EpisodeService] 🎬 Membuang entri duplikat OVA/Movie "${ep.judul}" karena URL-nya sudah tercakup dalam episode bernomor.`);
+        const title = (ep.judul || '').trim();
+
+        // (a) URL cross-check: all URLs already present in numbered episodes
+        if (epUrls.length > 0 && epUrls.every(url => numberedEpUrlSet.has(url))) {
+            console.info(`[EpisodeService] 🎬 Membuang entri duplikat OVA/Movie "${title}" karena URL-nya sudah tercakup dalam episode bernomor.`);
             return false;
         }
+
+        // (b) Strict single-episode movie: episodesCount === 1 means this is a movie with exactly
+        //     one watchable entry. Any OVA/movie-titled entry is definitionally a duplicate label
+        //     for the same content (e.g. "Episode Movie" from ylnime alongside "Episode 1" from nimegami).
+        //     We do NOT apply this to multi-episode series (episodesCount > 1) to protect genuine OVAs.
+        if (isOvaOrMovieTitle(title) && expectedEpCount === 1 && numberedEpCount >= 1) {
+            console.info(`[EpisodeService] 🎬 Membuang entri duplikat OVA/Movie "${title}" — anime ini adalah movie satu episode (episodesCount: 1).`);
+            return false;
+        }
+
         return true;
     });
 
