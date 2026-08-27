@@ -304,7 +304,8 @@ The agent must flag and refactor a file if any of the following conditions are m
 ## Mandatory Git Commit Protocol
 
 > [!IMPORTANT]
-> **Every completed task must end with a git commit. No exceptions.**
+> **Every completed task or bug fix must end with a git commit. No exceptions.**
+> **You MUST NOT declare a fix complete, nor ask the user to test your changes, until you have successfully committed the changes to Git.**
 
 This ensures every change is a revertable checkpoint. If a deployment or runtime regression is detected, the last known-good state can be restored immediately with `git revert` or `git checkout`.
 
@@ -316,7 +317,7 @@ The agent must stage and commit after **any** of the following:
 - An existing file is modified.
 - A file is deleted or renamed.
 - A refactor is completed (even if behavior is unchanged).
-- A bug is fixed.
+- A bug is fixed (MUST commit before telling the user the bug is fixed).
 - A dependency is added or removed (`package.json` changed).
 
 ### Commit Sequence
