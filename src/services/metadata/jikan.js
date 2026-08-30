@@ -105,9 +105,9 @@ function findBestMatch(results, query) {
     const qLower = query.toLowerCase();
     
     for (const anime of results) {
-        const tMain = (anime.title || '').toLowerCase();
-        const tEng = (anime.title_english || '').toLowerCase();
-        const syns = (anime.title_synonyms || []).map(s => s.toLowerCase());
+        const tMain = normalizeTitle(anime.title || '');
+        const tEng = normalizeTitle(anime.title_english || '');
+        const syns = (anime.title_synonyms || []).map(s => normalizeTitle(s));
         const allTitles = [tMain, tEng, ...syns];
         if (allTitles.includes(qLower)) return anime;
     }
