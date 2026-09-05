@@ -396,7 +396,8 @@ export async function extractVideoUrl(embedUrl, req) {
             if (!cookieStr) {
                 console.log(`[VideoExtractor] Mengambil cookie CF (Puppeteer) untuk animeverse.id (YLnime)...`);
                 try {
-                    await refreshCfCookie(embedUrl);
+                    const originUrl = new URL(embedUrl).origin + '/';
+                    await refreshCfCookie(originUrl);
                     cookieStr = getCfCookie('s3.animeverse.id') || getCfCookie('animeverse.id');
                 } catch (e) {
                     console.error('[VideoExtractor] Gagal memancing cookie CF untuk YLnime:', e.message);
