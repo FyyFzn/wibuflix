@@ -1,4 +1,4 @@
-import { acquireFromPool, releaseToPool } from '../../puppeteer/pool.js';
+import { acquireFromPool, releaseToPool, getCfCookie, refreshCfCookie, globalUserAgent } from '../../puppeteer/pool.js';
 import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
@@ -384,19 +384,37 @@ export async function extractVideoUrl(embedUrl, req) {
         console.log(`[Direct] URL sudah merupakan file video langsung: ${embedUrl}`);
         
         let referer = getExtractorReferer(embedUrl, req);
+        let userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+        let cookieStr = '';
+
         // FIX untuk YLnime: s3.animeverse.id membutuhkan referer khusus animeverse
         if (embedUrl.includes('animeverse.id')) {
             referer = 'https://animeverse.id/';
+            userAgent = globalUserAgent; // Wajib sama dengan Puppeteer agar Cookie CF Valid
+            
+            cookieStr = getCfCookie('s3.animeverse.id') || getCfCookie('animeverse.id');
+            if (!cookieStr) {
+                console.log(`[VideoExtractor] Mengambil cookie CF (Puppeteer) untuk animeverse.id (YLnime)...`);
+                try {
+                    await refreshCfCookie(embedUrl);
+                    cookieStr = getCfCookie('s3.animeverse.id') || getCfCookie('animeverse.id');
+                } catch (e) {
+                    console.error('[VideoExtractor] Gagal memancing cookie CF untuk YLnime:', e.message);
+                }
+            }
         } else if (embedUrl.includes('animeku.org')) {
             referer = 'https://animeku.org/';
         }
 
+        const finalHeaders = {
+            'Referer': referer,
+            'User-Agent': userAgent
+        };
+        if (cookieStr) finalHeaders['Cookie'] = cookieStr;
+
         return { 
             url: embedUrl,
-            headers: {
-                'Referer': referer,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            headers: finalHeaders
         };
     }
 
