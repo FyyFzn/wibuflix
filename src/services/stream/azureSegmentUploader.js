@@ -52,7 +52,7 @@ export async function uploadSegmentStaged(localPath, azureDest, globalAbort, blo
     try { fs.promises.unlink(stagingPath).catch(() => {}); } catch (e) {}
     totalUploadedChunksRef.count++;
     if (blobPath) {
-        uploadProgressCache.set(blobPath, `Mencicil unggahan pecahan video... (${totalUploadedChunksRef.count} pecahan terkirim)`);
+        uploadProgressCache.set(blobPath, `Mengalirkan video ke Cloud Storage... (Segment ${totalUploadedChunksRef.count} terkirim)`);
     }
     return true;
 }

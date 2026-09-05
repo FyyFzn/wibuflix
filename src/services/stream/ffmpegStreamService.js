@@ -125,8 +125,8 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
 
             if (globalAbort.signal.aborted) throw new Error('UPLOAD_CANCELLED');
 
-            console.info(`[FFmpegStream] Memulai pemotongan HLS lokal secara utuh untuk ${blobPath}`);
-            uploadProgressCache.set(blobPath, 'Memproses video utuh secara lokal...');
+            console.info(`[FFmpegStream] Memulai pemotongan HLS paralel untuk ${blobPath}`);
+            uploadProgressCache.set(blobPath, 'Memproses & Mengalirkan video ke Cloud Storage...');
             
             const baseAzurePath = `${seriesSlug}/${episodeSlug}`;
 

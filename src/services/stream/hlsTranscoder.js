@@ -81,33 +81,13 @@ export async function transcodeAndMonitorHLS({
             }
         });
 
-        ffmpegProcess.on('close', async (code) => {
+        ffmpegProcess.on('close', (code) => {
             globalAbort.signal.removeEventListener('abort', onAbort);
             if (code !== 0 && !isUploadError) {
                 reject(new Error(`FFmpeg Gagal (exit code ${code}):\n${ffmpegStderr}`));
                 return;
             }
-            
-            try {
-                if (isUploadError) return;
-                
-                uploadProgressCache.set(blobPath, 'Mengunggah file HLS utuh ke server...');
-                
-                const remainingFiles = fs.readdirSync(hlsOutputDir);
-                const tsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
-                
-                if (tsFiles.length <= 2 && !blobPath.includes('trailer')) {
-                    reject(new Error('Koneksi terputus di tengah jalan: Hanya mendapatkan 1-2 segmen video. Silakan coba server lain.'));
-                    return;
-                }
-
-                await uploadRemainingFilesToAzure(hlsOutputDir, baseAzurePath, globalAbort, uploadLimit);
-                resolve();
-            } catch (err) {
-                if (!isUploadError) {
-                    reject(new Error('Gagal mengunggah file utuh ke Azure: ' + err.message));
-                }
-            }
+            isFfmpegDone = true;
         });
 
         if (isPipeMode && streamSource) {
@@ -118,5 +98,63 @@ export async function transcodeAndMonitorHLS({
                 reject(new Error(`Stream putus: ${err.message}`));
             });
         }
+
+        const totalUploadedChunksRef = { count: 0 };
+        let finalSweepTriggered = false;
+        let isProcessingInterval = false;
+        
+        const intervalId = setInterval(async () => {
+            if (isProcessingInterval) return;
+            isProcessingInterval = true;
+            try {
+                if (isUploadError) {
+                    clearInterval(intervalId);
+                    return;
+                }
+                
+                if (isFfmpegDone && !finalSweepTriggered) {
+                    finalSweepTriggered = true;
+                    clearInterval(intervalId);
+                    uploadProgressCache.set(blobPath, 'Menyelesaikan playlist akhir...');
+                    
+                    const remainingFiles = fs.readdirSync(hlsOutputDir);
+                    const finalTsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
+                    
+                    const totalTsCount = totalUploadedChunksRef.count + finalTsFiles.length;
+                    if (totalTsCount <= 2 && !blobPath.includes('trailer')) {
+                        reject(new Error('Koneksi terputus di tengah jalan: Hanya mendapatkan 1-2 segmen video. Silakan coba server lain.'));
+                        return;
+                    }
+
+                    await uploadRemainingFilesToAzure(hlsOutputDir, baseAzurePath, globalAbort, uploadLimit);
+
+                    resolve();
+                    return;
+                }
+                
+                const files = fs.readdirSync(hlsOutputDir);
+                const validTsFiles = files.filter(f => f.endsWith('.ts')).sort();
+                
+                if (validTsFiles.length === 0) {
+                    isProcessingInterval = false;
+                    return;
+                }
+
+                await Promise.all(validTsFiles.map(file => uploadLimit(async () => {
+                    if (isUploadError) return;
+                    const localPath = path.join(hlsOutputDir, file);
+                    const azureDest = `${baseAzurePath}/${file}`;
+                    await uploadSegmentStaged(localPath, azureDest, globalAbort, blobPath, totalUploadedChunksRef);
+                })));
+
+            } catch (err) {
+                isUploadError = true;
+                clearInterval(intervalId);
+                try { ffmpegProcess.kill(); } catch(e){}
+                reject(new Error('Gagal mencicil ke Azure: ' + err.message));
+            } finally {
+                isProcessingInterval = false;
+            }
+        }, 1500); // Reduced interval from 4000ms to 1500ms
     });
 }
