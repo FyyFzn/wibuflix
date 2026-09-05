@@ -17,10 +17,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Diagnose YLnime IP Block (Datacenter IP Test)
-        run: node diagnose_azure.cjs
-        continue-on-error: true  # Jangan gagalkan build karena diagnose
-
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
         with:
