@@ -4,7 +4,7 @@ import { findBestVideoSource } from './streamRankingService.js';
 import { checkUploadStatusWithFallback, getBlobPath } from './stream/blobStorageService.js';
 import { markUploadFailed, hasActiveUploadForSeries, getActiveUploadCount } from './stream/uploadProgressService.js';
 import { uploadStream } from './stream/ffmpegStreamService.js';
-import { globalBlacklistCache, uploadCache } from './stream/streamStateStore.js';
+import { globalBlacklistCache, uploadCache, directUrlCache } from './stream/streamStateStore.js';
 import { getCache } from '../utils/cacheManager.js';
 import { getUnifiedAnimeEpisodes } from './animeOrchestrator.js';
 import { extractEpNum } from '../utils/stringUtils.js';
@@ -293,6 +293,22 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 }
 
                 proxyCache.set(`prefetch_src_${activeSlug}_${episodeSlug}`, matchedSource);
+
+                // ── Datacenter-Hostile Bypass ──
+                // Host seperti s3.animeverse.id (YLnime) memblokir IP datacenter (Azure).
+                // Tidak mungkin didownload dari server — simpan URL langsung untuk diputar oleh browser user.
+                const DATACENTER_HOSTILE_HOSTS = ['animeverse.id', 's3.animeverse.id'];
+                const matchedHostLow = (matchedSource.host || '').toLowerCase();
+                if (DATACENTER_HOSTILE_HOSTS.some(h => matchedHostLow.includes(h))) {
+                    const blobPath = `${activeSlug}/${activeEpSlug}/playlist.m3u8`;
+                    directUrlCache.set(blobPath, { url: matchedSource.url, headers: matchedSource.headers || {} });
+                    uploadCache.set(blobPath, 'DIRECT', 7200);
+                    console.info(`${logPrefix} ✓ [Direct URL] ${matchedSource.host} tidak bisa didownload dari server. URL disimpan untuk diputar langsung di browser.`);
+                    proxyCache.del(`prefetch_src_${activeSlug}_${episodeSlug}`);
+                    removeActiveExtractions(checkSlugs, episodeSlugsToCheck);
+                    return { success: true };
+                }
+
                 await uploadStream(matchedSource.url, matchedSource.headers, activeSlug, episodeSlug, source);
                 if (matchedSource && matchedSource.source) {
                     uploadCache.set(`blob_source_prov_${activeSlug}_${episodeSlug}`, matchedSource.source.toLowerCase().trim());

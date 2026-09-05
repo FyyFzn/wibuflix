@@ -1,5 +1,5 @@
 import { BlobServiceClient } from '@azure/storage-blob';
-import { uploadCache } from './streamStateStore.js';
+import { uploadCache, directUrlCache } from './streamStateStore.js';
 
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'videos';
@@ -68,6 +68,10 @@ export async function checkUploadStatus(seriesSlug, episodeSlug) {
     if (cachedStatus === 'UPLOADING' || cachedStatus === 'FAILED') {
         return cachedStatus;
     }
+    // DIRECT: URL langsung dari host yang memblokir datacenter (seperti YLnime/animeverse.id)
+    if (cachedStatus === 'DIRECT') {
+        return 'DIRECT';
+    }
 
     if (!containerClient) return null;
 
@@ -99,6 +103,12 @@ export async function checkUploadStatusWithFallback(seriesSlug, episodeSlug, old
         if (!sSlug) continue;
         for (const eSlug of episodeSlugs) {
             if (!eSlug) continue;
+            const blobPath = getBlobPath(sSlug, eSlug);
+            // Cek DIRECT cache terlebih dahulu (lebih murah daripada hit Azure)
+            const directEntry = directUrlCache.get(blobPath);
+            if (directEntry) {
+                return { status: 'DIRECT', activeSeriesSlug: sSlug, activeEpisodeSlug: eSlug, directUrl: directEntry.url, directHeaders: directEntry.headers };
+            }
             let status = await checkUploadStatus(sSlug, eSlug);
             if (status !== null) {
                 return { status, activeSeriesSlug: sSlug, activeEpisodeSlug: eSlug };

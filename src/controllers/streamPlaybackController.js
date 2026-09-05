@@ -69,6 +69,16 @@ export async function smartPlayHandler(req, res) {
             });
         }
 
+        // Video dari host yang memblokir datacenter (seperti YLnime/animeverse.id)
+        // URL dikembalikan langsung agar browser user bisa memutarnya tanpa melalui Azure.
+        if (status === 'DIRECT' && checkInfo.directUrl) {
+            return res.json({
+                success: true,
+                status: 'READY',
+                url: checkInfo.directUrl
+            });
+        }
+
         if (status === 'UPLOADING') {
             const validPrefetch = prefetchWindow.filter(u => u && u !== episodeUrl && u !== req.query.url);
             if (validPrefetch.length > 0) {

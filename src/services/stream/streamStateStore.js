@@ -101,3 +101,11 @@ export const activeUploadControllers = new BoundedLRUMap(100, 7200000, (key, val
     }
 }); // max 100 items, 2 jam TTL, auto abort & cleanup saat evict
 export const failureCountCache = getCache('failure-count', 86400); // 24 hours TTL
+
+/**
+ * Cache untuk URL video yang tidak bisa diunduh dari server (datacenter-hostile).
+ * Key: blobPath (seriesSlug/episodeSlug/playlist.m3u8)
+ * Value: { url, headers } — dikirim langsung ke frontend untuk diputar di browser user.
+ * TTL: 2 jam (URL CDN biasanya valid selama beberapa jam)
+ */
+export const directUrlCache = getCache('direct-url', 7200); // 2 jam TTL
