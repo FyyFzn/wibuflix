@@ -4,7 +4,6 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer, recordIframeReferer, getExtractorReferer } from './providers/utils.js';
 import { resolveExtractor } from './providers/index.js';
-import * as genericExtractor from './providers/generic.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 export { extractIframeSrc, namaServer };
@@ -419,23 +418,16 @@ export async function extractVideoUrl(embedUrl, req) {
         };
     }
 
-    // ── 2. Bypass Cepat untuk Server yang Tidak Didukung (Mencegah Timeout 25 Detik) ──
-    const unsupportedHosts = ['mirrorupload', 'gofile'];
-    if (unsupportedHosts.some(h => embedUrl.toLowerCase().includes(h))) {
-        console.log(`[Unsupported] Melewati ekstraksi Puppeteer untuk: ${embedUrl}`);
-        return null; // Akan langsung gagal karena sistem hanya menggunakan Blob
+    // ── 2. Bypass Cepat untuk URL tanpa extractor yang dikenal ──
+    // Link shortener (Racaty, Solidfiles, Zippyshare, dll) tidak memiliki extractor khusus.
+    // Langsung tolak daripada membuang waktu 25 detik di Puppeteer generic.
+    const extractor = resolveExtractor(embedUrl);
+    if (!extractor) {
+        console.log(`[Unsupported] Tidak ada extractor untuk: ${embedUrl} — Dilewati.`);
+        return null;
     }
 
     // ── 3. Delegasikan ke modular extractors ──
-    const extractor = resolveExtractor(embedUrl);
-    let result = await extractor.extract(embedUrl, req);
-
-    // ── 4. Automatic Fallback ke Puppeteer generic jika fast extractor gagal ──
-    if (!result && extractor.name !== 'generic') {
-        console.log(`[Extract Fallback] Extractor cepat '${extractor.name || 'provider'}' gagal. Mengalihkan ke Puppeteer generic...`);
-        result = await genericExtractor.extract(embedUrl, req);
-    }
-
+    const result = await extractor.extract(embedUrl, req);
     return result;
 }
-

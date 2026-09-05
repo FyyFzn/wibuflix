@@ -10,7 +10,6 @@ import * as filelions from './filelions.js';
 import * as gdrive from './gdrive.js';
 import * as mega from './mega.js';
 import * as mediafire from './mediafire.js';
-import * as generic from './generic.js';
 
 const extractors = [
     blogger,
@@ -24,7 +23,7 @@ const extractors = [
     filelions,
     gdrive,
     mega,
-    mediafire, // Harus sebelum generic agar tidak jatuh ke Puppeteer
+    mediafire,
 ];
 
 export function resolveExtractor(embedUrl) {
@@ -33,5 +32,5 @@ export function resolveExtractor(embedUrl) {
             return extractor;
         }
     }
-    return generic;
+    return null; // Tidak ada extractor yang cocok
 }
