@@ -1,5 +1,4 @@
 import { extractVideoUrl, scrapeVideoServers, resolveSingleServer } from './extractors/videoExtractor.js';
-import { isMegaBlacklisted } from './stream/uploadProgressService.js';
 import { globalBlacklistCache } from './stream/streamStateStore.js';
 import { checkRangeSupport } from './stream/ffmpegStreamService.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
@@ -11,10 +10,7 @@ export async function getServersBasedOnUrl(episodeUrl) {
 export function serverScore(host) {
     if (!host) return 0;
     const h = host.toLowerCase();
-    if (h.includes('mega')) {
-        if (isMegaBlacklisted()) return -1000;
-        return 100;
-    }
+    if (h.includes('mega')) return -1000;
     if (h.includes('wibufile')) return 90;
     if (h.includes('pixeldrain')) return 85;
     if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
@@ -244,49 +240,20 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             }
         }
 
-        // TWO-PHASE FETCH STRATEGY:
-        // Phase 1: Tunggu provider cepat (Otakudesu, Samehadaku, Nanime) selesai
-        // Phase 2: Jika provider cepat sudah memberikan hasil → beri Kuronime grace period 5 detik
-        //          Jika TIDAK ada hasil dari provider cepat → tunggu Kuronime penuh (max 45 detik)
+        // Kumpulkan semua task (termasuk Kuronime yang sudah di-warmup tokennya)
+        const allTasks = [...fetchTasks, ...slowFetchTasks];
+
         let servers = [];
 
         if (abortSignal && abortSignal.aborted) {
-            console.info(`${logPrefix} Proses dibatalkan pengguna sebelum menunggu provider cepat.`);
+            console.info(`${logPrefix} Proses dibatalkan pengguna sebelum menunggu provider.`);
             return { matchedSource: null, error: 'UPLOAD_CANCELLED' };
         }
 
-        if (fetchTasks.length > 0) {
-            const fastResults = await Promise.all(fetchTasks);
-            servers = fastResults.flat();
-        }
-
-        if (abortSignal && abortSignal.aborted) {
-            console.info(`${logPrefix} Proses dibatalkan pengguna sebelum menunggu provider lambat.`);
-            return { matchedSource: null, error: 'UPLOAD_CANCELLED' };
-        }
-
-        if (slowFetchTasks.length > 0) {
-            const has1080 = servers.some(s => (s.kualitas && s.kualitas.includes('1080')) || (s.nama && s.nama.includes('1080')));
-            const hasBlacklistedProv = slugs && ['otakudesu', 'nanime', 'samehadaku'].some(p => isEpisodeProviderBlacklisted(p, slugs));
-            const gracePeriod = servers.length === 0 ? 45000 : (!has1080 || hasBlacklistedProv ? 15000 : 5000);
-            const phaseLabel = servers.length === 0 ? 'full wait 45s' : (!has1080 || hasBlacklistedProv ? 'grace period 15s' : 'grace period 5s');
-            console.info(`${logPrefix} Provider cepat menghasilkan ${servers.length} server. Menunggu Kuronime (${phaseLabel})...`);
-
-            const slowWithTimeout = slowFetchTasks.map(task =>
-                Promise.race([
-                    task,
-                    new Promise(resolve => setTimeout(() => {
-                        console.info(`${logPrefix} Kuronime timeout setelah ${gracePeriod / 1000}s — melanjutkan tanpa Kuronime.`);
-                        resolve([]);
-                    }, gracePeriod))
-                ])
-            );
-            const slowResults = await Promise.all(slowWithTimeout);
-            const slowServers = slowResults.flat();
-            if (slowServers.length > 0) {
-                console.info(`${logPrefix} ✓ Kuronime berhasil: ${slowServers.length} server ditambahkan ke kandidat.`);
-                servers = servers.concat(slowServers);
-            }
+        if (allTasks.length > 0) {
+            console.info(`${logPrefix} Menunggu ${allTasks.length} provider secara serentak...`);
+            const results = await Promise.all(allTasks);
+            servers = results.flat();
         }
 
         if (servers.length === 0) {
@@ -295,7 +262,7 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
         const groups = { 1080: [], 720: [], 480: [], 360: [] };
         for (const srv of servers) {
-            if (srv.namaHost && srv.namaHost.toLowerCase().includes('ma') && isMegaBlacklisted()) {
+            if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega')) {
                 continue;
             }
             const resGroup = getResolutionGroup(srv.nama);
@@ -340,8 +307,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                 }
                 
                 try {
-                    if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
-                        console.warn(`${logPrefix} Melewati ${srv.namaHost} karena sedang di-blacklist.`);
+                    if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega')) {
+                        console.warn(`${logPrefix} Melewati ${srv.namaHost} karena Mega tidak didukung.`);
                         continue;
                     }
                     if (isServerExcluded(srv.namaHost, slugs) || isServerExcluded(srv.nama, slugs)) {
@@ -361,8 +328,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                                 iframeUrlToExtract = res.iframeUrl;
                                 srv.namaHost = res.namaHost || srv.namaHost || srv.nama;
                             }
-                            if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega') && isMegaBlacklisted()) {
-                                console.warn(`${logPrefix} Melewati ${srv.namaHost} (setelah resolve) karena sedang di-blacklist.`);
+                            if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega')) {
+                                console.warn(`${logPrefix} Melewati ${srv.namaHost} (setelah resolve) karena Mega tidak didukung.`);
                                 continue;
                             }
                             if (isServerExcluded(srv.namaHost, slugs) || isServerExcluded(srv.nama, slugs)) {
@@ -384,8 +351,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
                     const extracted = await extractVideoUrl(iframeUrlToExtract, req);
                     if (extracted && extracted.url && !extracted.webviewOnly) {
-                        if (extracted.url.toLowerCase().includes('mega.nz') && isMegaBlacklisted()) {
-                            console.warn(`${logPrefix} Melewati extracted url Mega karena sedang di-blacklist.`);
+                        if (extracted.url.toLowerCase().includes('mega.nz')) {
+                            console.warn(`${logPrefix} Melewati extracted url Mega karena Mega tidak didukung.`);
                             continue;
                         }
                         let extractedHost = '';

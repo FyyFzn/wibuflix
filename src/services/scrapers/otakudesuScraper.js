@@ -191,8 +191,16 @@ async function resolveOtakuServers($) {
                         }
                         if (directUrl) {
                             hostFailCounts.delete(hostLower);
+                            let kualitas = 'SD';
+                            const lowerRes = resText.toLowerCase();
+                            if (lowerRes.includes('1080')) kualitas = '1080p';
+                            else if (lowerRes.includes('720')) kualitas = '720p';
+                            else if (lowerRes.includes('480')) kualitas = '480p';
+                            else if (lowerRes.includes('360')) kualitas = '360p';
+
                             servers.push({
                                 nama: resText,
+                                kualitas: kualitas,
                                 namaHost: hostRaw,
                                 iframeUrl: directUrl,
                                 type: 'direct',
