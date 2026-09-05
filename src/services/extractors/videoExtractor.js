@@ -368,12 +368,33 @@ export async function extractVideoUrl(embedUrl, req) {
     console.log(`\n[Extract] ${embedUrl}`);
 
     // ── 1. Bypass Mutlak untuk link yang sudah berupa file video langsung ──
-    if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i) && !embedUrl.includes('.php')) {
+    let isDirect = false;
+    try {
+        const parsedUrl = new URL(embedUrl);
+        if (parsedUrl.pathname.match(/\.(mp4|mkv|m3u8)$/i) && !parsedUrl.pathname.includes('.php')) {
+            isDirect = true;
+        }
+    } catch (e) {
+        if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i) && !embedUrl.includes('.php')) {
+            isDirect = true;
+        }
+    }
+    
+    if (isDirect) {
         console.log(`[Direct] URL sudah merupakan file video langsung: ${embedUrl}`);
+        
+        let referer = getExtractorReferer(embedUrl, req);
+        // FIX untuk YLnime: s3.animeverse.id membutuhkan referer khusus animeverse
+        if (embedUrl.includes('animeverse.id')) {
+            referer = 'https://animeverse.id/';
+        } else if (embedUrl.includes('animeku.org')) {
+            referer = 'https://animeku.org/';
+        }
+
         return { 
             url: embedUrl,
             headers: {
-                'Referer': getExtractorReferer(embedUrl, req),
+                'Referer': referer,
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         };

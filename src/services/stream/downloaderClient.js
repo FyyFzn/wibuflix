@@ -273,9 +273,14 @@ export async function downloadFromMega(megaUrl, tempFilePath, globalAbort, blobP
 
         megaStream.on('error', (err) => {
             globalAbort.signal.removeEventListener('abort', onAbort);
+            if (globalAbort.signal.aborted) {
+                try { writer.destroy(err); } catch (e) {}
+                return reject(new Error('UPLOAD_CANCELLED'));
+            }
             console.error('[FFmpegStream] Mega Download Error:', err.message);
             console.warn('[FFmpegStream] Mega limit/blocked/disconnected hit. Blacklisting Mega for 10 minutes.');
             globalBlacklistCache.set('mega_blacklist', true, 600);
+            try { writer.destroy(err); } catch (e) {}
             reject(err);
         });
     });
