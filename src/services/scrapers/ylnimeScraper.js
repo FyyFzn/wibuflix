@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { getCache } from '../../utils/cacheManager.js';
 import { cleanSeriesTitle, extractEpNum } from '../../utils/stringUtils.js';
+import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 const cache = getCache('episodes', 3600);
@@ -35,12 +36,11 @@ export async function getYlnimeEpisodes(animeUrl) {
     if (cached) return cached;
 
     try {
-        const { data } = await axios.get(animeUrl, {
-            headers: AX_HEADERS,
-            timeout: 20000
-        });
+        const fetchRes = await fetchWithCF(animeUrl, { fetchTimeout: 20000 });
+        const $ = fetchRes.$;
+        const data = fetchRes.html;
 
-        const $ = cheerio.load(data);
+        if (!$) throw new Error("Gagal load cheerio");
 
         // Judul seri dari title tag atau heading
         let judulSeri = $('h1.anime-title, h2.series-title, .series-header h1, h1').first().text().trim();
@@ -138,12 +138,9 @@ export async function getYlnimeServers(episodeUrl) {
     if (cached) return cached;
 
     try {
-        const { data } = await axios.get(episodeUrl, {
-            headers: AX_HEADERS,
-            timeout: 20000
-        });
-
-        const $ = cheerio.load(data);
+        const fetchRes = await fetchWithCF(episodeUrl, { fetchTimeout: 20000 });
+        const data = fetchRes.html;
+        const $ = fetchRes.$;
         const servers = [];
 
         // Ambil judul episode dari title atau heading
@@ -214,11 +211,11 @@ export async function getYlnimeServers(episodeUrl) {
         });
 
         if (resoLinks.length > 0) {
-            const promises = resoLinks.map(link => axios.get(link, { headers: AX_HEADERS, timeout: 15000 }).catch(() => null));
+            const promises = resoLinks.map(link => fetchWithCF(link, { fetchTimeout: 15000 }).catch(() => null));
             const results = await Promise.all(promises);
             for (const res of results) {
-                if (res && res.data) {
-                    const extraStreams = parseStreams(res.data);
+                if (res && res.html) {
+                    const extraStreams = parseStreams(res.html);
                     extraStreams.forEach(s => {
                         if (!seenUrls.has(s.url)) {
                             seenUrls.add(s.url);
@@ -317,12 +314,8 @@ export async function getYlnimeLatestUpdates() {
     if (cached) return cached;
 
     try {
-        const { data } = await axios.get(`${BASE_URL}/index.php?terbaru=1`, {
-            headers: AX_HEADERS,
-            timeout: 15000
-        });
-
-        const $ = cheerio.load(data);
+        const fetchRes = await fetchWithCF(`${BASE_URL}/index.php?terbaru=1`, { fetchTimeout: 15000 });
+        const $ = fetchRes.$;
         const updates = [];
 
         // Selector untuk card anime terbaru
