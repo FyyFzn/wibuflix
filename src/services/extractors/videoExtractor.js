@@ -368,7 +368,7 @@ export async function extractVideoUrl(embedUrl, req) {
     console.log(`\n[Extract] ${embedUrl}`);
 
     // ── 1. Bypass Mutlak untuk link yang sudah berupa file video langsung ──
-    if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i)) {
+    if (embedUrl.match(/\.(mp4|mkv|m3u8)(?:\?|$)/i) && !embedUrl.includes('.php')) {
         console.log(`[Direct] URL sudah merupakan file video langsung: ${embedUrl}`);
         return { 
             url: embedUrl,
