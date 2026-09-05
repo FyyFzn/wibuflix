@@ -8,6 +8,10 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+    // Abaikan error "Target closed" dari puppeteer-extra-plugin-stealth yang tidak berbahaya
+    if (reason && reason.name === 'TargetCloseError' && reason.message && reason.message.includes('Target closed')) {
+        return;
+    }
     console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 

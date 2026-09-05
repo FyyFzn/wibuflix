@@ -64,7 +64,16 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 uploadProgressCache.set(blobPath, 'Menghubungkan ke stream M3U8...');
             } else {
                 uploadProgressCache.set(blobPath, 'Menghubungkan ke server...');
-                const rangeCheck = await checkRangeSupport(videoUrl, requestHeaders);
+                
+                // Domain yang diketahui memblokir IP datacenter (VPS/Azure).
+                // checkRangeSupport akan selalu 403, jadi langsung gunakan pipe stream.
+                const datacenterHostileHosts = ['animeverse.id', 's3.animeverse.id'];
+                const hostLowForCheck = videoUrl.toLowerCase();
+                const isDatacenterHostile = datacenterHostileHosts.some(h => hostLowForCheck.includes(h));
+
+                const rangeCheck = isDatacenterHostile 
+                    ? { supported: false, totalSize: 0 }
+                    : await checkRangeSupport(videoUrl, requestHeaders);
                 
                 let numThreads = 1;
                 const hostLow = videoUrl.toLowerCase();

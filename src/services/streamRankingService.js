@@ -362,6 +362,24 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                             continue;
                         }
                         const finalHeaders = { ...(extracted.headers || {}), ...(srv.headers || {}) };
+
+                        // Domain yang diketahui memblokir IP datacenter (VPS/Azure).
+                        // Ping test akan selalu 403, jadi langsung diterima tanpa uji koneksi.
+                        const datacenterHostileHosts = ['animeverse.id', 's3.animeverse.id'];
+                        const skipPing = datacenterHostileHosts.some(h => extractedHost.includes(h));
+
+                        if (skipPing) {
+                            console.info(`${logPrefix} ✓ [Skip Ping] Host ${extractedHost} tidak support datacenter IP. Langsung diterima.`);
+                            matchedSource = { 
+                                url: extracted.url, 
+                                headers: finalHeaders,
+                                server: srv.namaHost || srv.nama || 'unknown',
+                                source: srv.source || 'Unknown',
+                                host: extractedHost || ''
+                            };
+                            break;
+                        }
+
                         try {
                             await checkRangeSupport(extracted.url, finalHeaders);
                             matchedSource = { 
