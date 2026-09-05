@@ -83,8 +83,11 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 
                 if (rangeCheck.supported && numThreads > 1) {
                     console.info(`[FFmpegStream] Mode JDownloader/Kraken. Mengunduh ke VPS lokal...`);
+                    // Use up to 16 threads if kraken, otherwise use 12 for large files, 8 for smaller files.
+                    const finalNumThreads = hostLow.includes('kraken') ? 16 : (rangeCheck.totalSize > 500 * 1024 * 1024 ? 12 : 8);
+                    isPipeMode = false;
                     ffmpegInputSource = tempFilePath;
-                    await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);
+                    await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, finalNumThreads, globalAbort, blobPath);
                 } else if (videoUrl.includes('/api/proxy/mega')) {
                     console.info(`[FFmpegStream] Mode Mega: Mengunduh file penuh terlebih dahulu ke lokal (maxConnections: 4)...`);
                     isPipeMode = false;

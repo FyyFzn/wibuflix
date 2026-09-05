@@ -55,7 +55,7 @@ export async function transcodeAndMonitorHLS({
     return await new Promise((resolve, reject) => {
         let isFfmpegDone = false;
         let isUploadError = false;
-        const uploadLimit = pLimit(3);
+        const uploadLimit = pLimit(12); // Increased concurrency from 3 to 12
         let ffmpegProcess;
         
         const onAbort = () => {
@@ -155,6 +155,6 @@ export async function transcodeAndMonitorHLS({
             } finally {
                 isProcessingInterval = false;
             }
-        }, 4000);
+        }, 1500); // Reduced interval from 4000ms to 1500ms
     });
 }
