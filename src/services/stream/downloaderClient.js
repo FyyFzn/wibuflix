@@ -76,13 +76,19 @@ export async function downloadChunked(url, headers, tempFilePath, totalSize, num
     };
     globalAbort.signal.addEventListener('abort', handleGlobalAbort);
     
+    try {
+        const fd = fs.openSync(tempFilePath, 'w');
+        fs.ftruncateSync(fd, totalSize);
+        fs.closeSync(fd);
+    } catch (err) {
+        console.error(`[FFmpegStream] Gagal mengalokasikan file ${tempFilePath}:`, err.message);
+        throw err;
+    }
+
     for (let i = 0; i < numThreads; i++) {
         const start = i * chunkSize;
         const end = Math.min((i + 1) * chunkSize - 1, totalSize - 1);
         if (start > end) break;
-        
-        const chunkPath = `${tempFilePath}.part${i}`;
-        chunkFiles.push(chunkPath);
         
         promises.push(limit(async () => {
             const staggerDelay = 500 + Math.random() * 2000;
@@ -116,7 +122,7 @@ export async function downloadChunked(url, headers, tempFilePath, totalSize, num
                         throw new Error(`[Stream Validator] Gagal. URL ini bukan video! Content-Type yang didapat: ${contentType}`);
                     }
                     
-                    const writer = fs.createWriteStream(chunkPath);
+                    const writer = fs.createWriteStream(tempFilePath, { flags: 'r+', start: start });
                     let idleTimeout;
                     
                     const resetIdleTimeout = () => {
@@ -184,10 +190,10 @@ export async function downloadChunked(url, headers, tempFilePath, totalSize, num
                         throw err;
                     }
                     if (attempt >= maxAttempts) {
-                        console.error(`[FFmpegStream] Chunk ${i} gagal setelah ${maxAttempts} percobaan: ${err.message}`);
+                        console.error(`[FFmpegStream] Chunk gagal setelah ${maxAttempts} percobaan: ${err.message}`);
                         throw err;
                     }
-                    console.warn(`[FFmpegStream] Chunk ${i} gagal/stuck, mengulang (${attempt}/${maxAttempts})... Error: ${err.message}`);
+                    console.warn(`[FFmpegStream] Chunk gagal/stuck, mengulang (${attempt}/${maxAttempts})... Error: ${err.message}`);
                     await new Promise(r => setTimeout(r, 2000));
                 }
             }
@@ -197,24 +203,7 @@ export async function downloadChunked(url, headers, tempFilePath, totalSize, num
     await Promise.all(promises);
     globalAbort.signal.removeEventListener('abort', handleGlobalAbort);
     
-    console.info(`[FFmpegStream] Pengunduhan multi-jalur selesai. Menggabungkan ${chunkFiles.length} file...`);
-    uploadProgressCache.set(blobPath, 'Menggabungkan potongan file...');
-    
-    await fs.promises.unlink(tempFilePath).catch(() => {});
-    for (const chunkPath of chunkFiles) {
-        if (!fs.existsSync(chunkPath)) throw new Error(`Chunk hilang: ${chunkPath}`);
-        await new Promise((resolve, reject) => {
-            const reader = fs.createReadStream(chunkPath);
-            const writer = fs.createWriteStream(tempFilePath, { flags: 'a' });
-            reader.pipe(writer);
-            writer.on('finish', async () => {
-                await fs.promises.unlink(chunkPath).catch(() => {});
-                resolve();
-            });
-            reader.on('error', reject);
-            writer.on('error', reject);
-        });
-    }
+    console.info(`[FFmpegStream] Pengunduhan multi-jalur selesai. Langsung memulai proses...`);
 }
 
 export async function downloadFromMega(megaUrl, tempFilePath, globalAbort, blobPath) {
