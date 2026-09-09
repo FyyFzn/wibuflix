@@ -1,85 +1,60 @@
 /**
  * aiAdminController.js
- * Sole responsibility: receive AI chat messages, resolve DB card IDs from
- * the AI-parsed intent, and execute the appropriate admin action.
- * Primary selection rule: the card WITH a malId wins. If neither or both
- * have malId, the more complete title (longer) wins.
+ * Sole responsibility: receive AI chat messages, orchestrate the AI service +
+ * DB function execution loop, and return a final natural-language reply.
  */
 
-import { interpretAdminMessage } from '../services/aiAdminService.js';
+import { chat, submitFunctionResult } from '../services/aiAdminService.js';
 import { flushAll } from '../utils/cacheManager.js';
 import { normalizeTitleForMatch } from '../utils/stringUtils.js';
 
-// ── Title → DB Lookup ─────────────────────────────────────────────────────────
+// ── DB Helpers ────────────────────────────────────────────────────────────────
 
 async function findCardsByTitle(Anime, title) {
     const query = title.trim();
-    const results = await Anime.find({
+    return Anime.find({
         $or: [
             { title: { $regex: query, $options: 'i' } },
             { aliases: { $regex: query, $options: 'i' } },
             { normalizedTitle: { $regex: normalizeTitleForMatch(query), $options: 'i' } },
         ],
     })
-        .limit(5)
-        .select('_id title aliases image malId tmdbId sourceUrls')
+        .limit(6)
+        .select('_id title aliases image malId tmdbId sourceUrls isLocked')
         .lean();
-
-    return results;
 }
 
-// ── Primary Election ──────────────────────────────────────────────────────────
-
 /**
- * Given two card arrays (primary candidates and target candidates), pick the
- * best primary: prefer the card that already has a malId. If tie, prefer the
- * one with the longer title (more specific).
+ * Primary election: card WITH malId wins.
+ * Tiebreak: more source URLs = more data = primary.
  */
 function electPrimary(primaryCandidates, targetCandidates) {
-    const allCandidates = [...primaryCandidates, ...targetCandidates];
+    const all = [...primaryCandidates, ...targetCandidates];
+    const withMal = all.filter(c => c.malId);
 
-    // 1. Cards with malId rank highest
-    const withMal = allCandidates.filter(c => c.malId);
-    const withoutMal = allCandidates.filter(c => !c.malId);
-
-    if (withMal.length === 1) {
-        const primary = withMal[0];
-        const targets = allCandidates.filter(c => String(c._id) !== String(primary._id));
-        return { primary, targets };
-    }
-
-    // 2. Multiple have malId → pick the one with the most source URLs (most data)
-    if (withMal.length > 1) {
+    let primary;
+    if (withMal.length >= 1) {
         withMal.sort((a, b) => (b.sourceUrls?.length || 0) - (a.sourceUrls?.length || 0));
-        const primary = withMal[0];
-        const targets = allCandidates.filter(c => String(c._id) !== String(primary._id));
-        return { primary, targets };
+        primary = withMal[0];
+    } else {
+        primary = primaryCandidates[0];
     }
 
-    // 3. Nobody has malId → use the AI-declared primary as-is (first primaryCandidates result)
-    const primary = primaryCandidates[0];
-    const targets = allCandidates.filter(c => String(c._id) !== String(primary._id));
+    const targets = all.filter(c => String(c._id) !== String(primary._id));
     return { primary, targets };
 }
 
-// ── Merge Execution ───────────────────────────────────────────────────────────
-
 async function executeMerge(Anime, primary, targets) {
     const primaryDoc = await Anime.findById(primary._id);
-    if (!primaryDoc) throw new Error(`Primary card not found in DB: ${primary.title}`);
+    if (!primaryDoc) throw new Error(`Primary card not found: ${primary.title}`);
 
     for (const dup of targets) {
         const dupDoc = await Anime.findById(dup._id);
         if (!dupDoc) continue;
 
-        // Merge sourceUrls
-        const mergedUrls = new Set([
-            ...(primaryDoc.sourceUrls || []),
-            ...(dupDoc.sourceUrls || []),
-        ].filter(Boolean));
+        const mergedUrls = new Set([...(primaryDoc.sourceUrls || []), ...(dupDoc.sourceUrls || [])].filter(Boolean));
         primaryDoc.sourceUrls = Array.from(mergedUrls);
 
-        // Merge aliases (add the duplicate's title as an alias)
         const aliasSet = new Set([
             ...(primaryDoc.aliases || []),
             ...(dupDoc.aliases || []),
@@ -87,7 +62,6 @@ async function executeMerge(Anime, primary, targets) {
         ].filter(a => a && a !== primaryDoc.title));
         primaryDoc.aliases = Array.from(aliasSet);
 
-        // Fill in missing metadata from duplicate
         if (!primaryDoc.malId && dupDoc.malId) primaryDoc.malId = dupDoc.malId;
         if (!primaryDoc.tmdbId && dupDoc.tmdbId) primaryDoc.tmdbId = dupDoc.tmdbId;
         if ((!primaryDoc.image || primaryDoc.image.includes('placehold')) && dupDoc.image) {
@@ -97,7 +71,6 @@ async function executeMerge(Anime, primary, targets) {
 
     primaryDoc.isLocked = true;
     await primaryDoc.save();
-
     await Anime.deleteMany({ _id: { $in: targets.map(t => t._id) } });
 
     flushAll();
@@ -107,96 +80,112 @@ async function executeMerge(Anime, primary, targets) {
     return primaryDoc;
 }
 
+// ── Function Executors ────────────────────────────────────────────────────────
+
+async function executeMergeCards(args) {
+    const Anime = (await import('../models/Anime.js')).default;
+
+    const primaryCandidates = await findCardsByTitle(Anime, args.primary_title);
+    const targetCandidates = await findCardsByTitle(Anime, args.target_title);
+
+    const allUnique = new Map();
+    [...primaryCandidates, ...targetCandidates].forEach(c => allUnique.set(String(c._id), c));
+
+    if (allUnique.size === 0) {
+        return {
+            success: false,
+            message: `No cards found for "${args.primary_title}" or "${args.target_title}" in the database.`,
+        };
+    }
+
+    if (allUnique.size < 2) {
+        const only = Array.from(allUnique.values())[0];
+        return {
+            success: false,
+            message: `Only found one card: "${only.title}". Need at least two cards to merge.`,
+        };
+    }
+
+    if (allUnique.size > 5) {
+        return {
+            success: false,
+            message: `Found ${allUnique.size} possible cards — too many to safely merge automatically. Please be more specific.`,
+            candidates: Array.from(allUnique.values()).map(c => ({ title: c.title, malId: c.malId || null })),
+        };
+    }
+
+    const { primary, targets } = electPrimary(primaryCandidates, targetCandidates);
+    const merged = await executeMerge(Anime, primary, targets);
+
+    return {
+        success: true,
+        primary: { title: merged.title, malId: merged.malId || null },
+        merged: targets.map(t => t.title),
+        message: `Successfully merged ${targets.length} card(s) into "${merged.title}" (MAL ID: ${merged.malId || 'none'}). Card is now locked.`,
+    };
+}
+
+async function executeSearchCards(args) {
+    const Anime = (await import('../models/Anime.js')).default;
+    const results = await findCardsByTitle(Anime, args.query);
+    return {
+        count: results.length,
+        cards: results.map(c => ({
+            title: c.title,
+            malId: c.malId || null,
+            providers: (c.sourceUrls || []).length,
+            isLocked: c.isLocked,
+        })),
+    };
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function handleAiChat(req, res) {
-    const { message } = req.body;
+    const { message, sessionId } = req.body;
 
     if (!message || !message.trim()) {
         return res.status(400).json({ status: 'error', reply: 'Message cannot be empty.' });
     }
+    if (!sessionId) {
+        return res.status(400).json({ status: 'error', reply: 'sessionId is required.' });
+    }
 
     try {
-        const intent = await interpretAdminMessage(message);
+        const result = await chat(sessionId, message);
 
-        // ── MERGE ──────────────────────────────────────────────────────────────
-        if (intent.action === 'merge') {
-            const Anime = (await import('../models/Anime.js')).default;
+        // ── Function Call Path ─────────────────────────────────────────────────
+        if (result.functionCall) {
+            const { name, args } = result.functionCall;
 
-            const primaryCandidates = await findCardsByTitle(Anime, intent.primary);
-            const targetCandidatesAll = await Promise.all(
-                (intent.targets || []).map(t => findCardsByTitle(Anime, t))
-            );
-            const targetCandidates = targetCandidatesAll.flat();
-
-            // Guard: nothing found at all
-            if (primaryCandidates.length === 0 && targetCandidates.length === 0) {
-                return res.json({
-                    status: 'not_found',
-                    reply: `I couldn't find any cards matching "${intent.primary}" or "${intent.targets?.join(', ')}" in the database. Try checking the titles.`,
-                    intent,
-                });
+            let functionResult;
+            if (name === 'merge_anime_cards') {
+                functionResult = await executeMergeCards(args);
+            } else if (name === 'search_anime_cards') {
+                functionResult = await executeSearchCards(args);
+            } else {
+                functionResult = { error: `Unknown function: ${name}` };
             }
 
-            // Guard: ambiguous — too many candidates, need user to pick
-            const totalUnique = new Map();
-            [...primaryCandidates, ...targetCandidates].forEach(c => totalUnique.set(String(c._id), c));
-            if (totalUnique.size > 4) {
-                return res.json({
-                    status: 'ambiguous',
-                    reply: `Found ${totalUnique.size} possible cards. Please be more specific or use the manual merge tool.`,
-                    candidates: Array.from(totalUnique.values()),
-                    intent,
-                });
-            }
-
-            // Guard: only one card found total — nothing to merge
-            if (totalUnique.size < 2) {
-                const only = Array.from(totalUnique.values())[0];
-                return res.json({
-                    status: 'not_found',
-                    reply: `Only found one card: "${only?.title}". Need at least two cards to merge.`,
-                    intent,
-                });
-            }
-
-            const { primary, targets } = electPrimary(primaryCandidates, targetCandidates);
-
-            const mergedCard = await executeMerge(Anime, primary, targets);
+            // Feed result back to model for a natural wrap-up sentence
+            const wrapUp = await submitFunctionResult(sessionId, name, functionResult);
 
             return res.json({
                 status: 'ok',
-                reply: `✅ Done! Merged ${targets.length} card(s) into **"${mergedCard.title}"** (MAL ID: ${mergedCard.malId || 'none'}). The card is now locked.`,
-                data: {
-                    primary: { _id: mergedCard._id, title: mergedCard.title, malId: mergedCard.malId },
-                    merged: targets.map(t => t.title),
-                },
-                intent,
+                reply: wrapUp.reply,
+                action: name,
+                result: functionResult,
             });
         }
 
-        // ── SEARCH ─────────────────────────────────────────────────────────────
-        if (intent.action === 'search') {
-            const Anime = (await import('../models/Anime.js')).default;
-            const results = await findCardsByTitle(Anime, intent.query);
-            return res.json({
-                status: 'ok',
-                reply: results.length > 0
-                    ? `Found ${results.length} card(s) matching "${intent.query}".`
-                    : `No cards found for "${intent.query}".`,
-                data: results,
-                intent,
-            });
-        }
+        // ── Plain Conversation Path ────────────────────────────────────────────
+        return res.json({ status: 'ok', reply: result.reply });
 
-        // ── UNKNOWN ────────────────────────────────────────────────────────────
-        return res.json({
-            status: 'unknown',
-            reply: intent.reply || "I didn't understand that. Try: \"Merge [title A] with [title B]\".",
-            intent,
-        });
     } catch (err) {
         console.error('[aiAdminController] Error:', err.message);
-        res.status(500).json({ status: 'error', reply: 'Internal server error.', error: err.message });
+        res.status(500).json({
+            status: 'error',
+            reply: 'Failed to reach the AI service. Please try again.',
+        });
     }
 }

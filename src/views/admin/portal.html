@@ -552,6 +552,8 @@
 
 
     <script>
+        // Unique session ID for this admin tab — keeps conversation history on the server
+        const SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
         function showToast(msg, isError = false) {
             const toast = document.getElementById('toast');
             toast.textContent = msg;
@@ -859,40 +861,37 @@
             btn.disabled = true;
             btn.textContent = '⏳...';
 
-            const thinking = appendChatBubble('⏳ Sedang berpikir...', 'ai');
+            const thinking = appendChatBubble('⏳ Thinking...', 'ai');
 
             try {
                 const res = await fetch('/api/admin/ai-chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({ message, sessionId: SESSION_ID })
                 });
                 const json = await res.json();
                 thinking.remove();
 
                 if (json.status === 'ok') {
-                    let html = `✅ <b>${json.reply}</b>`;
-                    if (json.data?.primary) {
-                        html += `<br><small style="color:#8b949e">Primary: ${json.data.primary.title} (MAL: ${json.data.primary.malId || '-'})<br>Merged: ${(json.data.merged || []).join(', ')}</small>`;
-                    } else if (Array.isArray(json.data) && json.data.length > 0) {
-                        html += '<br>' + json.data.map(d => `<small style="color:#8b949e">• ${d.title} (MAL: ${d.malId || '-'})</small>`).join('<br>');
+                    // Determine bubble variant based on action type
+                    let variant = '';
+                    if (json.action === 'merge_anime_cards' && json.result?.success) variant = 'success';
+                    else if (json.action === 'merge_anime_cards' && json.result && !json.result.success) variant = 'warning';
+                    else if (json.status === 'error') variant = 'error';
+
+                    appendChatBubble(json.reply || '(no reply)', 'ai', variant);
+
+                    // If it was a successful merge, refresh the search results panel if open
+                    if (json.action === 'merge_anime_cards' && json.result?.success) {
+                        const q = document.getElementById('mergeSearchInput')?.value?.trim();
+                        if (q) searchForMerge();
                     }
-                    appendChatBubble(html, 'ai', 'success');
-                    if (json.data?.primary) searchForMerge(); // Refresh search results if visible
-                } else if (json.status === 'ambiguous') {
-                    let html = `⚠️ <b>${json.reply}</b><br>`;
-                    html += (json.candidates || []).map(c => `<small style="color:#8b949e">• ${c.title} — ID: <code style="background:#21262d;padding:1px 5px;border-radius:3px">${c._id}</code></small>`).join('<br>');
-                    appendChatBubble(html, 'ai', 'warning');
-                } else if (json.status === 'not_found') {
-                    appendChatBubble(`🔍 ${json.reply}`, 'ai', 'warning');
-                } else if (json.status === 'error') {
-                    appendChatBubble(`❌ ${json.reply}`, 'ai', 'error');
                 } else {
-                    appendChatBubble(`💬 ${json.reply || 'Perintah tidak dikenali.'}`, 'ai');
+                    appendChatBubble(`❌ ${json.reply || 'Something went wrong.'}`, 'ai', 'error');
                 }
             } catch (e) {
                 thinking.remove();
-                appendChatBubble('❌ Gagal menghubungi AI: ' + e.message, 'ai', 'error');
+                appendChatBubble('❌ Network error: ' + e.message, 'ai', 'error');
             } finally {
                 btn.disabled = false;
                 btn.textContent = '✨ Kirim';

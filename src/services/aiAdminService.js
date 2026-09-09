@@ -1,148 +1,191 @@
 /**
  * aiAdminService.js
- * Sole responsibility: parse a natural-language admin message via the Gemini
- * REST API (with Google Search grounding) and return a structured intent object.
- * Never touches the database.
- *
- * Uses axios with x-goog-api-key header to support both standard (AIzaSy...)
- * and auth keys (AQ...).
- *
- * NOTE: Google Search grounding and responseMimeType:'application/json' are
- * mutually exclusive in the Gemini API. We use grounding + text output, then
- * extract JSON robustly from the response.
+ * Sole responsibility: communicate with the Gemini API, manage per-session
+ * conversation history, and define the available function tools.
+ * Never touches the database directly.
  */
 
 import axios from 'axios';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-const SYSTEM_PROMPT = `You are an internal admin assistant for Wibuflix, an anime streaming platform.
-You have access to Google Search — use it whenever you are unsure of an anime's official title,
-alternate names, season names, or canonical romanization. Always search before guessing.
+// ── Session Store ─────────────────────────────────────────────────────────────
+// Keyed by sessionId. Each session stores the full Gemini-format message history.
+const sessions = new Map();
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-Your ONLY output must be a single valid JSON object. No prose, no markdown fences, no explanation.
-
-Available actions:
-- "merge": combine two anime cards. One is the "primary" (the one that survives), the other is the "target" (the one to be deleted after merging).
-- "search": look up an anime by title in the Wibuflix database.
-- "unknown": the request is unclear or not a supported action.
-
-Rules for "merge":
-- Use Google Search to verify the correct canonical title of each anime before returning.
-- The card that the user describes as having a proper/full title, or explicitly says to keep, is the PRIMARY.
-- The card described as "Season 2 only", "vague", or "the one without a name" is the TARGET.
-- Use the most common English title recognized on MyAnimeList or AniList as the canonical title.
-- If the user does not specify direction, return both titles and set disambiguate: true.
-
-Response schema (always return exactly this, as raw JSON — no backticks, no markdown):
-{"action":"merge","primary":"<canonical title of the card that survives>","targets":["<canonical title of the card to be merged/deleted>"],"disambiguate":false,"reply":"<short 1-sentence confirmation of what you understood>"}
-
-For "search":
-{"action":"search","query":"<canonical search term>","reply":"<confirmation>"}
-
-For "unknown":
-{"action":"unknown","reply":"<polite explanation of what you can and cannot do>"}
-
-Examples:
-User: "Season 2 of Overlord is actually called Overlord II, please merge them"
-Response: {"action":"merge","primary":"Overlord II","targets":["Overlord Season 2"],"disambiguate":false,"reply":"I'll merge 'Overlord Season 2' into 'Overlord II'."}
-
-User: "what is season 2 of shingeki called? merge it"
-Response (after searching): {"action":"merge","primary":"Attack on Titan Season 2","targets":["Shingeki no Kyojin Season 2"],"disambiguate":false,"reply":"Shingeki no Kyojin Season 2 is officially 'Attack on Titan Season 2' — I'll merge them."}`;
-
-/**
- * Extracts the first valid JSON object from a raw text string.
- * Handles cases where Gemini wraps the output in markdown code fences.
- * @param {string} text
- * @returns {object|null}
- */
-function extractJson(text) {
-    // Strip markdown code fences if present
-    const stripped = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
-
-    // Try direct parse first
-    try {
-        return JSON.parse(stripped);
-    } catch (_) { /* fall through */ }
-
-    // Find first {...} block in the text
-    const start = stripped.indexOf('{');
-    const end = stripped.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) {
-        try {
-            return JSON.parse(stripped.slice(start, end + 1));
-        } catch (_) { /* fall through */ }
+const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [id, session] of sessions.entries()) {
+        if (now - session.lastActivity > SESSION_TTL_MS) sessions.delete(id);
     }
+}, 10 * 60 * 1000);
+if (cleanupTimer.unref) cleanupTimer.unref();
 
-    return null;
+function getOrCreateSession(sessionId) {
+    if (!sessions.has(sessionId)) {
+        sessions.set(sessionId, { history: [], lastActivity: Date.now() });
+    }
+    const session = sessions.get(sessionId);
+    session.lastActivity = Date.now();
+    return session;
 }
 
-/**
- * Interprets a natural-language admin message using Gemini with Google Search grounding.
- * @param {string} message - The admin's raw text input.
- * @returns {Promise<{action: string, primary?: string, targets?: string[], query?: string, disambiguate?: boolean, reply: string}>}
- */
-export async function interpretAdminMessage(message) {
-    if (!message || !message.trim()) {
-        return { action: 'unknown', reply: 'Please type a message.' };
-    }
+// ── System Prompt ─────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are Wibu-chan, a friendly and knowledgeable admin assistant for Wibuflix — an anime streaming platform.
+You can have natural conversations about anime, answer questions, and also perform admin database actions when asked.
 
+You have access to:
+- Google Search: use it to verify anime titles, look up season names, find canonical names, etc.
+- merge_anime_cards: merge two anime cards in the database (e.g. "Season 2" card into the properly-named one).
+- search_anime_cards: search the Wibuflix database for anime cards by title.
+
+Personality:
+- Friendly, concise, and helpful. You can use casual language.
+- When discussing anime, feel free to share knowledge about it (genres, studios, air dates, etc.)
+- When the user asks you to do a database action, use the appropriate function — don't just describe it.
+- Always use Google Search to verify the canonical/official anime title before merging.
+- After executing a function, summarize what happened in a natural sentence.
+
+Important rules for merging:
+- The card that already has a MAL ID in the database becomes the primary (it survives).
+- If neither has a MAL ID, the card with the fuller/more specific title wins.
+- Always confirm what you merged after the operation completes.`;
+
+// ── Function Declarations ─────────────────────────────────────────────────────
+const FUNCTION_DECLARATIONS = [
+    {
+        name: 'merge_anime_cards',
+        description: 'Merge two anime cards in the Wibuflix database. The card with a MAL ID becomes the primary (surviving) card. The other is merged into it and deleted. Use Google Search first to confirm the canonical title.',
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                primary_title: {
+                    type: 'STRING',
+                    description: 'The canonical/official title of the anime card that should survive (the primary).',
+                },
+                target_title: {
+                    type: 'STRING',
+                    description: 'The title of the anime card to be merged into the primary and deleted.',
+                },
+            },
+            required: ['primary_title', 'target_title'],
+        },
+    },
+    {
+        name: 'search_anime_cards',
+        description: 'Search the Wibuflix database for anime cards by title. Returns matching cards with their IDs, MAL IDs, and source providers.',
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                query: {
+                    type: 'STRING',
+                    description: 'The anime title or keyword to search for in the database.',
+                },
+            },
+            required: ['query'],
+        },
+    },
+];
+
+// ── Gemini HTTP Call ──────────────────────────────────────────────────────────
+async function callGemini(history) {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        console.error('[aiAdminService] GEMINI_API_KEY is not set.');
-        return { action: 'unknown', reply: 'AI service is not configured (missing API key).' };
-    }
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not set.');
 
     const requestBody = {
-        system_instruction: {
-            parts: [{ text: SYSTEM_PROMPT }],
-        },
-        contents: [
-            {
-                role: 'user',
-                parts: [{ text: message.trim() }],
-            },
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: history,
+        tools: [
+            { googleSearch: {} },
+            { functionDeclarations: FUNCTION_DECLARATIONS },
         ],
-        // Google Search grounding — lets Gemini search the web to verify anime titles
-        tools: [{ googleSearch: {} }],
         generationConfig: {
-            // NOTE: responseMimeType cannot be used together with googleSearch tool.
-            // JSON extraction is handled manually via extractJson().
-            temperature: 0.1,
+            temperature: 0.7,
             maxOutputTokens: 1024,
         },
     };
 
+    const response = await axios.post(GEMINI_API_BASE, requestBody, {
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        timeout: 25000,
+    });
+
+    return response.data;
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Send a user message in a session. Returns either a text reply or a function call.
+ * @param {string} sessionId
+ * @param {string} userMessage
+ * @returns {Promise<{ reply: string|null, functionCall: {name: string, args: object}|null }>}
+ */
+export async function chat(sessionId, userMessage) {
+    const session = getOrCreateSession(sessionId);
+
+    session.history.push({ role: 'user', parts: [{ text: userMessage }] });
+
     try {
-        const response = await axios.post(GEMINI_API_BASE, requestBody, {
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': apiKey,
-            },
-            timeout: 20000,
-        });
+        const data = await callGemini(session.history);
+        const candidate = data?.candidates?.[0];
+        if (!candidate) throw new Error('No candidate in Gemini response.');
 
-        const candidate = response.data?.candidates?.[0];
-        const text = candidate?.content?.parts?.map(p => p.text || '').join('').trim();
+        const parts = candidate.content?.parts || [];
 
-        if (!text) {
-            throw new Error('Empty response from Gemini API.');
+        // Check for a function call in the response parts
+        const functionCallPart = parts.find(p => p.functionCall);
+        if (functionCallPart) {
+            // Store the model's function-call turn in history so the next turn has context
+            session.history.push({ role: 'model', parts });
+            return { reply: null, functionCall: functionCallPart.functionCall };
         }
 
-        const parsed = extractJson(text);
-
-        if (!parsed || !parsed.action) {
-            console.warn('[aiAdminService] Could not parse JSON from response:', text.slice(0, 200));
-            return { action: 'unknown', reply: 'Received an unexpected response from AI.' };
-        }
-
-        return parsed;
+        // Plain text response
+        const text = parts.map(p => p.text || '').join('').trim();
+        session.history.push({ role: 'model', parts: [{ text }] });
+        return { reply: text, functionCall: null };
     } catch (err) {
+        // Remove the failed user turn so history stays clean
+        session.history.pop();
         const detail = err.response?.data?.error?.message || err.message;
         console.error('[aiAdminService] Error calling Gemini:', detail);
-        return {
-            action: 'unknown',
-            reply: 'Failed to reach the AI service. Please try again.',
-        };
+        throw err;
+    }
+}
+
+/**
+ * Submit a function execution result back to the model to get a natural-language wrap-up.
+ * @param {string} sessionId
+ * @param {string} functionName
+ * @param {object} result - The result of the function execution.
+ * @returns {Promise<{ reply: string }>}
+ */
+export async function submitFunctionResult(sessionId, functionName, result) {
+    const session = sessions.get(sessionId);
+    if (!session) return { reply: 'Session expired. Please start a new conversation.' };
+
+    // Append the function result as a user turn (Gemini v1beta format)
+    session.history.push({
+        role: 'user',
+        parts: [{
+            functionResponse: {
+                name: functionName,
+                response: { result },
+            },
+        }],
+    });
+
+    try {
+        const data = await callGemini(session.history);
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const text = parts.map(p => p.text || '').join('').trim();
+        session.history.push({ role: 'model', parts: [{ text }] });
+        return { reply: text };
+    } catch (err) {
+        const detail = err.response?.data?.error?.message || err.message;
+        console.error('[aiAdminService] Error getting function wrap-up from Gemini:', detail);
+        return { reply: 'Action completed, but I had trouble composing a response.' };
     }
 }
