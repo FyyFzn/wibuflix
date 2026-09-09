@@ -4,6 +4,7 @@
 
 import express from 'express';
 import * as adminCtrl from '../controllers/adminController.js';
+import { handleAiChat } from '../controllers/aiAdminController.js';
 
 const router = express.Router();
 
@@ -26,5 +27,8 @@ router.post('/api/admin/rename-anime', adminCtrl.renameAnimeCard);
 router.post('/api/admin/force-enrich-card', adminCtrl.forceEnrichCards);
 router.get('/api/admin/anime-details/:id', adminCtrl.getAnimeDetails);
 router.post('/api/admin/split-url', adminCtrl.splitAnimeUrl);
+
+// 4. AI Assistant
+router.post('/api/admin/ai-chat', handleAiChat);
 
 export default router;

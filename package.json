@@ -6,8 +6,6 @@
   "scripts": {
     "start": "node src/server.js",
     "start:prod": "node server-prod.js",
-
-
     "sync:nimegami": "node src/scripts/init-nimegami-sync.js",
     "check:webs": "node src/scripts/check_provider_accessibility.js",
     "check:deep": "node src/scripts/check_provider_deep_extraction.js",
@@ -21,6 +19,7 @@
   "type": "module",
   "dependencies": {
     "@azure/storage-blob": "^12.32.0",
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.16.1",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
