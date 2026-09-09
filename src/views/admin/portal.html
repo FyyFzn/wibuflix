@@ -261,6 +261,118 @@
             color: #c9d1d9;
             margin-bottom: 4px;
         }
+        /* AI Chat Widget */
+        .ai-chat-section {
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+            border: 1px solid #8957e5;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 0 20px rgba(137, 87, 229, 0.15);
+        }
+        .ai-chat-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ai-chat-title .ai-badge {
+            background: linear-gradient(90deg, #8957e5, #1f6feb);
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+            letter-spacing: 0.5px;
+        }
+        #aiChatLog {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            min-height: 80px;
+            max-height: 260px;
+            overflow-y: auto;
+            margin: 14px 0 12px;
+            font-size: 13px;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .chat-bubble {
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 90%;
+            word-break: break-word;
+        }
+        .chat-bubble.user {
+            background: #1f6feb22;
+            border: 1px solid #1f6feb55;
+            color: #79c0ff;
+            align-self: flex-end;
+            text-align: right;
+        }
+        .chat-bubble.ai {
+            background: #8957e522;
+            border: 1px solid #8957e555;
+            color: #d2a8ff;
+            align-self: flex-start;
+        }
+        .chat-bubble.ai.success { background: #23863622; border-color: #23863655; color: #56d364; }
+        .chat-bubble.ai.error   { background: #da363322; border-color: #da363355; color: #ff7b72; }
+        .chat-bubble.ai.warning { background: #d2992222; border-color: #d2992255; color: #e3b341; }
+        .ai-input-row {
+            display: flex;
+            gap: 8px;
+        }
+        #aiChatInput {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid #8957e5;
+            color: #c9d1d9;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 0;
+            transition: border-color 0.2s;
+        }
+        #aiChatInput:focus { border-color: #a5d6ff; outline: none; }
+        #aiChatInput::placeholder { color: #6e7681; }
+        #aiSendBtn {
+            background: linear-gradient(135deg, #8957e5, #1f6feb);
+            border: none;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+        #aiSendBtn:hover { opacity: 0.85; }
+        #aiSendBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .ai-examples {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .ai-example-chip {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .ai-example-chip:hover { border-color: #8957e5; color: #d2a8ff; background: #1c1f26; }
     </style>
 </head>
 <body>
@@ -366,6 +478,28 @@
     </div>
 
     <h2 style="font-size: 15px; color: #fff; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px;">🧲 Tools Manajemen Data Kartu (Card Control Engine)</h2>
+
+    <!-- AI CHAT ASSISTANT -->
+    <div class="ai-chat-section">
+        <div class="ai-chat-title">
+            🤖 AI Admin Assistant
+            <span class="ai-badge">GEMINI</span>
+        </div>
+        <p style="font-size: 12px; color: #6e7681; margin-top: 2px;">Ketik perintah dalam bahasa natural untuk menggabungkan, mencari, atau mengelola kartu anime tanpa perlu menyalin ID apapun.</p>
+        <div id="aiChatLog">
+            <div class="chat-bubble ai">Halo! Saya AI Assistant Wibuflix. Contoh perintah: <br><em>"Season 2 dari Overlord namanya Overlord II, gabungkan keduanya"</em></div>
+        </div>
+        <div class="ai-input-row">
+            <input type="text" id="aiChatInput" placeholder="Tulis perintah... (contoh: merge Season 2 of X with Y)" autocomplete="off" />
+            <button id="aiSendBtn" onclick="sendAiMessage()">✨ Kirim</button>
+        </div>
+        <div class="ai-examples">
+            <span class="ai-example-chip" onclick="fillAiExample(this)">Gabungkan &quot;Overlord Season 2&quot; dengan &quot;Overlord II&quot;</span>
+            <span class="ai-example-chip" onclick="fillAiExample(this)">Merge Attack on Titan Season 4 with Shingeki no Kyojin: The Final Season</span>
+            <span class="ai-example-chip" onclick="fillAiExample(this)">Cari kartu: Sword Art Online</span>
+        </div>
+    </div>
+
     <div class="tool-section">
         <div class="tool-title">🧲 Manual Card Merger (Penggabungan Kartu Duplikat)</div>
         <p style="font-size: 13px; color: var(--text-muted);">Cari kartu anime yang terpecah/duplikat dari web penyedia berbeda, lalu gabungkan link stream-nya ke dalam satu kartu utama (Primary Card) dan kunci metadatanya.</p>
@@ -687,6 +821,81 @@
                 }
             } catch (e) {
                 showToast('❌ Error saat Force Enrich: ' + e.message, true);
+            }
+        }
+
+        // ==========================================
+        // AI CHAT ASSISTANT
+        // ==========================================
+        function fillAiExample(el) {
+            document.getElementById('aiChatInput').value = el.textContent.trim();
+            document.getElementById('aiChatInput').focus();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('aiChatInput').addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage(); }
+            });
+        });
+
+        function appendChatBubble(text, role, variant = '') {
+            const log = document.getElementById('aiChatLog');
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${role}${variant ? ' ' + variant : ''}`;
+            bubble.innerHTML = text;
+            log.appendChild(bubble);
+            log.scrollTop = log.scrollHeight;
+            return bubble;
+        }
+
+        async function sendAiMessage() {
+            const input = document.getElementById('aiChatInput');
+            const btn = document.getElementById('aiSendBtn');
+            const message = input.value.trim();
+            if (!message) return;
+
+            appendChatBubble(message, 'user');
+            input.value = '';
+            btn.disabled = true;
+            btn.textContent = '⏳...';
+
+            const thinking = appendChatBubble('⏳ Sedang berpikir...', 'ai');
+
+            try {
+                const res = await fetch('/api/admin/ai-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const json = await res.json();
+                thinking.remove();
+
+                if (json.status === 'ok') {
+                    let html = `✅ <b>${json.reply}</b>`;
+                    if (json.data?.primary) {
+                        html += `<br><small style="color:#8b949e">Primary: ${json.data.primary.title} (MAL: ${json.data.primary.malId || '-'})<br>Merged: ${(json.data.merged || []).join(', ')}</small>`;
+                    } else if (Array.isArray(json.data) && json.data.length > 0) {
+                        html += '<br>' + json.data.map(d => `<small style="color:#8b949e">• ${d.title} (MAL: ${d.malId || '-'})</small>`).join('<br>');
+                    }
+                    appendChatBubble(html, 'ai', 'success');
+                    if (json.data?.primary) searchForMerge(); // Refresh search results if visible
+                } else if (json.status === 'ambiguous') {
+                    let html = `⚠️ <b>${json.reply}</b><br>`;
+                    html += (json.candidates || []).map(c => `<small style="color:#8b949e">• ${c.title} — ID: <code style="background:#21262d;padding:1px 5px;border-radius:3px">${c._id}</code></small>`).join('<br>');
+                    appendChatBubble(html, 'ai', 'warning');
+                } else if (json.status === 'not_found') {
+                    appendChatBubble(`🔍 ${json.reply}`, 'ai', 'warning');
+                } else if (json.status === 'error') {
+                    appendChatBubble(`❌ ${json.reply}`, 'ai', 'error');
+                } else {
+                    appendChatBubble(`💬 ${json.reply || 'Perintah tidak dikenali.'}`, 'ai');
+                }
+            } catch (e) {
+                thinking.remove();
+                appendChatBubble('❌ Gagal menghubungi AI: ' + e.message, 'ai', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '✨ Kirim';
             }
         }
     </script>
