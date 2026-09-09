@@ -1,10 +1,15 @@
 /**
  * aiAdminService.js
- * Sole responsibility: parse a natural-language admin message via Gemini
- * and return a structured intent object. Never touches the database.
+ * Sole responsibility: parse a natural-language admin message via the Gemini
+ * REST API and return a structured intent object. Never touches the database.
+ *
+ * Uses axios with Authorization: Bearer to support the new Gemini auth keys
+ * (AQ... format) as well as legacy standard keys (AIzaSy... format).
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
+
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 const SYSTEM_PROMPT = `You are an internal admin assistant for Wibuflix, an anime streaming platform.
 Your ONLY job is to interpret admin maintenance requests and return a single JSON object.
@@ -49,27 +54,6 @@ Response: {"action":"merge","primary":"Overlord II","targets":["Overlord Season 
 User: "combine shingeki no kyojin season 2 with attack on titan season 2"
 Response: {"action":"merge","primary":"Attack on Titan Season 2","targets":["Shingeki no Kyojin Season 2"],"disambiguate":false,"reply":"I'll merge 'Shingeki no Kyojin Season 2' into 'Attack on Titan Season 2'."}`;
 
-let genAI = null;
-let model = null;
-
-function getModel() {
-    if (!model) {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) throw new Error('GEMINI_API_KEY is not set in environment variables.');
-        genAI = new GoogleGenerativeAI(apiKey);
-        model = genAI.getGenerativeModel({
-            model: 'gemini-3.6-flash',
-            systemInstruction: SYSTEM_PROMPT,
-            generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.1,
-                maxOutputTokens: 512,
-            },
-        });
-    }
-    return model;
-}
-
 /**
  * Interprets a natural-language admin message and returns a structured intent.
  * @param {string} message - The admin's raw text input.
@@ -80,10 +64,44 @@ export async function interpretAdminMessage(message) {
         return { action: 'unknown', reply: 'Please type a message.' };
     }
 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        console.error('[aiAdminService] GEMINI_API_KEY is not set.');
+        return { action: 'unknown', reply: 'AI service is not configured (missing API key).' };
+    }
+
+    const requestBody = {
+        system_instruction: {
+            parts: [{ text: SYSTEM_PROMPT }],
+        },
+        contents: [
+            {
+                role: 'user',
+                parts: [{ text: message.trim() }],
+            },
+        ],
+        generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+            maxOutputTokens: 512,
+        },
+    };
+
     try {
-        const aiModel = getModel();
-        const result = await aiModel.generateContent(message.trim());
-        const text = result.response.text().trim();
+        const response = await axios.post(GEMINI_API_BASE, requestBody, {
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey,
+            },
+            timeout: 15000,
+        });
+
+        const candidate = response.data?.candidates?.[0];
+        const text = candidate?.content?.parts?.[0]?.text?.trim();
+
+        if (!text) {
+            throw new Error('Empty response from Gemini API.');
+        }
 
         const parsed = JSON.parse(text);
 
@@ -93,7 +111,8 @@ export async function interpretAdminMessage(message) {
 
         return parsed;
     } catch (err) {
-        console.error('[aiAdminService] Error calling Gemini:', err.message);
+        const detail = err.response?.data?.error?.message || err.message;
+        console.error('[aiAdminService] Error calling Gemini:', detail);
         return {
             action: 'unknown',
             reply: 'Failed to reach the AI service. Please try again.',
