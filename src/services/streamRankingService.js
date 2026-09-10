@@ -260,16 +260,17 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
             return { matchedSource: null, error: 'Tidak ada server download/streaming yang ditemukan di halaman episode.' };
         }
 
-        const groups = { 1080: [], 720: [], 480: [], 360: [] };
+        const groups = { 1080: [], 720: [], 480: [], 360: [], null: [] };
         for (const srv of servers) {
             if (srv.namaHost && srv.namaHost.toLowerCase().includes('mega')) {
                 continue;
             }
             const resGroup = getResolutionGroup(srv.nama);
             if (resGroup && groups[resGroup]) groups[resGroup].push(srv);
+            else groups[null].push(srv); // fallback bucket for untagged servers
         }
 
-        for (const resVal of [1080, 720, 480, 360]) {
+        for (const resVal of [1080, 720, 480, 360, null]) {
             if (groups[resVal].length > 0) {
                 groups[resVal].sort((a, b) => {
                     const scoreA = serverScore(a.namaHost);

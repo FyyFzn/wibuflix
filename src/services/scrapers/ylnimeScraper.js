@@ -163,8 +163,12 @@ export async function getYlnimeServers(episodeUrl) {
                                 if (!s.link) return;
                                 let type = s.link.includes('.mp4') ? 'mp4' : (s.link.includes('.m3u8') ? 'hls' : 'iframe');
                                 let nama = `YLnime ${s.reso || ''}`.trim();
+                                let namaHost = 'YLnime Stream';
                                 if (s.link.includes('pixeldrain') || s.link.includes('pxl')) {
-                                    nama = 'Pixeldrain';
+                                    // Pertahankan resolusi dalam nama (mis. "Pixeldrain 720p") agar ranking service
+                                    // dapat menempatkannya dalam bucket resolusi yang benar.
+                                    nama = `Pixeldrain ${s.reso || ''}`.trim();
+                                    namaHost = 'Pixeldrain';
                                     type = 'iframe';
                                 }
                                 result.push({
@@ -174,7 +178,7 @@ export async function getYlnimeServers(episodeUrl) {
                                     tipe: type,
                                     iframeUrl: s.link,
                                     url: s.link,
-                                    namaHost: 'YLnime Stream',
+                                    namaHost: namaHost,
                                     provider: 'ylnime',
                                     source: 'ylnime'
                                 });
