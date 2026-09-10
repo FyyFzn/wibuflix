@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import { ProviderRegistry, standardizeServers } from '../services/ProviderRegistry.js';
 
 test('ProviderRegistry Architecture Verification', async (t) => {
-    await t.test('1. Semua Provider Terdaftar dengan Lengkap di ProviderRegistry', () => {
-        const ids = ProviderRegistry.getAllProviderIds();
+    await t.test('1. Semua Provider Terdaftar dengan Lengkap di ProviderRegistry', async () => {
+        const ids = await ProviderRegistry.getAllProviderIds();
         assert.ok(ids.includes('samehadaku'), 'Samehadaku wajib terdaftar');
         assert.ok(ids.includes('otakudesu'), 'Otakudesu wajib terdaftar');
         assert.ok(ids.includes('kuronime'), 'Kuronime wajib terdaftar');
@@ -14,12 +14,12 @@ test('ProviderRegistry Architecture Verification', async (t) => {
         assert.ok(ids.includes('neosatsu'), 'Neosatsu wajib terdaftar');
     });
 
-    await t.test('2. getProviderForUrl mengidentifikasi provider dengan akurat tanpa if-else manual', () => {
-        assert.strictEqual(ProviderRegistry.getProviderForUrl('https://plus.oploverz.ltd/series/inuyasha-s1').id, 'oploverz');
-        assert.strictEqual(ProviderRegistry.getProviderForUrl('https://kuronime.sbs/inuyasha-s1-episode-1').id, 'kuronime');
-        assert.strictEqual(ProviderRegistry.getProviderForUrl('https://otakudesu.cloud/anime/inuyasha-sub-indo/').id, 'otakudesu');
-        assert.strictEqual(ProviderRegistry.getProviderForUrl('___neosatsu_ep___https://neosatsu.com/ep-1').id, 'neosatsu');
-        assert.strictEqual(ProviderRegistry.getProviderForUrl('https://samehadaku.email/inuyasha-episode-1/').id, 'samehadaku');
+    await t.test('2. getProviderForUrl mengidentifikasi provider dengan akurat tanpa if-else manual', async () => {
+        assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://plus.oploverz.ltd/series/inuyasha-s1')).id, 'oploverz');
+        assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://kuronime.sbs/inuyasha-s1-episode-1')).id, 'kuronime');
+        assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://otakudesu.cloud/anime/inuyasha-sub-indo/')).id, 'otakudesu');
+        assert.strictEqual((await ProviderRegistry.getProviderForUrl('___neosatsu_ep___https://neosatsu.com/ep-1')).id, 'neosatsu');
+        assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://samehadaku.email/inuyasha-episode-1/')).id, 'samehadaku');
     });
 
     await t.test('3. standardizeServers menjamin konsistensi properti (id vs nume, tipe vs type)', () => {

@@ -35,7 +35,7 @@ router.get('/api/scrape', async (req, res) => {
             const fetchTasks = [];
             for (const [providerId, provUrl] of Object.entries(urlsObj)) {
                 if (!provUrl || typeof provUrl !== 'string') continue;
-                const provider = ProviderRegistry.getProviderById(providerId);
+                const provider = await ProviderRegistry.getProviderById(providerId);
                 if (provider) {
                     fetchTasks.push(provider.getServers(provUrl).catch(() => null));
                 }
@@ -57,7 +57,7 @@ router.get('/api/scrape', async (req, res) => {
         }
 
         // --- SINGLE URL SCENARIO ---
-        const provider = ProviderRegistry.getProviderForUrl(targetUrl);
+        const provider = await ProviderRegistry.getProviderForUrl(targetUrl);
         if (!provider) {
             return res.status(422).json({ status: 'error', message: `Tidak ada provider yang cocok untuk URL: ${targetUrl}` });
         }

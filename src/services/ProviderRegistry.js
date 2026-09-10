@@ -88,27 +88,29 @@ export class ProviderRegistry {
     }
 
     /**
-     * Returns the provider ID string for a given URL (sync, requires plugins already loaded).
-     * Call after any async registry operation to ensure plugins are loaded.
+     * Returns the provider ID string for a given URL.
      */
-    static getProviderIdForUrl(url) {
+    static async getProviderIdForUrl(url) {
+        await ensurePluginsLoaded();
         if (!url) return 'unknown';
         const plugin = findPluginForUrl(url);
         return plugin ? plugin.id : 'unknown';
     }
 
     /**
-     * Finds a wrapped provider for a given URL (sync, requires plugins already loaded).
+     * Finds a wrapped provider for a given URL.
      */
-    static getProviderForUrl(url) {
+    static async getProviderForUrl(url) {
+        await ensurePluginsLoaded();
         const plugin = findPluginForUrl(url);
         return plugin ? ProviderRegistry._wrapPlugin(plugin) : null;
     }
 
     /**
-     * Finds a wrapped provider by provider ID (sync, requires plugins already loaded).
+     * Finds a wrapped provider by provider ID.
      */
-    static getProviderById(providerId) {
+    static async getProviderById(providerId) {
+        await ensurePluginsLoaded();
         if (!providerId) return null;
         const plugin = plugins.find(p => p.id === providerId);
         return plugin ? ProviderRegistry._wrapPlugin(plugin) : null;

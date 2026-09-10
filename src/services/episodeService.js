@@ -198,7 +198,7 @@ async function executeScraperStrategy(targetUrl) {
     }
 
     // Identifikasi provider ID dari URL untuk keperluan logika per-provider
-    const providerName = ProviderRegistry.getProviderIdForUrl(targetUrl);
+    const providerName = await ProviderRegistry.getProviderIdForUrl(targetUrl);
     
     let data;
     try {
