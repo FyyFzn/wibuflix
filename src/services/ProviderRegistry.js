@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Helper untuk menstandarkan skema server agar tidak ada perbedaan nama properti (id vs nume, tipe vs type)
+// Helper to standardize server schema so there are no property name discrepancies (id vs nume, tipe vs type)
 export function standardizeServers(servers = [], defaultSource = 'Unknown') {
     if (!Array.isArray(servers)) return [];
     return servers.map(s => {
@@ -36,16 +36,15 @@ export function standardizeServers(servers = [], defaultSource = 'Unknown') {
 const plugins = [];
 let initialized = false;
 
-export async function initPlugins() {
+async function ensurePluginsLoaded() {
     if (initialized) return;
     initialized = true;
-    
-    // Temukan semua file scraper di folder scrapers/
+
     const scrapersDir = path.join(__dirname, 'scrapers');
-    const files = fs.readdirSync(scrapersDir).filter(file => 
-        (file.endsWith('Scraper.js') || file.endsWith('ScraperService.js'))
+    const files = fs.readdirSync(scrapersDir).filter(file =>
+        file.endsWith('Scraper.js') || file.endsWith('ScraperService.js')
     );
-    
+
     for (const file of files) {
         try {
             const module = await import(`./scrapers/${file}`);
@@ -66,159 +65,107 @@ export async function initPlugins() {
     }
 }
 
-export async function getPluginForUrl(url) {
+function findPluginForUrl(url) {
     if (!url) return null;
-    await initPlugins();
-    
     const lowerUrl = url.toString().toLowerCase();
-    
-    // Manual fallback handling untuk format API lokal (/api/...)
+
     if (lowerUrl.startsWith('/anime/') && !lowerUrl.includes('samehadaku')) {
-        return plugins.find(p => p.id === 'otakudesu');
+        return plugins.find(p => p.id === 'otakudesu') || null;
     }
     if (lowerUrl.startsWith('neosatsu-label:') || lowerUrl.startsWith('neosatsu-merge:')) {
-        return plugins.find(p => p.id === 'neosatsu');
+        return plugins.find(p => p.id === 'neosatsu') || null;
     }
 
-    // Coba cocokkan URL dengan domain plugin
-    for (const plugin of plugins) {
-        if (plugin.meta.domains && plugin.meta.domains.some(domain => lowerUrl.includes(domain))) {
-            return plugin;
-        }
-    }
-    
-    return null;
-}
-
-export function getProviderIdFromUrlSync(url) {
-    if (!url) return 'unknown';
-    const lowerUrl = url.toString().toLowerCase();
-    
-    // Manual fallback handling untuk format API lokal (/api/...)
-    if (lowerUrl.startsWith('/anime/') && !lowerUrl.includes('samehadaku')) {
-        return 'otakudesu';
-    }
-    if (lowerUrl.startsWith('neosatsu-label:') || lowerUrl.startsWith('neosatsu-merge:')) {
-        return 'neosatsu';
-    }
-
-    // Coba cocokkan URL dengan domain plugin dari cache memori
-    for (const plugin of plugins) {
-        if (plugin.meta.domains && plugin.meta.domains.some(domain => lowerUrl.includes(domain))) {
-            return plugin.id;
-        }
-    }
-    
-    return 'unknown';
+    return plugins.find(p =>
+        p.meta.domains && p.meta.domains.some(domain => lowerUrl.includes(domain))
+    ) || null;
 }
 
 export class ProviderRegistry {
     static async getAllProviderIds() {
-        await initPlugins();
+        await ensurePluginsLoaded();
         return plugins.map(p => p.id);
     }
 
-    static async getProviderDetails(providerId) {
-        await initPlugins();
-        const p = plugins.find(p => p.id === providerId);
-        if (!p) return null;
-        return {
-            id: p.id,
-            name: p.name,
-            matchUrl: (url) => {
-                const lower = url.toLowerCase();
-                return p.meta.domains.some(d => lower.includes(d));
-            }
-        };
+    /**
+     * Returns the provider ID string for a given URL (sync, requires plugins already loaded).
+     * Call after any async registry operation to ensure plugins are loaded.
+     */
+    static getProviderIdForUrl(url) {
+        if (!url) return 'unknown';
+        const plugin = findPluginForUrl(url);
+        return plugin ? plugin.id : 'unknown';
     }
 
     /**
-     * Mencari plugin berdasarkan URL (sync, menggunakan plugins yang sudah ter-load).
-     * Mengembalikan objek provider dengan method getServers() dan getEpisodes(), atau null.
+     * Finds a wrapped provider for a given URL (sync, requires plugins already loaded).
      */
     static getProviderForUrl(url) {
-        if (!url) return null;
-        const lowerUrl = url.toString().toLowerCase();
-
-        for (const p of plugins) {
-            if (p.meta.domains && p.meta.domains.some(domain => lowerUrl.includes(domain))) {
-                return ProviderRegistry._wrapPlugin(p);
-            }
-        }
-        return null;
+        const plugin = findPluginForUrl(url);
+        return plugin ? ProviderRegistry._wrapPlugin(plugin) : null;
     }
 
     /**
-     * Mencari plugin berdasarkan ID provider (sync).
-     * Mengembalikan objek provider dengan method getServers() dan getEpisodes(), atau null.
+     * Finds a wrapped provider by provider ID (sync, requires plugins already loaded).
      */
     static getProviderById(providerId) {
         if (!providerId) return null;
-        const p = plugins.find(pl => pl.id === providerId);
-        if (!p) return null;
-        return ProviderRegistry._wrapPlugin(p);
+        const plugin = plugins.find(p => p.id === providerId);
+        return plugin ? ProviderRegistry._wrapPlugin(plugin) : null;
     }
 
-    /**
-     * Helper internal: membungkus plugin mentah menjadi interface provider yang seragam.
-     */
     static _wrapPlugin(p) {
         return {
             id: p.id,
             name: p.name,
             getServers: async (url) => {
-                let realUrl = url;
-                if (url && url.includes('?url=')) {
-                    realUrl = decodeURIComponent(url.split('?url=')[1]);
-                }
+                const realUrl = url?.includes('?url=') ? decodeURIComponent(url.split('?url=')[1]) : url;
                 const data = await p.scrapeServers(realUrl);
-                return {
-                    ...data,
-                    servers: standardizeServers(data?.servers || [], p.name)
-                };
+                return { ...data, servers: standardizeServers(data?.servers || [], p.name) };
             },
-            getEpisodes: async (url) => {
-                return await p.scrapeEpisodes(url);
-            }
+            getEpisodes: async (url) => p.scrapeEpisodes(url)
         };
     }
 
     static async fetchEpisodes(url, timeoutMs = 20000) {
-        const plugin = await getPluginForUrl(url);
-        if (plugin && plugin.scrapeEpisodes) {
-            const timeoutPromise = new Promise((_, reject) =>
+        await ensurePluginsLoaded();
+        const plugin = findPluginForUrl(url);
+        if (plugin?.scrapeEpisodes) {
+            const timeout = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error(`[${plugin.name}] Scrape timeout setelah ${timeoutMs / 1000}s untuk: ${url}`)), timeoutMs)
             );
-            return await Promise.race([plugin.scrapeEpisodes(url), timeoutPromise]);
+            return await Promise.race([plugin.scrapeEpisodes(url), timeout]);
         }
         console.warn(`[Registry] Tidak ada plugin yang bisa mengekstrak episode untuk URL: ${url}`);
         return null;
     }
 
     static async fetchServers(url) {
-        const plugin = await getPluginForUrl(url);
-        if (plugin && plugin.scrapeServers) {
-            let realUrl = url;
-            // Beberapa provider dibungkus dengan URL proxy lokal
-            if (url.includes('?url=')) {
-                realUrl = decodeURIComponent(url.split('?url=')[1]);
-            }
+        await ensurePluginsLoaded();
+        const plugin = findPluginForUrl(url);
+        if (plugin?.scrapeServers) {
+            const realUrl = url?.includes('?url=') ? decodeURIComponent(url.split('?url=')[1]) : url;
             const data = await plugin.scrapeServers(realUrl);
-            return {
-                ...data,
-                servers: standardizeServers(data?.servers || [], plugin.name)
-            };
+            return { ...data, servers: standardizeServers(data?.servers || [], plugin.name) };
         }
         console.warn(`[Registry] Tidak ada plugin yang bisa mengekstrak server untuk URL: ${url}`);
         return { servers: [] };
     }
 
     static async fetchLatestUpdates(providerId) {
-        await initPlugins();
+        await ensurePluginsLoaded();
         const plugin = plugins.find(p => p.id === providerId);
-        if (plugin && plugin.scrapeLatestUpdates) {
+        if (plugin?.scrapeLatestUpdates) {
             return await plugin.scrapeLatestUpdates();
         }
         return [];
+    }
+
+    /**
+     * Ensures all scraper plugins are loaded. Call this before using sync methods
+     * (getProviderForUrl, getProviderById, getProviderIdForUrl).
+     */
+    static async init() {
+        await ensurePluginsLoaded();
     }
 }
