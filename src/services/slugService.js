@@ -55,6 +55,20 @@ export function extractSlugs(episodeUrl, seriesUrl, seriesTitle, uniqueId, episo
             }
         }
 
+        // YLnime menggunakan URL pola ?series={slug}&ep={N} — pathname selalu "index.php",
+        // sehingga split('/').pop() menghasilkan "index.php" bukan slug episode yang benar.
+        // Bangun episodeSlug dari parameter query string secara eksplisit.
+        if (realEpUrl.includes('ylnime') && urlQueryStr) {
+            const seriesMatch = urlQueryStr.match(/[?&]series=([^&]+)/);
+            const epMatch = urlQueryStr.match(/[?&]ep=(\d+)/);
+            if (seriesMatch) {
+                const seriesParam = decodeURIComponent(seriesMatch[1]);
+                episodeSlug = epMatch
+                    ? `${seriesParam}-episode-${epMatch[1]}`
+                    : seriesParam;
+            }
+        }
+
         // Kuronime menggunakan prefix "nonton-" di URL episode (misal: /nonton-baki-dou-episode-1/)
         // Hapus prefix ini dari episodeSlug agar nama folder di Azure konsisten dengan provider lain
         if (realEpUrl.includes('kuronime.sbs') && episodeSlug.startsWith('nonton-')) {
