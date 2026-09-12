@@ -322,6 +322,12 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
                         continue;
                     }
                     
+                    const lowerName = (srv.namaHost || srv.nama || '').toLowerCase();
+                    if (lowerName.includes('vidhide') || lowerName.includes('dood') || lowerName.includes('doodstream')) {
+                        console.warn(`${logPrefix} Melewati ${srv.namaHost || srv.nama} secara instan karena server ini tidak didukung/sangat lambat (anti-hotlink).`);
+                        continue;
+                    }
+                    
                     let iframeUrlToExtract = srv.iframeUrl;
                     if (!iframeUrlToExtract && srv.nume) {
                         try {
