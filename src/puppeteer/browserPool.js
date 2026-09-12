@@ -19,22 +19,6 @@ const EXTENDED_BLACKLIST_DOMAINS = [
 
 async function configureOptimizedPage(page) {
     await page.setUserAgent(globalUserAgent);
-    
-    // Set proxy authentication if PROXY_URL has credentials
-    if (process.env.PROXY_URL) {
-        try {
-            const proxyUrl = new URL(process.env.PROXY_URL);
-            if (proxyUrl.username && proxyUrl.password) {
-                await page.authenticate({
-                    username: proxyUrl.username,
-                    password: proxyUrl.password
-                });
-            }
-        } catch (e) {
-            console.error('[Browser] Proxy URL tidak valid:', e.message);
-        }
-    }
-
     await page.setRequestInterception(true);
     page.on('request', req => {
         if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
@@ -119,16 +103,8 @@ export async function getBrowser() {
                 ]
             };
             
-            if (process.env.PROXY_URL) {
-                try {
-                    const proxyUrlObj = new URL(process.env.PROXY_URL);
-                    const proxyHostPort = `${proxyUrlObj.protocol}//${proxyUrlObj.host}`;
-                    launchOptions.args.push(`--proxy-server=${proxyHostPort}`);
-                    console.log(`[Browser] Menggunakan Proxy: ${proxyHostPort} (Auth: ${proxyUrlObj.username ? 'Yes' : 'No'})`);
-                } catch (e) {
-                    console.error('[Browser] Proxy URL parsing error, mengabaikan proxy...');
-                }
-            }
+            // Proxy dinonaktifkan untuk Puppeteer karena WebShare memicu Captcha loop di Otakudesu.
+            // Puppeteer akan menggunakan IP asli server yang terbukti aman.
             
             console.log('[Browser] Menggunakan official Chrome for Testing (CfT) bawaan Puppeteer...');
             

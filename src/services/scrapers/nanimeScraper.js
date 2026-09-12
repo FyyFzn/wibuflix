@@ -37,7 +37,7 @@ export async function fetchNanimeInertia(url) {
     }
 
     try {
-        const axiosConfig = { headers, timeout: 20000, ...getAxiosProxyConfig() };
+        const axiosConfig = { headers, timeout: 20000, ...getAxiosProxyConfig(url) };
         const response = await axios.get(url, axiosConfig);
         if (response.data?.version) {
             globalInertiaVersion = response.data.version;

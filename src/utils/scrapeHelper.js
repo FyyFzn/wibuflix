@@ -4,8 +4,8 @@ import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { circuitBreaker } from './circuitBreaker.js';
 
-export function getAxiosProxyConfig() {
-    if (process.env.PROXY_URL) {
+export function getAxiosProxyConfig(url) {
+    if (process.env.PROXY_URL && url && url.toLowerCase().includes('ylnime')) {
         return {
             httpsAgent: new HttpsProxyAgent(process.env.PROXY_URL),
             proxy: false
@@ -106,7 +106,7 @@ export async function fetchWithCF(url, options = {}) {
             };
             
             if (process.env.PROXY_URL) {
-                const proxyConfig = getAxiosProxyConfig();
+                const proxyConfig = getAxiosProxyConfig(url);
                 Object.assign(axiosConfig, proxyConfig);
             }
 
