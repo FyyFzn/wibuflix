@@ -11,6 +11,7 @@ export function serverScore(host) {
     if (!host) return 0;
     const h = host.toLowerCase();
     if (h.includes('mega')) return -1000;
+    if (h.includes('animeverse')) return 95;
     if (h.includes('wibufile')) return 90;
     if (h.includes('pixeldrain')) return 85;
     if (h.includes('filedon') || h.includes('filemoon') || h.includes('filelions')) return 80;
