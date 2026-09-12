@@ -83,7 +83,6 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                     hostLow.includes('googleapis') ||
                     hostLow.includes('drive.google') ||
                     hostLow.includes('mediafire') ||
-                    hostLow.includes('pixeldrain') ||
                     hostLow.includes('wibufile') ||
                     (rangeCheck.supported && rangeCheck.totalSize > 0)
                 ) {
@@ -92,7 +91,10 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 
                 if (rangeCheck.supported && numThreads > 1) {
                     console.info(`[FFmpegStream] Mode JDownloader/Kraken. Mengunduh ke VPS lokal...`);
-                    const numThreads = rangeCheck.totalSize > 500 * 1024 * 1024 ? 8 : 4;
+                    // Use the outer numThreads value; for large files (>500MB) scale up, but cap kraken at 16.
+                    numThreads = hostLow.includes('kraken')
+                        ? numThreads
+                        : (rangeCheck.totalSize > 500 * 1024 * 1024 ? 8 : 4);
                     isPipeMode = false;
                     ffmpegInputSource = tempFilePath;
                     await downloadChunked(videoUrl, requestHeaders, tempFilePath, rangeCheck.totalSize, numThreads, globalAbort, blobPath);

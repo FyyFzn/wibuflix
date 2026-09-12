@@ -4,6 +4,7 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer, recordIframeReferer, getExtractorReferer } from './providers/utils.js';
 import { resolveExtractor } from './providers/index.js';
+import * as genericExtractor from './providers/generic.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 export { extractIframeSrc, namaServer };
@@ -429,5 +430,15 @@ export async function extractVideoUrl(embedUrl, req) {
 
     // ── 3. Delegasikan ke modular extractors ──
     const result = await extractor.extract(embedUrl, req);
-    return result;
+    if (result) return result;
+
+    // ── 4. Puppeteer Fallback ──
+    // Specific extractor returned null (e.g. Vidhide Axios failed, KrakenFiles dead file).
+    // Fall through to generic Puppeteer extraction as a true second-chance.
+    // Skipped if the extractor is already generic (to avoid infinite loop).
+    if (extractor.name !== 'generic') {
+        console.log(`[${extractor.name}] Extractor mengembalikan null, mencoba Puppeteer generic sebagai fallback...`);
+        return await genericExtractor.extract(embedUrl, req);
+    }
+    return null;
 }

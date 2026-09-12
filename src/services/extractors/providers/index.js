@@ -10,6 +10,8 @@ import * as filelions from './filelions.js';
 import * as gdrive from './gdrive.js';
 import * as mega from './mega.js';
 import * as mediafire from './mediafire.js';
+import * as doodstream from './doodstream.js';
+import * as mp4upload from './mp4upload.js';
 
 const extractors = [
     blogger,
@@ -24,6 +26,8 @@ const extractors = [
     gdrive,
     mega,
     mediafire,
+    doodstream,
+    mp4upload,
 ];
 
 export function resolveExtractor(embedUrl) {

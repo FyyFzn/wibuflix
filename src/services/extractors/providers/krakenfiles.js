@@ -29,8 +29,23 @@ export async function extract(embedUrl, req) {
         });
         
         const data = response.data;
+        
+        // KrakenFiles returns HTTP 200 with an HTML error page when a file is deleted or unavailable.
+        // Detect these sentinel strings and fail fast instead of wasting time scanning dead HTML.
+        const dataLower = typeof data === 'string' ? data.toLowerCase() : '';
+        const isDeadFile = dataLower.includes('file not found') ||
+            dataLower.includes('file has been deleted') ||
+            dataLower.includes('sorry, service unavailable') ||
+            dataLower.includes('this file has been removed') ||
+            dataLower.includes('no longer available');
+        if (isDeadFile) {
+            console.log(`[Kraken] File tidak ditemukan atau sudah dihapus: ${embedUrl}`);
+            return null;
+        }
+        
         const resHeaders = response.headers;
         const cookies = resHeaders['set-cookie'] || [];
+
         const cookieStr = cookies.map(c => c.split(';')[0]).join('; ');
         
         const $ = cheerio.load(data);
