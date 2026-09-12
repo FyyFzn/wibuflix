@@ -49,10 +49,10 @@ export async function extract(embedUrl, req) {
             }
         }
 
-        // Strategy 3: Regex fallback on raw HTML
-        const rawMatch = html.match(/(https?:\/\/[^\s"'<>]+\.(?:mp4|m3u8)[^\s"'<>]*)/i) ||
-                         html.match(/file:\s*["']([^"']+\.(?:mp4|m3u8)[^"']*)["']/i);
-        if (rawMatch && rawMatch[1]) {
+        // Strategy 3: Regex fallback looking for videojs src or jwplayer file config
+        const rawMatch = html.match(/src:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i) ||
+                         html.match(/file:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i);
+        if (rawMatch && rawMatch[1] && !rawMatch[1].includes('.css') && !rawMatch[1].includes('.js')) {
             console.info(`[Mp4Upload] ✓ Ditemukan via regex fallback`);
             return {
                 url: rawMatch[1].replace(/\\/g, '').replace(/&amp;/g, '&'),
