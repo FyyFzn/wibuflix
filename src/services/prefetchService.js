@@ -295,9 +295,9 @@ export async function prefetchOneEpisode(seriesSlug, episodeUrl, seriesTitle, so
                 proxyCache.set(`prefetch_src_${activeSlug}_${episodeSlug}`, matchedSource);
 
                 // ── Datacenter-Hostile Bypass ──
-                // Host seperti s3.animeverse.id (YLnime) memblokir IP datacenter (Azure).
-                // Tidak mungkin didownload dari server — simpan URL langsung untuk diputar oleh browser user.
-                const DATACENTER_HOSTILE_HOSTS = ['animeverse.id', 's3.animeverse.id'];
+                // Host seperti s3.animeverse.id (YLnime) sebelumnya memblokir IP datacenter (Azure).
+                // Dikosongkan sementara untuk mengetes download Animeverse ke Blob Storage.
+                const DATACENTER_HOSTILE_HOSTS = [];
                 const matchedHostLow = (matchedSource.host || '').toLowerCase();
                 if (DATACENTER_HOSTILE_HOSTS.some(h => matchedHostLow.includes(h))) {
                     const blobPath = `${activeSlug}/${activeEpSlug}/playlist.m3u8`;
