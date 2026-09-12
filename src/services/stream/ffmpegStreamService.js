@@ -67,7 +67,7 @@ export async function uploadStream(videoUrl, headers = {}, seriesSlug, episodeSl
                 
                 // Domain yang diketahui memblokir IP datacenter (VPS/Azure).
                 // checkRangeSupport akan selalu 403, jadi langsung gunakan pipe stream.
-                const datacenterHostileHosts = ['animeverse.id', 's3.animeverse.id'];
+                const datacenterHostileHosts = [];
                 const hostLowForCheck = videoUrl.toLowerCase();
                 const isDatacenterHostile = datacenterHostileHosts.some(h => hostLowForCheck.includes(h));
 
