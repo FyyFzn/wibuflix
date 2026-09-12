@@ -103,6 +103,11 @@ export async function getBrowser() {
                 ]
             };
             
+            if (process.env.PROXY_URL) {
+                launchOptions.args.push(`--proxy-server=${process.env.PROXY_URL}`);
+                console.log(`[Browser] Menggunakan Proxy: ${process.env.PROXY_URL}`);
+            }
+            
             console.log('[Browser] Menggunakan official Chrome for Testing (CfT) bawaan Puppeteer...');
             
             let browser = null;

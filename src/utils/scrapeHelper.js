@@ -1,6 +1,7 @@
 import { acquireFromPool, releaseToPool, getCfCookie, getCfCookiesArray, globalUserAgent, refreshCfCookie, waitForCloudflare } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { circuitBreaker } from './circuitBreaker.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
@@ -82,7 +83,7 @@ export async function fetchWithCF(url, options = {}) {
             try { hostname = new URL(url).hostname; } catch (e) {}
             const cookieStr = getCfCookie(hostname);
 
-            const response = await axios.get(url, {
+            const axiosConfig = {
                 headers: {
                     'User-Agent': globalUserAgent,
                     'Cookie': cookieStr,
@@ -92,7 +93,15 @@ export async function fetchWithCF(url, options = {}) {
                     'Connection': 'keep-alive',
                 },
                 timeout: options.fetchTimeout || 8000
-            });
+            };
+            
+            if (process.env.PROXY_URL) {
+                axiosConfig.httpsAgent = new HttpsProxyAgent(process.env.PROXY_URL);
+                // Matikan proxy bawaan axios agar tidak bentrok dengan httpsAgent
+                axiosConfig.proxy = false;
+            }
+
+            const response = await axios.get(url, axiosConfig);
             html = response.data;
             if (html && isCloudflareHtml(html)) {
                 console.log(`[scrapeHelper] Axios mendapat halaman CF challenge. Langsung fallback ke Puppeteer...`);
