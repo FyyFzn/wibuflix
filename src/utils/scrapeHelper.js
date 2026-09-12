@@ -3,6 +3,16 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { circuitBreaker } from './circuitBreaker.js';
+
+export function getAxiosProxyConfig() {
+    if (process.env.PROXY_URL) {
+        return {
+            httpsAgent: new HttpsProxyAgent(process.env.PROXY_URL),
+            proxy: false
+        };
+    }
+    return {};
+}
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const DEFAULT_HOSTNAME = new URL(PROVIDER_URLS.SAMEHADAKU.BASE_URL).hostname;
@@ -96,9 +106,8 @@ export async function fetchWithCF(url, options = {}) {
             };
             
             if (process.env.PROXY_URL) {
-                axiosConfig.httpsAgent = new HttpsProxyAgent(process.env.PROXY_URL);
-                // Matikan proxy bawaan axios agar tidak bentrok dengan httpsAgent
-                axiosConfig.proxy = false;
+                const proxyConfig = getAxiosProxyConfig();
+                Object.assign(axiosConfig, proxyConfig);
             }
 
             const response = await axios.get(url, axiosConfig);
