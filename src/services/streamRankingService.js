@@ -367,7 +367,8 @@ export async function findBestVideoSource(episodeUrl, seriesTitle, episodeTitle,
 
                         // Domain yang diketahui memblokir IP datacenter (VPS/Azure).
                         // Ping test akan selalu 403, jadi langsung diterima tanpa uji koneksi.
-                        const datacenterHostileHosts = ['animeverse.id', 's3.animeverse.id'];
+                        // (Animeverse sudah dites dan ternyata support Azure IP, jadi dikosongkan)
+                        const datacenterHostileHosts = [];
                         const skipPing = datacenterHostileHosts.some(h => extractedHost.includes(h));
 
                         if (skipPing) {
