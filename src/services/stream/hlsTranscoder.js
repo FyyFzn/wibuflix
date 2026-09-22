@@ -45,7 +45,7 @@ export async function transcodeAndMonitorHLS({
         '-c', 'copy',
         '-max_muxing_queue_size', '1024',
         '-f', 'hls',
-        '-hls_time', '10',
+        '-hls_time', '4',
         '-hls_playlist_type', 'vod',
         '-hls_flags', 'independent_segments+temp_file',
         '-hls_segment_filename', path.join(hlsOutputDir, 'seg_%03d.ts'),
