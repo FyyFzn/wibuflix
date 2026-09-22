@@ -99,48 +99,26 @@ export async function checkUploadStatusWithFallback(seriesSlug, episodeSlug, old
     const seriesSlugs = Array.isArray(seriesSlug) ? seriesSlug : [seriesSlug, oldSeriesSlug].filter(Boolean);
     const episodeSlugs = Array.isArray(episodeSlug) ? episodeSlug : [episodeSlug].filter(Boolean);
 
-    // Buat daftar semua kombinasi (sSlug, eSlug) dalam urutan prioritas
-    const combinations = [];
     for (const sSlug of seriesSlugs) {
         if (!sSlug) continue;
         for (const eSlug of episodeSlugs) {
             if (!eSlug) continue;
-            combinations.push({ sSlug, eSlug });
+            const blobPath = getBlobPath(sSlug, eSlug);
+            // Cek DIRECT cache terlebih dahulu (lebih murah daripada hit Azure)
+            const directEntry = directUrlCache.get(blobPath);
+            if (directEntry) {
+                return { status: 'DIRECT', activeSeriesSlug: sSlug, activeEpisodeSlug: eSlug, directUrl: directEntry.url, directHeaders: directEntry.headers };
+            }
+            let status = await checkUploadStatus(sSlug, eSlug);
+            if (status !== null) {
+                return { status, activeSeriesSlug: sSlug, activeEpisodeSlug: eSlug };
+            }
         }
     }
-
-    if (combinations.length === 0) {
-        return {
-            status: null,
-            activeSeriesSlug: seriesSlugs[0] || 'uncategorized',
-            activeEpisodeSlug: episodeSlugs[0] || 'uncategorized_ep'
-        };
-    }
-
-    // Periksa directUrlCache terlebih dahulu — tidak memerlukan round-trip Azure
-    for (const { sSlug, eSlug } of combinations) {
-        const blobPath = getBlobPath(sSlug, eSlug);
-        const directEntry = directUrlCache.get(blobPath);
-        if (directEntry) {
-            return { status: 'DIRECT', activeSeriesSlug: sSlug, activeEpisodeSlug: eSlug, directUrl: directEntry.url, directHeaders: directEntry.headers };
-        }
-    }
-
-    // Tembak semua kombinasi ke Azure secara paralel, lalu ambil hasil pertama yang non-null
-    // sesuai urutan prioritas (bukan urutan selesai)
-    const results = await Promise.all(
-        combinations.map(({ sSlug, eSlug }) => checkUploadStatus(sSlug, eSlug))
-    );
-
-    for (let i = 0; i < combinations.length; i++) {
-        if (results[i] !== null) {
-            return { status: results[i], activeSeriesSlug: combinations[i].sSlug, activeEpisodeSlug: combinations[i].eSlug };
-        }
-    }
-
-    // Tidak ada yang ditemukan — kembalikan null dan gunakan folder utama untuk upload selanjutnya
-    return {
-        status: null,
+    
+    // Jika tidak ada di keduanya, kembalikan null dan gunakan folder utama untuk upload selanjutnya
+    return { 
+        status: null, 
         activeSeriesSlug: seriesSlugs[0] || 'uncategorized',
         activeEpisodeSlug: episodeSlugs[0] || 'uncategorized_ep'
     };
