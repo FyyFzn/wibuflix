@@ -117,7 +117,7 @@ export async function transcodeAndMonitorHLS({
                     clearInterval(intervalId);
                     uploadProgressCache.set(blobPath, 'Menyelesaikan playlist akhir...');
                     
-                    const remainingFiles = fs.readdirSync(hlsOutputDir);
+                    const remainingFiles = await fs.promises.readdir(hlsOutputDir);
                     const finalTsFiles = remainingFiles.filter(f => f.endsWith('.ts'));
                     
                     const totalTsCount = totalUploadedChunksRef.count + finalTsFiles.length;
@@ -132,7 +132,7 @@ export async function transcodeAndMonitorHLS({
                     return;
                 }
                 
-                const files = fs.readdirSync(hlsOutputDir);
+                const files = await fs.promises.readdir(hlsOutputDir);
                 const validTsFiles = files.filter(f => f.endsWith('.ts')).sort();
                 
                 if (validTsFiles.length === 0) {

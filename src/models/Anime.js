@@ -22,7 +22,8 @@ const animeSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        default: 'TV'
+        default: 'TV',
+        index: true
     },
     isToku: {
         type: Boolean,
@@ -44,7 +45,7 @@ const animeSchema = new mongoose.Schema({
     sourceUrls: [{ type: String, default: null }],
     // Metadata Lanjutan dari MAL / TMDB
     synopsis: { type: String, default: null },
-    genres: { type: [String], default: [] },
+    genres: { type: [String], default: [], index: true },
     episodesCount: { type: Number, default: null },
     episodesList: [{
         _id: false,
@@ -63,11 +64,15 @@ const animeSchema = new mongoose.Schema({
     },
     lastUpdated: {
         type: Date,
-        default: Date.now
+        default: Date.now,
+        index: -1
     }
 }, { timestamps: true });
 
 // Dihapus text index lama karena akan diganti dengan Atlas Search
+
+// Collated index untuk A-Z sort (harus cocok persis dengan collation di katalogController)
+animeSchema.index({ title: 1 }, { collation: { locale: 'en', strength: 2, numericOrdering: true } });
 
 const Anime = mongoose.model('Anime', animeSchema);
 

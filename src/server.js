@@ -82,8 +82,6 @@ app.set('json spaces', 2);
 // SSRF Protection Middleware
 app.use(ssrfMiddleware);
 
-// Sajikan file statis (HTML, CSS, JS) dari direktori root proyek
-app.use(express.static(path.join(__dirname, '../')));
 
 // Mounting Routers
 app.use(v2Router);
@@ -93,6 +91,10 @@ app.use(extractRouter);
 app.use(proxyRouter);
 app.use(adminRouter);
 
+
+// Sajikan file statis (HTML, CSS, JS) — dipasang SETELAH router agar setiap request API
+// tidak perlu melewati file-system lookup terlebih dahulu
+app.use(express.static(path.join(__dirname, '../')));
 
 // Global Error Handler Middleware (Harus diletakkan setelah semua router)
 app.use(errorHandler);

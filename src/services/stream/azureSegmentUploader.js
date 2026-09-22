@@ -7,9 +7,14 @@ import { uploadProgressCache } from './streamStateStore.js';
  * Mengunggah satu file (.ts atau .m3u8) dari lokal ke Azure Blob Storage.
  */
 export async function uploadSingleFileToAzure(localPath, azureDest, globalAbort) {
-    if (!fs.existsSync(localPath)) return false;
-    const stats = fs.statSync(localPath);
-    if (stats.size === 0) return false;
+    let fileSize;
+    try {
+        const stats = await fs.promises.stat(localPath);
+        fileSize = stats.size;
+    } catch {
+        return false; // File tidak ada (ENOENT) atau tidak bisa dibaca
+    }
+    if (fileSize === 0) return false;
 
     const type = localPath.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
     const blockBlobClient = containerClient.getBlockBlobClient(azureDest);
@@ -29,13 +34,18 @@ export async function uploadSingleFileToAzure(localPath, azureDest, globalAbort)
  * Mengunggah potongan segmen .ts menggunakan direktori staging (.uploading) untuk mencegah bentrok lock I/O.
  */
 export async function uploadSegmentStaged(localPath, azureDest, globalAbort, blobPath, totalUploadedChunksRef) {
-    if (!fs.existsSync(localPath)) return false;
-    const stats = fs.statSync(localPath);
-    if (stats.size === 0) return false;
+    let fileSize;
+    try {
+        const stats = await fs.promises.stat(localPath);
+        fileSize = stats.size;
+    } catch {
+        return false; // File tidak ada (ENOENT)
+    }
+    if (fileSize === 0) return false;
 
     const stagingPath = localPath + '.uploading';
     try {
-        fs.renameSync(localPath, stagingPath);
+        await fs.promises.rename(localPath, stagingPath);
     } catch (renameErr) {
         return false;
     }
@@ -61,7 +71,7 @@ export async function uploadSegmentStaged(localPath, azureDest, globalAbort, blo
  * Menyapu sisa file terakhir (termasuk playlist.m3u8) sesudah FFmpeg selesai.
  */
 export async function uploadRemainingFilesToAzure(hlsOutputDir, baseAzurePath, globalAbort, uploadLimit) {
-    const remainingFiles = fs.readdirSync(hlsOutputDir);
+    const remainingFiles = await fs.promises.readdir(hlsOutputDir);
     await Promise.all(remainingFiles.map(file => uploadLimit(async () => {
         const localPath = path.join(hlsOutputDir, file);
         if (file.endsWith('.tmp') || file.endsWith('.uploading')) return;
