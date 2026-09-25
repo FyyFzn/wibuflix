@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { globalUserAgent, getCfCookiesArray, setCfCookie } from './cookieSessionStore.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
+import { circuitBreaker } from '../utils/circuitBreaker.js';
 
 puppeteer.use(StealthPlugin());
 
@@ -249,6 +250,14 @@ export async function initPagePool() {
     setInterval(async () => {
         console.log('[PagePool] Auto-refresh berkala CF cookie (30 menit)...');
         for (const provider of CF_WARMUP_PROVIDERS) {
+            let domain = provider.url;
+            try { domain = new URL(provider.url).hostname; } catch (e) {}
+            // Fix 5: Skip provider yang circuit-nya sedang OPEN — tidak ada gunanya
+            // membuang slot Puppeteer untuk domain yang sudah terbukti tidak bisa di-bypass.
+            if (circuitBreaker.getState(domain) === 'OPEN') {
+                console.log(`[PagePool] Skip auto-refresh ${provider.name} (circuit OPEN, cooldown belum selesai).`);
+                continue;
+            }
             await refreshCfCookie(provider.url).catch(e =>
                 console.warn(`[PagePool] Auto-refresh ${provider.name} gagal:`, e.message)
             );

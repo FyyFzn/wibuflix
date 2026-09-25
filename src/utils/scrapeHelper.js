@@ -68,6 +68,13 @@ async function injectCFCookies(page, targetUrl) {
 }
 
 /**
+ * Status kode HTTP dari server origin yang menandakan server benar-benar down.
+ * Tidak ada gunanya fallback ke Puppeteer untuk status ini karena CF sendiri
+ * tidak bisa menjangkau origin — Puppeteer akan melihat halaman error CF juga.
+ */
+const ORIGIN_DOWN_STATUS_CODES = new Set([521, 522, 523, 524, 530]);
+
+/**
  * Mengambil HTML dari target URL menggunakan Axios + CF Cookie dengan Puppeteer fallback.
  * @param {string} url - Target URL yang akan di-scrape
  * @param {object} options - Opsi konfigurasi (timeout, fetchTimeout, dll)
@@ -120,6 +127,12 @@ export async function fetchWithCF(url, options = {}) {
             if (err.response && err.response.status === 404) {
                 return { html: '404_NOT_FOUND', $: null, slot: null };
             }
+            // Fix 1: Jika server origin down (522, 523, dll), Puppeteer tidak bisa membantu.
+            // CF akan menampilkan halaman error-nya sendiri yang terdeteksi sebagai CF challenge.
+            // Langsung lempar error agar circuit breaker mencatat kegagalan tanpa membuang slot Puppeteer.
+            if (err.response && ORIGIN_DOWN_STATUS_CODES.has(err.response.status)) {
+                throw new Error(`Request failed with status code ${err.response.status}`);
+            }
             console.log(`[scrapeHelper] Axios gagal (${err.message}). Langsung fallback ke Puppeteer untuk: ${url}`);
         }
     } else {
@@ -140,7 +153,7 @@ export async function fetchWithCF(url, options = {}) {
             // agar Cloudflare langsung mengenali session ini sebagai sudah terverifikasi
             await injectCFCookies(page, url);
 
-            // ⚠️ FIX 2: Gunakan 'domcontentloaded' dan handle frame detached
+            // Gunakan 'domcontentloaded' dan handle frame detached.
             // CF challenge butuh request JS tambahan, jika me-refresh otomatis akan trigger 'Navigating frame was detached'
             const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout }).catch(async (e) => {
                 if (e.message && (e.message.includes('Navigating frame was detached') || e.message.includes('Execution context was destroyed'))) {
@@ -204,6 +217,11 @@ export async function fetchWithCF(url, options = {}) {
     } catch (err) {
         if (slot) {
             releaseToPool(slot);
+        }
+        // Fix 3: Error "detached Frame" adalah race condition internal Puppeteer,
+        // bukan kegagalan provider. Tandai agar tidak dihitung oleh circuit breaker.
+        if (err.message && (err.message.includes('detached Frame') || err.message.includes('Detached Frame'))) {
+            err.skipCircuit = true;
         }
         circuitBreaker.recordFailure(url, err);
         throw err;

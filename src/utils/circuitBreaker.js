@@ -1,20 +1,36 @@
 /**
  * Circuit Breaker untuk Melindungi Server VPS Azure B1
  * Mencegah pemanggilan Puppeteer buta-butaan saat target web sedang down/maintenance/memblokir IP.
+ *
+ * Exponential backoff: setiap kali sirkuit kembali OPEN setelah HALF_OPEN gagal,
+ * cooldown berlipat ganda (5m → 10m → 20m → 30m max) sehingga domain yang
+ * sudah terbukti tidak bisa diakses tidak terus-menerus membuang slot Puppeteer.
  */
+
+const MIN_RESET_TIMEOUT_MS = 5 * 60 * 1000;   // 5 menit
+const MAX_RESET_TIMEOUT_MS = 30 * 60 * 1000;  // 30 menit
 
 class CircuitBreaker {
     constructor(options = {}) {
         this.failureThreshold = options.failureThreshold || 5; // Jumlah kegagalan beruntun sebelum sirkuit dibuka
-        this.resetTimeout = options.resetTimeout || 5 * 60 * 1000; // Waktu tunggu sebelum tes ulang (5 menit)
-        this.states = new Map(); // domain -> { state: 'CLOSED' | 'OPEN' | 'HALF_OPEN', failures: number, nextAttempt: number }
+        // states: domain -> { state: 'CLOSED'|'OPEN'|'HALF_OPEN', failures, nextAttempt, openCount }
+        this.states = new Map();
     }
 
     _getState(domain) {
         if (!this.states.has(domain)) {
-            this.states.set(domain, { state: 'CLOSED', failures: 0, nextAttempt: 0 });
+            this.states.set(domain, { state: 'CLOSED', failures: 0, nextAttempt: 0, openCount: 0 });
         }
         return this.states.get(domain);
+    }
+
+    /**
+     * Menghitung cooldown berikutnya menggunakan exponential backoff.
+     * Cooldown awal 5m, berlipat tiap kali sirkuit kembali OPEN, maks 30m.
+     */
+    _nextResetTimeout(openCount) {
+        const ms = MIN_RESET_TIMEOUT_MS * Math.pow(2, openCount);
+        return Math.min(ms, MAX_RESET_TIMEOUT_MS);
     }
 
     /**
@@ -49,7 +65,20 @@ class CircuitBreaker {
     }
 
     /**
-     * Mencatat keberhasilan request. Mengembalikan sirkuit ke status CLOSED.
+     * Mengembalikan status sirkuit saat ini untuk domain tertentu.
+     * @param {string} domain - Hostname
+     * @returns {'CLOSED'|'OPEN'|'HALF_OPEN'}
+     */
+    getState(domain) {
+        const info = this._getState(domain.toLowerCase());
+        if (info.state === 'OPEN' && Date.now() >= info.nextAttempt) {
+            return 'HALF_OPEN';
+        }
+        return info.state;
+    }
+
+    /**
+     * Mencatat keberhasilan request. Mengembalikan sirkuit ke status CLOSED dan reset openCount.
      */
     recordSuccess(urlOrDomain) {
         let domain = urlOrDomain;
@@ -61,10 +90,12 @@ class CircuitBreaker {
         }
         info.failures = 0;
         info.state = 'CLOSED';
+        info.openCount = 0; // reset backoff saat pulih
     }
 
     /**
-     * Mencatat kegagalan request. Jika mencapai batas, buka sirkuit (OPEN).
+     * Mencatat kegagalan request. Jika mencapai batas, buka sirkuit (OPEN) dengan exponential backoff.
+     * Error internal (detached frame, dll) dapat dikecualikan via options.skipCircuit = true.
      */
     recordFailure(urlOrDomain, error) {
         let domain = urlOrDomain;
@@ -75,15 +106,22 @@ class CircuitBreaker {
             return;
         }
 
+        // Abaikan race condition internal Puppeteer — bukan kegagalan provider
+        if (error?.skipCircuit === true) {
+            return;
+        }
+
         const info = this._getState(domain);
         info.failures++;
 
         console.warn(`[CircuitBreaker] Kegagalan tercatat untuk ${domain} (${info.failures}/${this.failureThreshold}):`, error?.message || 'Unknown error');
 
         if (info.failures >= this.failureThreshold || info.state === 'HALF_OPEN') {
+            info.openCount = (info.openCount || 0) + 1;
+            const cooldownMs = this._nextResetTimeout(info.openCount - 1);
             info.state = 'OPEN';
-            info.nextAttempt = Date.now() + this.resetTimeout;
-            console.error(`🚨 [CircuitBreaker] SIRKUIT TERBUKA (OPEN) untuk ${domain}! Semua request ke domain ini akan ditolak otomatis selama ${this.resetTimeout / 1000}s demi menyelamatkan CPU server.`);
+            info.nextAttempt = Date.now() + cooldownMs;
+            console.error(`🚨 [CircuitBreaker] SIRKUIT TERBUKA (OPEN) untuk ${domain}! Semua request ke domain ini akan ditolak otomatis selama ${cooldownMs / 1000}s demi menyelamatkan CPU server.`);
         }
     }
 
