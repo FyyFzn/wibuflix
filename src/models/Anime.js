@@ -3,8 +3,7 @@ import mongoose from 'mongoose';
 const animeSchema = new mongoose.Schema({
     title: {
         type: String,
-        required: true,
-        index: true
+        required: true
     },
     aliases: {
         type: [String],
