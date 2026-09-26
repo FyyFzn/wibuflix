@@ -61,6 +61,11 @@ export const PROVIDER_URLS = {
         CATALOG_URL: 'https://ylnime.com/anime-list.php',
         SERIES_PATH: '/index.php?series={slug}',
         DOMAIN_KEYWORDS: ['ylnime.com', 'ylnime']
+    },
+    ANIMEKU: {
+        NAME: 'Animeku',
+        BASE_URL: 'https://animeku.org',
+        DOMAIN_KEYWORDS: ['animeku.org']
     }
 };
 

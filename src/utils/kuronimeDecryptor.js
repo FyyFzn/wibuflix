@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import axios from 'axios';
-import { acquireFromPool, releaseToPool, getCfCookie, globalUserAgent, waitForCloudflare } from '../puppeteer/pool.js';
+import { getCfCookie, globalUserAgent } from '../puppeteer/pool.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
@@ -76,7 +76,7 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
     let apiResp;
     try {
         const res = await axios.post(
-            'https://animeku.org/api/v9/sources',
+            `${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`,
             { id: token },
             {
                 headers: {
@@ -91,37 +91,39 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         );
         apiResp = res.data;
     } catch (err) {
-        console.warn('[KuronimeDecryptor] Axios di-blokir oleh CDN (403), mengaktifkan Puppeteer fallback...');
-        
-        let tempSlot = null;
-        console.log('[KuronimeDecryptor] Meminjam page Puppeteer khusus ke origin animeku.org untuk fallback...');
+        console.warn('[KuronimeDecryptor] Axios di-blokir oleh CDN (403), mencoba ulang dengan CF cookie dari store...');
+
+        // Fast-fail: jika animeku.org sedang dalam Circuit Breaker cooldown, lewati langsung.
+        const { circuitBreaker } = await import('./circuitBreaker.js');
+        if (!circuitBreaker.canExecute(PROVIDER_URLS.ANIMEKU.BASE_URL).allowed) {
+            console.warn('[KuronimeDecryptor] animeku.org circuit OPEN — skip retry, langsung fallback ke mirror server.');
+            return null;
+        }
+
         try {
-            tempSlot = await acquireFromPool('animeku.org');
-            const evalPage = tempSlot.page;
-            
-            await evalPage.goto('https://animeku.org/', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
-            await waitForCloudflare(evalPage);
-            
-            console.log('[KuronimeDecryptor] Mencoba fallback fetch API menggunakan Puppeteer page.evaluate pada origin animeku.org...');
-            apiResp = await evalPage.evaluate(async (tokenId) => {
-                const fetchRes = await fetch('/api/v9/sources', {
-                    method: 'POST',
+            // Gunakan cf_clearance yang sudah dihangatkan saat startup (dari browserPool warm-up).
+            // Ini adalah plain JSON POST API — tidak butuh browser context sama sekali.
+            const warmCookie = getCfCookie('animeku.org');
+            const retryRes = await axios.post(
+                `${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`,
+                { id: token },
+                {
                     headers: {
                         'Content-Type': 'application/json',
-                        'Accept': 'application/json, text/plain, */*'
+                        'Referer': `${PROVIDER_URLS.KURONIME.BASE_URL}/`,
+                        'Origin': `${PROVIDER_URLS.KURONIME.BASE_URL}`,
+                        'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Cookie': warmCookie || '',
                     },
-                    body: JSON.stringify({ id: tokenId })
-                });
-                if (!fetchRes.ok) throw new Error('HTTP ' + fetchRes.status);
-                return await fetchRes.json();
-            }, token);
-        } catch (pageErr) {
-            console.error('[KuronimeDecryptor] Puppeteer fallback juga gagal:', pageErr.message);
+                    timeout: 12000
+                }
+            );
+            circuitBreaker.recordSuccess(PROVIDER_URLS.ANIMEKU.BASE_URL);
+            apiResp = retryRes.data;
+        } catch (retryErr) {
+            circuitBreaker.recordFailure(PROVIDER_URLS.ANIMEKU.BASE_URL, retryErr);
+            console.error('[KuronimeDecryptor] Retry dengan CF cookie juga gagal:', retryErr.message);
             return null;
-        } finally {
-            if (tempSlot) {
-                releaseToPool(tempSlot);
-            }
         }
     }
 

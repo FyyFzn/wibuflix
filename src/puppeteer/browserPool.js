@@ -236,6 +236,7 @@ export async function initPagePool() {
         { name: PROVIDER_URLS.SAMEHADAKU.NAME, url: PROVIDER_URLS.SAMEHADAKU.BASE_URL + '/' },
         { name: PROVIDER_URLS.KURONIME.NAME,   url: PROVIDER_URLS.KURONIME.BASE_URL + '/' },
         { name: PROVIDER_URLS.OTAKUDESU.NAME,  url: PROVIDER_URLS.OTAKUDESU.BASE_URL + '/' },
+        { name: PROVIDER_URLS.ANIMEKU.NAME,    url: PROVIDER_URLS.ANIMEKU.BASE_URL + '/' },
     ];
 
     console.log(`[PagePool] Inisialisasi pool dan warming up CF cookie untuk ${CF_WARMUP_PROVIDERS.map(p => p.name).join(', ')}...`);
