@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { getCfCookie, globalUserAgent } from '../puppeteer/pool.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
+import { getAxiosProxyConfig } from './scrapeHelper.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
 
@@ -86,7 +87,8 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
                     'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Cookie': getCfCookie('animeku.org') || ''
                 },
-                timeout: 10000
+                timeout: 10000,
+                ...getAxiosProxyConfig(`${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`)
             }
         );
         apiResp = res.data;
@@ -115,7 +117,8 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
                         'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Cookie': warmCookie || '',
                     },
-                    timeout: 12000
+                    timeout: 12000,
+                    ...getAxiosProxyConfig(`${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`)
                 }
             );
             circuitBreaker.recordSuccess(PROVIDER_URLS.ANIMEKU.BASE_URL);

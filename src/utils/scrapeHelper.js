@@ -5,11 +5,14 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { circuitBreaker } from './circuitBreaker.js';
 
 export function getAxiosProxyConfig(url) {
-    if (process.env.PROXY_URL && url && url.toLowerCase().includes('ylnime')) {
-        return {
-            httpsAgent: new HttpsProxyAgent(process.env.PROXY_URL),
-            proxy: false
-        };
+    if (process.env.PROXY_URL && url) {
+        const lowerUrl = url.toLowerCase();
+        if (lowerUrl.includes('ylnime') || lowerUrl.includes('animeku') || lowerUrl.includes('kuronime')) {
+            return {
+                httpsAgent: new HttpsProxyAgent(process.env.PROXY_URL),
+                proxy: false
+            };
+        }
     }
     return {};
 }
