@@ -284,7 +284,7 @@ export function cleanSeriesTitle(title) {
     if (!title) return '';
     let t = String(title).trim();
     // 1. Hapus nama situs & kata kunci SEO (Sub Indo, Subtitle Indonesia, dll.)
-    t = t.replace(/[-–|]\s*(?:Samehadaku|Otakudesu|Kuronime|Neosatsu|Nimegami).*$/i, '');
+    t = t.replace(/[-–|]\s*(?:Samehadaku|Otakudesu|Kuronime|Neosatsu|Nimegami|Oploverz).*$/i, '');
     t = t.replace(/\s*(?:\(?Sub(?:title)?\s*Indo(?:nesia)?\)?)\s*/gi, '');
     // 2. Hapus metadata episode & batch (Episode XX - XX, #XX, Tamat, End, OVA, Batch)
     t = t.replace(/(?:#|Episode|Eps?|Ep)\s*\d+(?:[\s-_]*[-–to]+\s*(?:#|Episode|Eps?|Ep)?\s*\d+)?.*$/i, '');
