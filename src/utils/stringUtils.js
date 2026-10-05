@@ -161,6 +161,9 @@ export function formatEpisodeTitle(title) {
     if (!title) return 'Episode ?';
     let clean = title.replace(/\b(\d+)\s*(?:menit|mins?|m|detik|s|sec|episodes?|eps)\b/gi, '').trim();
     clean = clean.replace(/\(\s*\)/g, '').trim();
+    // Buang pemisah sisa di akhir judul (cth: "Bleach - 01 -") agar
+    // pola penomoran di bawah ini tetap bisa mengunci angka.
+    clean = clean.replace(/\s*[-–|]\s*$/, '').trim();
     if (clean.toLowerCase().includes('batch')) return 'Batch';
     const typeMatch = clean.match(/(OVA|OAD|Special|SP)[\s-_]*(\d+(?:[-_&+/]+\d+)?(?:\.\d+)?)/i);
     if (typeMatch) return `${typeMatch[1].toUpperCase()} ${typeMatch[2]}`;
