@@ -54,7 +54,8 @@ export async function getOploverzEpisodes(targetUrl) {
                 const epUrl = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}${epHref}`;
                 
                 // Cek apakah episode merupakan rentang/gabungan ganda (cth: Episode 166-167 atau /episode/166-167/)
-                const rangeMatch = epHref.match(/\/episode\/(\d+)-(\d+)\//i) || epTitleRaw.match(/(?:episode|ep|eps)\s*(\d+)\s*[-–]\s*(\d+)/i);
+                // Slash di akhir opsional: situs aktif memakai /episode/166-167 (tanpa trailing slash).
+                const rangeMatch = epHref.match(/\/episode\/(\d+)-(\d+)\/?/i) || epTitleRaw.match(/(?:episode|ep|eps)\s*(\d+)\s*[-–]\s*(\d+)/i);
                 if (rangeMatch) {
                     const startNum = parseInt(rangeMatch[1], 10);
                     const endNum = parseInt(rangeMatch[2], 10);
@@ -265,7 +266,8 @@ export async function getOploverzLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
     const { acquireFromPool, releaseToPool } = await import('../../puppeteer/pool.js');
     const cheerio = await import('cheerio');
-    const url = PROVIDER_URLS.OPLOVERZ.BASE_URL;
+    // Jadwal rilis berada pada route /schedule, bukan halaman depan.
+    const url = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/schedule`;
     let slot;
     const updates = [];
     try {
@@ -274,15 +276,34 @@ export async function getOploverzLatestUpdates() {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
         const html = await page.content();
         const $ = cheerio.load(html);
-        $('.bgwhite div, .post-item, .item').each((_, el) => {
-            const titleNode = $(el).find('.title, h2, h3').first();
-            const epNode = $(el).find('.ep, .episode').first();
-            if (titleNode.length && epNode.length) {
-                const title = titleNode.text().trim();
-                const status = epNode.text().trim();
-                if (title && status) {
-                    updates.push({ title, status: status.toLowerCase().includes('eps') ? status : `Eps ${status}` });
-                }
+
+        // Situs aktif (SvelteKit) tidak memakai .bgwhite/.post-item/.item lagi.
+        // Kartu jadwal kini adalah <a href="/series/<slug>"> di dalam grid Tailwind,
+        // dengan waktu rilis ("23:00 WIB") dan judul anime sebagai teks.
+        const seen = new Set();
+        $('a[href*="/series/"]').each((_, el) => {
+            const href = $(el).attr('href') || '';
+            if (!/^\/series\/[a-z0-9-]+\/?$/i.test(href)) return; // hanya kartu series, bukan tombol "Tonton"
+
+            const rawText = $(el).text().replace(/\s+/g, ' ').trim();
+            if (!rawText) return;
+
+            // Buang duplikat judul yang tampil lebih dari sekali per hari
+            const key = rawText.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            // Pisahkan jam rilis dari judul: "23:00 WIB Tensei shitara Ken deshita S2"
+            const timeMatch = rawText.match(/^(\d{1,2}[:.]\d{2})\s*(?:WIB|WITA|WIT)?\s*(.*)$/i);
+            let time = '';
+            let title = rawText;
+            if (timeMatch) {
+                time = timeMatch[1];
+                title = timeMatch[2].trim();
+            }
+
+            if (title) {
+                updates.push({ title, status: time ? `Eps ${time}` : 'Eps' });
             }
         });
     } catch (e) {
