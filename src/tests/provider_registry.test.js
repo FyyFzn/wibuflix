@@ -15,7 +15,7 @@ test('ProviderRegistry Architecture Verification', async (t) => {
     });
 
     await t.test('2. getProviderForUrl mengidentifikasi provider dengan akurat tanpa if-else manual', async () => {
-        assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://plus.oploverz.ltd/series/inuyasha-s1')).id, 'oploverz');
+        assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://oploverz.site/series/inuyasha-s1')).id, 'oploverz');
         assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://kuronime.sbs/inuyasha-s1-episode-1')).id, 'kuronime');
         assert.strictEqual((await ProviderRegistry.getProviderForUrl('https://otakudesu.cloud/anime/inuyasha-sub-indo/')).id, 'otakudesu');
         assert.strictEqual((await ProviderRegistry.getProviderForUrl('___neosatsu_ep___https://neosatsu.com/ep-1')).id, 'neosatsu');

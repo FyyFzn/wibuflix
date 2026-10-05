@@ -43,8 +43,8 @@ export const PROVIDER_URLS = {
     },
     OPLOVERZ: {
         NAME: 'Oploverz',
-        BASE_URL: 'https://idn.oploverz.site',
-        CATALOG_URL: 'https://idn.oploverz.site/series',
+        BASE_URL: 'https://oploverz.site',
+        CATALOG_URL: 'https://oploverz.site/series',
         SERIES_PATH: '/series/{slug}',
         DOMAIN_KEYWORDS: ['oploverz']
     },

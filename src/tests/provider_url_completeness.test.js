@@ -79,7 +79,7 @@ test('Dynamic URL Generation Verification: getProviderSeriesUrl menghasilkan URL
 });
 
 test('Provider Domain Recognition: isProviderUrl mengenali domain absolut dan menolak URL relatif atau rusak', () => {
-    const oploverzAbsUrl = 'https://idn.oploverz.site/series/one-piece';
+    const oploverzAbsUrl = 'https://oploverz.site/series/one-piece';
     assert.strictEqual(isProviderUrl(oploverzAbsUrl, 'OPLOVERZ'), true);
 
     const relativeUrl = '/nonton-anime/episode-1/';

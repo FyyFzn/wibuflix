@@ -15,7 +15,7 @@ const OPLOVERZ_SERIES_URL = PROVIDER_URLS.OPLOVERZ.CATALOG_URL;
 
 
 /**
- * Sinkronisasi katalog anime dari Oploverz (idn.oploverz.site/series).
+ * Sinkronisasi katalog anime dari Oploverz (oploverz.site/series).
 
  * Menggunakan Puppeteer untuk merender SvelteKit SPA, kemudian Fuzzy Matching
  * (isSafeToMerge) agar tidak ada duplikasi di MongoDB.
