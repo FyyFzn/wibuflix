@@ -1,7 +1,7 @@
 {
-  "name": "samehadaku-scraper",
+  "name": "wibuflix",
   "version": "1.0.0",
-  "description": "",
+  "description": "Wibuflix Backend — multi-provider VOD scraping, HLS transcoding, and Azure Blob Storage pipeline",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

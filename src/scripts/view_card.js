@@ -5,7 +5,14 @@ import util from 'util';
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/fyy_stream';
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+    console.error('\n❌ [View Card] Variabel MONGODB_URI/MONGO_URI belum diatur di .env!\n');
+    console.error("💡 Tips: Jalankan dengan menyisipkan URI secara langsung:");
+    console.error("   MONGODB_URI='mongodb+srv://user:***@cluster.mongodb.net/wibuflix' node src/scripts/view_card.js <keyword>\n");
+    process.exit(1);
+}
 
 async function viewCard() {
     const keyword = process.argv.slice(2).join(' ');

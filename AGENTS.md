@@ -11,8 +11,8 @@ This repository is a monorepo containing two independent, deployable projects:
 
 | Directory | Project Name | Role |
 |---|---|---|
-| `samehadaku-scraper/` | Wibuflix Backend | Node.js scraping service + HLS transcoding + Azure Blob Storage pipeline |
-| `wibuflix-app/` | Wibuflix Frontend | React client application |
+| `.` (repo root) | Wibuflix Backend | Node.js scraping service + HLS transcoding + Azure Blob Storage pipeline |
+| `wibuflix-app/` | Wibuflix App (Frontend) | React Native / Expo client application |
 
 No code, logic, or utilities may be shared across these two project directories unless placed in an explicitly designated shared package with its own clearly scoped responsibility.
 
@@ -53,7 +53,7 @@ The backend does **not** use a flat `src/scrapers/`, `src/uploaders/`, `src/pipe
 The real directory structure, as verified by code inspection, is:
 
 ```
-samehadaku-scraper/
+.                             ← Wibuflix Backend lives at the repo ROOT
   src/
     config/
       db.js                      ← MongoDB connection setup
@@ -123,7 +123,7 @@ samehadaku-scraper/
 
 ---
 
-## Project: Wibuflix Backend (`samehadaku-scraper/`)
+## Project: Wibuflix Backend (repo root)
 
 ### Overview
 

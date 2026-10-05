@@ -1,8 +1,8 @@
-# ── FYYStream Backend — Docker Image ──────────────────────
+# ── Wibuflix Backend — Docker Image ──────────────────────
 # Node.js + Puppeteer (Chromium) for scraping
 #
-# Build:  docker build -t fyystream-api .
-# Run:    docker run -d -p 3000:3000 --name fyystream-api fyystream-api
+# Build:  docker build -t wibuflix-api .
+# Run:    docker run -d -p 3000:3000 --name wibuflix-api wibuflix-api
 # ──────────────────────────────────────────────────────────
 
 FROM node:20-slim

@@ -1,6 +1,6 @@
 # 🌊 Wibuflix Backend — Complete Architecture & Task Flow
 
-Dokumentasi ini memetakan **Task Flow (Alur Kerja)** end-to-end dari ekosistem **Wibuflix Backend (`samehadaku-scraper`)** yang telah direstrukturisasi ke dalam **Clean Layered Architecture (1 File = 1 Job / Single Responsibility Principle)**.
+Dokumentasi ini memetakan **Task Flow (Alur Kerja)** end-to-end dari ekosistem **Wibuflix Backend (repo root)** yang telah direstrukturisasi ke dalam **Clean Layered Architecture (1 File = 1 Job / Single Responsibility Principle)**.
 
 ---
 
