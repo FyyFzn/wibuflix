@@ -11,7 +11,8 @@ const cache = getCache('episodes', 3600);
 export const scraperMeta = {
     id: 'nanime',
     name: 'Nanime ID',
-    domains: ['nanimeid.net', 'nanime']
+    domains: ['nanimeid.net', 'nanime'],
+    disabled: true
 };
 
 export const scrapeEpisodes = getNanimeEpisodes;
@@ -23,6 +24,9 @@ let globalInertiaVersion = null;
  * dan injeksi Cookie dari environment variable, dilengkapi penanganan 409 Conflict otomatis.
  */
 export async function fetchNanimeInertia(url) {
+    if (scraperMeta.disabled || PROVIDER_URLS.NANIME?.DISABLED) {
+        throw new Error('Nanime ID dinonaktifkan sementara (upstream 522/523 down)');
+    }
     const cookie = process.env.NANIME_COOKIE || '';
     const headers = {
         'X-Inertia': 'true',
@@ -82,6 +86,9 @@ export async function fetchNanimeInertia(url) {
  * @returns {object} - { judul_seri, cover_scraper, daftar_episode }
  */
 export async function getNanimeEpisodes(animeUrl) {
+    if (scraperMeta.disabled || PROVIDER_URLS.NANIME?.DISABLED) {
+        return { judul_seri: 'Nanime ID (Disabled)', cover_scraper: '', daftar_episode: [] };
+    }
     const cacheKey = `nanime_eps_${animeUrl}`;
     const cachedData = cache.get(cacheKey);
     if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
@@ -174,6 +181,9 @@ export async function getNanimeEpisodes(animeUrl) {
  * @returns {object} - { judul, servers, nav_prev, nav_next, debug_info }
  */
 export async function getNanimeServers(episodeUrl) {
+    if (scraperMeta.disabled || PROVIDER_URLS.NANIME?.DISABLED) {
+        return { judul: 'Nanime (Disabled)', servers: [], nav_prev: null, nav_next: null };
+    }
     console.log(`[Nanime] Fetching servers: ${episodeUrl}`);
 
     let debugInfo = "OK";
@@ -295,6 +305,9 @@ export async function handleGetServers(req, res) {
 }
 
 export async function getNanimeLatestUpdates() {
+    if (scraperMeta.disabled || PROVIDER_URLS.NANIME?.DISABLED) {
+        return [];
+    }
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
     const url = `${PROVIDER_URLS.NANIME.BASE_URL}/`;
     const updates = [];

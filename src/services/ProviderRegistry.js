@@ -154,9 +154,16 @@ export class ProviderRegistry {
         return { servers: [] };
     }
 
+    static async isProviderDisabled(providerId) {
+        await ensurePluginsLoaded();
+        const plugin = plugins.find(p => p.id === providerId);
+        return Boolean(plugin?.meta?.disabled);
+    }
+
     static async fetchLatestUpdates(providerId) {
         await ensurePluginsLoaded();
         const plugin = plugins.find(p => p.id === providerId);
+        if (plugin?.meta?.disabled) return [];
         if (plugin?.scrapeLatestUpdates) {
             return await plugin.scrapeLatestUpdates();
         }

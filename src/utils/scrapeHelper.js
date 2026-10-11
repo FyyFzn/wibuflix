@@ -207,7 +207,7 @@ export async function fetchWithCF(url, options = {}) {
                 html = await retryPage.content();
 
                 if (isCloudflareHtml(html)) {
-                    throw new Error('Cloudflare challenge tidak dapat diselesaikan setelah retry. Samehadaku mungkin memperketat proteksi.');
+                    throw new Error(`Cloudflare challenge tidak dapat diselesaikan setelah retry untuk ${hostname}. Target mungkin memperketat proteksi.`);
                 }
             }
         }

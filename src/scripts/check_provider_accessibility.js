@@ -21,6 +21,7 @@ const PROVIDERS = PROVIDER_LIST.map(p => ({
     baseUrl: p.BASE_URL.endsWith('/') ? p.BASE_URL : `${p.BASE_URL}/`,
     catalogUrl: p.CATALOG_URL,
     expectedKeyword: p.DOMAIN_KEYWORDS[0],
+    disabled: !!p.DISABLED,
     type: p.NAME === NANIME_NAME ? 'inertia-json'
         : p.NAME === NEOSATSU_NAME ? 'axios-direct'
         : 'html-cf'
@@ -38,6 +39,7 @@ export async function checkAllProvidersAccessibility() {
     for (const provider of PROVIDERS) {
         console.log(`\n -> Mengecek [${provider.name}] (${provider.baseUrl})...`);
         const result = {
+            disabled: provider.disabled,
             name: provider.name,
             targetUrl: provider.baseUrl,
             accessible: false,
@@ -47,6 +49,14 @@ export async function checkAllProvidersAccessibility() {
             statusText: 'UNKNOWN',
             details: ''
         };
+
+        if (provider.disabled) {
+            console.log(`     ⚠️ Provider [${provider.name}] dinonaktifkan sementara. Dilewati.`);
+            result.statusText = 'DISABLED (MAINTENANCE)';
+            result.details = 'Provider dinonaktifkan sementara (upstream 522/523 down).';
+            results.push(result);
+            continue;
+        }
 
         try {
             if (provider.type === 'axios-direct') {

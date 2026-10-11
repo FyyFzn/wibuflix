@@ -34,6 +34,10 @@ export async function runLatestSync() {
     try {
         const providerIds = await ProviderRegistry.getAllProviderIds();
         for (const providerId of providerIds) {
+            if (await ProviderRegistry.isProviderDisabled(providerId)) {
+                log(`[Latest Sync] ⚠️ Provider ${providerId} dinonaktifkan sementara. Dilewati.`);
+                continue;
+            }
             log(`[Latest Sync] Mengambil update terbaru dari ${providerId}...`);
             try {
                 const updates = await ProviderRegistry.fetchLatestUpdates(providerId);

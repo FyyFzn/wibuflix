@@ -32,7 +32,8 @@ export const PROVIDER_URLS = {
         BASE_URL: 'https://nanimeid.net',
         CATALOG_URL: 'https://nanimeid.net/explore?page=1',
         SERIES_PATH: '/anime/{slug}',
-        DOMAIN_KEYWORDS: ['nanime', 'nanimeid.net']
+        DOMAIN_KEYWORDS: ['nanime', 'nanimeid.net'],
+        DISABLED: true
     },
     NIMEGAMI: {
         NAME: 'Nimegami',
