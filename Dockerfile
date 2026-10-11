@@ -1,5 +1,5 @@
 # ── Wibuflix Backend — Docker Image ──────────────────────
-# Node.js + Puppeteer (Chromium) for scraping
+# Node.js + Puppeteer (Chromium) + Python scraper service
 #
 # Build:  docker build -t wibuflix-api .
 # Run:    docker run -d -p 3000:3000 --name wibuflix-api wibuflix-api
@@ -47,12 +47,18 @@ RUN apt-get update && apt-get install -y \
     bzip2 \
     xz-utils \
     ca-certificates \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Biarkan Puppeteer mendownload & memakai official Chrome for Testing (CfT)
 # (Tidak memakai /usr/bin/chromium bawaan Debian yang tidak kompatibel di Azure App Service)
 
 WORKDIR /app
+
+# Install Python dependencies
+COPY python/requirements.txt ./python/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r python/requirements.txt
 
 # Copy package files
 COPY package.json package-lock.json ./
@@ -63,11 +69,14 @@ RUN npm ci --omit=dev
 # Copy source code
 COPY src/ ./src/
 COPY server-prod.js ./
-
+COPY python/ ./python/
+COPY start.sh ./
+RUN chmod +x start.sh
 
 # Environment variables
 ENV PORT=3000
 ENV NODE_ENV=production
+ENV SCRAPER_PORT=5001
 
 # Expose single port supported by Azure Web App for Containers
 EXPOSE 3000
@@ -76,5 +85,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
-# Start server directly via Node.js
-CMD ["node", "server-prod.js"]
+# Start both Python scraper service and Node.js server
+CMD ["./start.sh"]

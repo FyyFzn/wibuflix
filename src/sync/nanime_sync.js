@@ -202,22 +202,7 @@ export async function syncNanimeCatalog() {
  * Jalankan sinkronisasi awal jika database Nanime kosong, lalu jadwalkan setiap 7 hari.
  */
 export async function startBackgroundNanimeSync() {
-    try {
-        const count = await Anime.countDocuments({ 'sourceUrls': { $exists: true, $not: { $size: 0 } } });
-        if (count === 0) {
-            log('[NanimeSync] Database Nanime kosong. Memulai sinkronisasi awal...');
-            setTimeout(() => {
-                syncNanimeCatalog();
-            }, 10000); // Tunggu 10 detik setelah server start
-        } else {
-            log(`[NanimeSync] Sudah ada ${count} anime Nanime di database. Penjadwalan mingguan aktif.`);
-        }
-    } catch (err) {
-        console.error('[NanimeSync] Error saat pengecekan awal:', err.message);
-    }
-
-    // Jadwalkan setiap 7 hari (604.800.000 ms)
-    setInterval(() => {
-        syncNanimeCatalog();
-    }, 604800000);
+    // Domain nanimeid.net mati (522/523). Sync dinonaktifkan sementara.
+    // Aktifkan kembali setelah domain baru dikonfirmasi aktif dan dapat di-scrape.
+    log('[NanimeSync] ⚠️ Sync Nanime ID dinonaktifkan — domain sumber tidak dapat diakses (522/523). Dilewati.');
 }
