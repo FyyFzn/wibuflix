@@ -98,6 +98,11 @@ function pushToMemLogs(timeClean, levelClean, moduleClean, argsOrText) {
 
 let isInitialized = false;
 let isInternalLogging = false;
+let onErrorLoggedHook = null;
+
+export function setErrorListener(fn) {
+    onErrorLoggedHook = fn;
+}
 
 function safeConsoleCall(fn, ...args) {
     isInternalLogging = true;
@@ -149,6 +154,10 @@ export function initLogger(options = { productionSilent: false }) {
         
         const levelBadge = `${ANSI.red}${ANSI.bold}✖ ERROR${ANSI.reset}`;
         safeConsoleCall(originalConsole.error, `${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
+
+        if (typeof onErrorLoggedHook === 'function' && !isInternalLogging) {
+            try { onErrorLoggedHook(); } catch (e) {}
+        }
     };
 
     console.debug = (...args) => {

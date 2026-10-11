@@ -1,16 +1,19 @@
 /**
  * Centralized AI Log Monitor Service
  * Membaca buffer global.memLogs, mendiagnosis kegagalan dengan Gemini Flash,
- * dan mengirim notifikasi ringkas ke Telegram jika terjadi error spike.
+ * dan mengirim notifikasi ringkas ke Telegram secara real-time saat terjadi error.
  */
 
 import axios from 'axios';
+import { setErrorListener } from '../utils/logger.js';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 let lastAlertTime = 0;
 let lastAnalyzedIndex = 0;
-const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // Cooldown 30 menit antar-notifikasi agar tidak spam
+const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // Cooldown 10 menit antar-notifikasi agar tidak spam
+
+let debounceTimer = null;
 
 /**
  * Mengirim pesan teks Markdown ke Telegram Bot.
@@ -124,13 +127,12 @@ Format pesan ringkas dalam Bahasa Indonesia menggunakan Markdown Telegram (maksi
 }
 
 /**
- * Memeriksa status error dan mengirim alert Telegram jika mendeteksi lonjakan error.
+ * Memeriksa status error dan mengirim alert Telegram jika mendeteksi error.
  */
-export async function checkAndAlert({ force = false, minErrors = 3 } = {}) {
+export async function checkAndAlert({ force = false, minErrors = 1 } = {}) {
     const logs = global.memLogs || [];
     const currentIndex = logs.length;
     const newLogs = logs.slice(lastAnalyzedIndex);
-    lastAnalyzedIndex = currentIndex;
 
     const newErrorCount = newLogs.filter(l => l.includes('[ERROR]')).length;
 
@@ -145,7 +147,10 @@ export async function checkAndAlert({ force = false, minErrors = 3 } = {}) {
         return { triggered: false, reason: 'cooldown_active', newErrorCount };
     }
 
-    console.log(`[AIMonitor] 🔍 Menganalisis ${newErrorCount} error baru dengan Gemini...`);
+    // Majukan index analisa hanya saat proses diagnosis benar-benar dijalankan
+    lastAnalyzedIndex = currentIndex;
+
+    console.log(`[AIMonitor] 🔍 Terdeteksi ${newErrorCount} error baru. Menganalisis dengan Gemini...`);
     const analysis = await analyzeLogsWithGemini();
 
     if (analysis.status === 'HEALTHY' && !force) {
@@ -164,13 +169,35 @@ export async function checkAndAlert({ force = false, minErrors = 3 } = {}) {
 }
 
 /**
- * Menjalankan watcher berkala (misal setiap 15 menit).
+ * Debounce trigger: Menunggu 5 detik setelah error pertama tercatat
+ * untuk mengumpulkan cascading stack trace sebelum memanggil Gemini.
+ */
+export function triggerDebouncedAlert(delayMs = 5000) {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+        try {
+            await checkAndAlert({ minErrors: 1 });
+        } catch (err) {
+            console.error('[AIMonitor] Debounced check gagal:', err.message);
+        }
+    }, delayMs);
+
+    if (debounceTimer.unref) debounceTimer.unref();
+}
+
+// Hubungkan otomatis ke logger console.error agar bereaksi real-time
+setErrorListener(() => {
+    triggerDebouncedAlert(5000);
+});
+
+/**
+ * Menjalankan watcher berkala (misal setiap 15 menit) sebagai audit rutin fallback.
  */
 export function startBackgroundLogMonitor(intervalMs = 15 * 60 * 1000) {
-    console.log(`[AIMonitor] ⏱️ Background Log Watcher aktif (interval: ${intervalMs / 60000} menit).`);
+    console.log(`[AIMonitor] ⏱️ Background Log Watcher aktif (Real-time hook + fallback ${intervalMs / 60000}m).`);
     const timer = setInterval(async () => {
         try {
-            await checkAndAlert({ minErrors: 3 });
+            await checkAndAlert({ minErrors: 1 });
         } catch (err) {
             console.error('[AIMonitor] Background check gagal:', err.message);
         }
