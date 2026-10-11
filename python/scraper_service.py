@@ -151,12 +151,23 @@ def parse_latest(html: str) -> list:
     soup = BeautifulSoup(html, "html.parser")
     updates = []
     for el in soup.select(".post-show ul li, .animepost"):
-        title_node = el.select_one(".title, .entry-title, .tt h2")
-        ep_node = el.select_one('author[itemprop="name"], .epx')
-        if title_node and ep_node:
-            judul = title_node.get_text(strip=True)
-            eps_text = ep_node.get_text(strip=True)
-            status = eps_text if "eps" in eps_text.lower() else f"Eps {eps_text}"
+        title_node = el.select_one(".entry-title a, .title a, .entry-title, .title, .tt h2")
+        if not title_node:
+            continue
+        judul = title_node.get_text(strip=True)
+        status = None
+        for sp in el.select(".dtla span, span"):
+            txt = sp.get_text(" ", strip=True)
+            m = re.search(r"Episode\s*(\d+)", txt, re.I)
+            if m:
+                status = f"Eps {m.group(1)}"
+                break
+        if not status:
+            ep_node = el.select_one('author[itemprop="name"], .epx')
+            if ep_node:
+                eps_text = ep_node.get_text(strip=True)
+                status = eps_text if "eps" in eps_text.lower() else f"Eps {eps_text}"
+        if judul and status:
             updates.append({"judul": judul, "status": status})
     return updates
 
