@@ -97,6 +97,16 @@ function pushToMemLogs(timeClean, levelClean, moduleClean, argsOrText) {
 }
 
 let isInitialized = false;
+let isInternalLogging = false;
+
+function safeConsoleCall(fn, ...args) {
+    isInternalLogging = true;
+    try {
+        fn(...args);
+    } finally {
+        isInternalLogging = false;
+    }
+}
 
 export function initLogger(options = { productionSilent: false }) {
     if (isInitialized && global._loggerOptions && global._loggerOptions.productionSilent === options.productionSilent) {
@@ -111,7 +121,7 @@ export function initLogger(options = { productionSilent: false }) {
         
         if (!options.productionSilent) {
             const levelBadge = `${ANSI.blue}ℹ LOG  ${ANSI.reset}`;
-            originalConsole.log(`${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
+            safeConsoleCall(originalConsole.log, `${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
         }
     };
 
@@ -121,7 +131,7 @@ export function initLogger(options = { productionSilent: false }) {
         
         if (!options.productionSilent) {
             const levelBadge = `${ANSI.cyan}ℹ INFO ${ANSI.reset}`;
-            originalConsole.info(`${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
+            safeConsoleCall(originalConsole.info, `${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
         }
     };
 
@@ -130,7 +140,7 @@ export function initLogger(options = { productionSilent: false }) {
         pushToMemLogs(getTimeStamp(true), 'WARN', cleanModule, cleanArgs);
         
         const levelBadge = `${ANSI.yellow}⚠ WARN ${ANSI.reset}`;
-        originalConsole.warn(`${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
+        safeConsoleCall(originalConsole.warn, `${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
     };
 
     console.error = (...args) => {
@@ -138,7 +148,7 @@ export function initLogger(options = { productionSilent: false }) {
         pushToMemLogs(getTimeStamp(true), 'ERROR', cleanModule, cleanArgs);
         
         const levelBadge = `${ANSI.red}${ANSI.bold}✖ ERROR${ANSI.reset}`;
-        originalConsole.error(`${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
+        safeConsoleCall(originalConsole.error, `${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
     };
 
     console.debug = (...args) => {
@@ -147,18 +157,19 @@ export function initLogger(options = { productionSilent: false }) {
             pushToMemLogs(getTimeStamp(true), 'DEBUG', cleanModule, cleanArgs);
             if (!options.productionSilent) {
                 const levelBadge = `${ANSI.gray}🔍 DEBUG${ANSI.reset}`;
-                originalConsole.debug(`${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
+                safeConsoleCall(originalConsole.debug, `${getTimeStamp()} ${levelBadge} ${moduleBadge}`, ...cleanArgs);
             }
         }
     };
 
     // Intercept direct stdout/stderr writes dari library eksternal (Puppeteer, FFmpeg, Mongoose, dll)
     process.stdout.write = function(chunk, encoding, callback) {
-        if (typeof chunk === 'string' || Buffer.isBuffer(chunk)) {
+        if (!isInternalLogging && (typeof chunk === 'string' || Buffer.isBuffer(chunk))) {
             const str = chunk.toString();
+            const clean = stripAnsi(str);
             // Jika str belum dicatat oleh console.log/info (bukan format jam kita)
-            if (str && !str.match(/^\d{2}:\d{2}:\d{2}\.\d{3}/)) {
-                str.split('\n').forEach(line => {
+            if (clean && !clean.match(/^\d{2}:\d{2}:\d{2}\.\d{3}/)) {
+                clean.split('\n').forEach(line => {
                     if (line.trim()) pushToMemLogs(getTimeStamp(true), 'LOG', '', line.trim());
                 });
             }
@@ -167,10 +178,11 @@ export function initLogger(options = { productionSilent: false }) {
     };
 
     process.stderr.write = function(chunk, encoding, callback) {
-        if (typeof chunk === 'string' || Buffer.isBuffer(chunk)) {
+        if (!isInternalLogging && (typeof chunk === 'string' || Buffer.isBuffer(chunk))) {
             const str = chunk.toString();
-            if (str && !str.match(/^\d{2}:\d{2}:\d{2}\.\d{3}/)) {
-                str.split('\n').forEach(line => {
+            const clean = stripAnsi(str);
+            if (clean && !clean.match(/^\d{2}:\d{2}:\d{2}\.\d{3}/)) {
+                clean.split('\n').forEach(line => {
                     if (line.trim()) pushToMemLogs(getTimeStamp(true), 'ERROR', '', line.trim());
                 });
             }
