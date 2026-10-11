@@ -9,6 +9,7 @@ import { startBackgroundNimegamiSync } from '../sync/nimegami_sync.js';
 import { startBackgroundOploverzSync } from '../sync/oploverz_sync.js';
 import { startBackgroundYlnimeSync } from '../sync/ylnime_sync.js';
 import { scheduledCleanup } from '../utils/tempFileCleanupWorker.js';
+import { startBackgroundLogMonitor } from '../services/aiLogMonitorService.js';
 
 export function initScheduler() {
     const log = global.forceLog || console.log;
@@ -49,6 +50,9 @@ export function initScheduler() {
 
     // 3. Pembersihan file sampah temporer (Garbage Collection) setiap 12 jam
     scheduledCleanup();
+
+    // 4. Background AI Log Monitor (evaluasi error spike setiap 15 menit)
+    startBackgroundLogMonitor(15 * 60 * 1000);
 
     log('✅ [Scheduler] Semua background jobs & garbage collector berhasil dijadwalkan!');
 }

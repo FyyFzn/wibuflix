@@ -5,6 +5,7 @@
 import { flushAll } from '../utils/cacheManager.js';
 import { runSync } from '../sync/anime_sync.js';
 import { syncUnified } from '../sync/unified_sync.js';
+import { analyzeLogsWithGemini, sendTelegramAlert } from '../services/aiLogMonitorService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -25,6 +26,31 @@ export function renderLiveLogUI(req, res) {
 export function getRawLogs(req, res) {
     res.type('text/plain');
     res.send(global.memLogs ? global.memLogs.join('\n') : 'Menunggu log...');
+}
+
+// 3b. AI Log Doctor (`GET /api/admin/logs/ai-analyze`)
+export async function analyzeLogsAi(req, res) {
+    try {
+        const result = await analyzeLogsWithGemini();
+        res.json({ status: 'ok', data: result });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+}
+
+// 3c. Test Telegram Alert Delivery (`POST /api/admin/logs/test-telegram`)
+export async function testTelegramAlert(req, res) {
+    try {
+        const testMsg = `🧪 *Wibuflix Test Alert*\n\nBot Telegram berhasil terhubung ke sistem monitoring Wibuflix!\n_Waktu: ${new Date().toLocaleString('id-ID')}_`;
+        const result = await sendTelegramAlert(testMsg);
+        if (result.success) {
+            res.json({ status: 'ok', message: 'Notifikasi tes berhasil dikirim ke Telegram.' });
+        } else {
+            res.status(400).json({ status: 'error', message: result.reason || 'Gagal mengirim notifikasi' });
+        }
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
 }
 
 // 4. Clear Memory Cache (`GET /api/cache-clear`)

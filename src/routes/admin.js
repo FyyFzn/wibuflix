@@ -12,6 +12,8 @@ const router = express.Router();
 router.get(['/admin', '/api/admin'], adminCtrl.renderAdminPortal);
 router.get('/api/admin/logs', adminCtrl.renderLiveLogUI);
 router.get('/api/admin/logs/raw', adminCtrl.getRawLogs);
+router.get('/api/admin/logs/ai-analyze', adminCtrl.analyzeLogsAi);
+router.post('/api/admin/logs/test-telegram', adminCtrl.testTelegramAlert);
 
 // 2. System Maintenance & Cache
 router.get('/api/cache-clear', adminCtrl.clearMemoryCache);

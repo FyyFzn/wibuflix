@@ -72,6 +72,27 @@
         }
         #toast.show { opacity: 1; }
         #lineCount { color: #484f58; font-size: 11px; font-family: -apple-system, sans-serif; }
+            .ai-modal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.75); display: none; justify-content: center; align-items: center;
+            z-index: 2000; padding: 20px;
+        }
+        .ai-modal-content {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            max-width: 650px; width: 100%; max-height: 85vh; display: flex; flex-direction: column;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+        }
+        .ai-modal-header {
+            padding: 12px 16px; border-bottom: 1px solid #30363d; display: flex;
+            justify-content: space-between; align-items: center;
+        }
+        .ai-modal-body {
+            padding: 16px; overflow-y: auto; color: #e6edf3; font-family: -apple-system, sans-serif;
+            font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+        }
+        .ai-badge-healthy { color: #3fb950; font-weight: bold; }
+        .ai-badge-warning { color: #d29922; font-weight: bold; }
+        .ai-badge-critical { color: #f85149; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -89,6 +110,8 @@
             <button onclick="copyAll()">📋 Copy All</button>
             <button onclick="downloadLogs()">💾 Download</button>
             <button onclick="clearDisplay()">🗑 Clear</button>
+            <button id="btnAiAnalyze" style="background:#6e40c9;border-color:#8957e5;color:#fff;" onclick="triggerAiAnalyze()">🤖 Analisis AI</button>
+            <button id="btnTestTelegram" style="background:#238636;border-color:#2ea043;color:#fff;" onclick="testTelegramAlert()">🔔 Tes Telegram</button>
             <button class="active" onclick="window.open('/admin', '_blank')">🧭 Admin Portal</button>
         </div>
         <div class="filter-tabs" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
@@ -100,6 +123,23 @@
     </div>
     <div id="logContainer">Memuat log...</div>
     <div id="toast"></div>
+
+    <!-- AI Diagnosis Modal -->
+    <div id="aiModal" class="ai-modal" onclick="if(event.target===this) closeAiModal()">
+        <div class="ai-modal-content">
+            <div class="ai-modal-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <h3 style="margin:0;font-size:14px;color:#a371f7;">🤖 Diagnosis AI (Gemini Flash)</h3>
+                    <span id="aiModalStatus" class="ai-badge-healthy" style="font-size:12px;">Status: OK</span>
+                </div>
+                <button onclick="closeAiModal()" style="padding:2px 8px;font-size:14px;">✕</button>
+            </div>
+            <div id="aiModalBody" class="ai-modal-body">Memuat diagnosis...</div>
+            <div style="padding:10px 16px;border-top:1px solid #30363d;display:flex;justify-content:flex-end;">
+                <button onclick="closeAiModal()">Tutup</button>
+            </div>
+        </div>
+    </div>
     <script>
         const logContainer = document.getElementById('logContainer');
         const statusIndicator = document.getElementById('statusIndicator');
@@ -228,6 +268,65 @@
                 statusIndicator.textContent = '● TERPUTUS';
                 statusIndicator.className = 'status offline';
             }
+        }
+
+        async function triggerAiAnalyze() {
+            const btn = document.getElementById('btnAiAnalyze');
+            const orig = btn.textContent;
+            btn.textContent = '⏳ Menganalisis...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/admin/logs/ai-analyze');
+                const json = await res.json();
+                if (json.status === 'ok') {
+                    showAiModal(json.data);
+                } else {
+                    alert('Gagal: ' + (json.message || 'Error'));
+                }
+            } catch (e) {
+                alert('Koneksi gagal: ' + e.message);
+            } finally {
+                btn.textContent = orig;
+                btn.disabled = false;
+            }
+        }
+
+        async function testTelegramAlert() {
+            const btn = document.getElementById('btnTestTelegram');
+            const orig = btn.textContent;
+            btn.textContent = '⏳ Mengirim...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/admin/logs/test-telegram', { method: 'POST' });
+                const json = await res.json();
+                if (json.status === 'ok') {
+                    showToast('✓ Notifikasi tes terkirim ke Telegram!');
+                } else {
+                    alert('Gagal kirim ke Telegram: ' + (json.message || 'Error'));
+                }
+            } catch (e) {
+                alert('Koneksi gagal: ' + e.message);
+            } finally {
+                btn.textContent = orig;
+                btn.disabled = false;
+            }
+        }
+
+        function showAiModal(data) {
+            const modal = document.getElementById('aiModal');
+            const body = document.getElementById('aiModalBody');
+            const statusEl = document.getElementById('aiModalStatus');
+
+            statusEl.textContent = 'Status: ' + data.status;
+            statusEl.className = data.status === 'CRITICAL' ? 'ai-badge-critical' : (data.status === 'WARNING' ? 'ai-badge-warning' : 'ai-badge-healthy');
+            body.textContent = data.summary;
+            modal.style.display = 'flex';
+        }
+
+        function closeAiModal() {
+            document.getElementById('aiModal').style.display = 'none';
         }
 
         setInterval(fetchLogs, 2000);
