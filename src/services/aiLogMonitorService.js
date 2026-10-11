@@ -14,6 +14,7 @@ let lastAnalyzedIndex = 0;
 const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // Cooldown 10 menit antar-notifikasi agar tidak spam
 
 let debounceTimer = null;
+let consecutiveFailures = 0;
 
 /**
  * Mengirim pesan teks Markdown ke Telegram Bot.
@@ -171,14 +172,21 @@ export async function checkAndAlert({ force = false, minErrors = 1 } = {}) {
 /**
  * Debounce trigger: Menunggu 5 detik setelah error pertama tercatat
  * untuk mengumpulkan cascading stack trace sebelum memanggil Gemini.
+ * Implementasi exponential backoff untuk menangani rate limit (429).
  */
 export function triggerDebouncedAlert(delayMs = 5000) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
         try {
             await checkAndAlert({ minErrors: 1 });
+            consecutiveFailures = 0; // Reset pada sukses
         } catch (err) {
             console.error('[AIMonitor] Debounced check gagal:', err.message);
+            // Hitung delay berikutnya dengan exponential backoff (max 5 menit)
+            const backoffMs = Math.min(5 * 60 * 1000, delayMs * 2);
+            consecutiveFailures++;
+            console.log(`[AIMonitor] Retry failed, next attempt in ${backoffMs / 1000}s (attempt ${consecutiveFailures})`);
+            triggerDebouncedAlert(backoffMs);
         }
     }, delayMs);
 
@@ -187,6 +195,10 @@ export function triggerDebouncedAlert(delayMs = 5000) {
 
 // Hubungkan otomatis ke logger console.error agar bereaksi real-time
 setErrorListener(() => {
+    // Reset failure count saat error baru muncul
+    if (consecutiveFailures > 0) {
+        consecutiveFailures = 0;
+    }
     triggerDebouncedAlert(5000);
 });
 
@@ -198,8 +210,10 @@ export function startBackgroundLogMonitor(intervalMs = 15 * 60 * 1000) {
     const timer = setInterval(async () => {
         try {
             await checkAndAlert({ minErrors: 1 });
+            consecutiveFailures = 0; // Reset pada sukses
         } catch (err) {
             console.error('[AIMonitor] Background check gagal:', err.message);
+            consecutiveFailures++;
         }
     }, intervalMs);
 
