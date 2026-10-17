@@ -10,6 +10,7 @@ import { PROVIDER_URLS } from '../../config/providerUrls.js';
 export { extractIframeSrc, namaServer };
 
 async function resolveServerIframe(page, { post, nume, type, episodeUrl }, req) {
+    console.log(`[DEBUG] resolveServerIframe called: post=${post} nume=${nume} type=${type} url=${episodeUrl}`);
     try {
         const result = await page.evaluate(async ({ post, nume, type, episodeUrl }) => {
             try {
