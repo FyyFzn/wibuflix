@@ -1,6 +1,6 @@
 import { getEpisodeServiceData, sanitizeContaminatedEpisodeCards } from './episodeService.js';
 import Anime from '../models/Anime.js';
-import { cleanSeriesTitle, formatEpisodeTitle, extractEpNum } from '../utils/stringUtils.js';
+import { cleanSeriesTitle, formatEpisodeTitle, extractEpNum, isOvaOrSpecialTitle } from '../utils/stringUtils.js';
 
 // ============================================================================
 // IN-MEMORY LRU CACHE (TTL: 1 Jam = 3600000 ms)
@@ -132,10 +132,7 @@ export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefres
 
     // 4. Transformasi ke format Unified Thin Client
     const unifiedEpisodes = sanitizedDaftarEpisode.map((ep, idx) => {
-        const titleLower = (ep.judul || '').toLowerCase().trim();
-        const isOvaTitle = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(titleLower) ||
-            /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(titleLower) ||
-            /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(titleLower);
+        const isOvaTitle = isOvaOrSpecialTitle(ep.judul);
         const epNum = isOvaTitle ? null : (ep.num != null ? ep.num : extractEpNum(ep.judul));
         const epId = epNum != null ? `ep_${epNum}` : `idx_${idx}`;
 
