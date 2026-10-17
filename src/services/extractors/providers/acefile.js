@@ -185,10 +185,7 @@ export async function extract(embedUrl, req) {
             }
         }
     } catch (e) {
-        console.log(`[Acefile] Axios gagal: ${e.message}, fallback ke WebView`);
+        throw new Error('[Acefile] File not found (404)');
     }
-    return {
-        url: embedUrl,
-        webviewOnly: true
-    };
+    return null;
 }
