@@ -299,53 +299,11 @@ export async function handleGetServers(req, res) {
 export async function getKuronimeLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
     const url = `${PROVIDER_URLS.KURONIME.BASE_URL}/`;
-    try {
-        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/kuronime/latest`, { url }, { timeout: 35000 });
-        if (Array.isArray(data) && data.length > 0) {
-            return data;
-        }
-    } catch (pyErr) {
-        console.warn(`[Kuronime] Python latest scraper gagal (${pyErr.message}), fallback ke fetchWithCF...`);
+    const { data } = await axios.post(`${SCRAPER_BASE}/scrape/kuronime/latest`, { url }, { timeout: 35000 });
+    if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('[Kuronime] Python latest scraper mengembalikan data kosong');
     }
-    const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
-    const { releaseToPool } = await import('../../puppeteer/pool.js');
-    let fetchRes, slot;
-    const updates = [];
-    try {
-        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
-        slot = fetchRes?.slot;
-        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
-        const $ = fetchRes.$;
-        const seenUrls = new Set();
-        $('.bixbox').first().find('article.bsu').each((_, el) => {
-            const title = $(el).find('.bsuxtt h2').text().trim();
-            const ep = $(el).find('.bt .ep').text().trim();
-            const href = $(el).find('a').attr('href');
-            if (title && ep && href) {
-                let seriesHref = href;
-                // Transform episode URL to Series URL
-                // e.g. https://kuronime.sbs/nonton-one-piece-episode-1070/ -> https://kuronime.sbs/anime/one-piece/
-                if (href.includes('/nonton-') && href.match(/-episode-\d+/i)) {
-                    const slugMatch = href.match(/\/nonton-(.*?)-episode-\d+/i);
-                    if (slugMatch && slugMatch[1]) {
-                        const baseUrlMatch = href.match(/^(https?:\/\/[^\/]+)/);
-                        const baseUrl = baseUrlMatch ? baseUrlMatch[1] : PROVIDER_URLS.KURONIME.BASE_URL;
-                        seriesHref = `${baseUrl}/anime/${slugMatch[1]}/`;
-                    }
-                }
-                
-                if (!seenUrls.has(seriesHref)) {
-                    seenUrls.add(seriesHref);
-                    updates.push({ title, status: ep, url: seriesHref });
-                }
-            }
-        });
-    } catch (e) {
-        console.error(`[Kuronime Scraper] Gagal memuat updates:`, e.message);
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
-    return updates;
+    return data;
 }
 
 
