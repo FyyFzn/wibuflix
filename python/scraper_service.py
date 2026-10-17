@@ -7,11 +7,14 @@ dan mengembalikan respon JSON.
 Endpoint:
   POST /scrape/samehadaku/series  { "url": "https://v2.samehadaku.how/anime/..." }
   POST /scrape/samehadaku/latest  { "url": "https://v2.samehadaku.how/" }
+  POST /scrape/kuronime/series    { "url": "https://kuronime.sbs/anime/..." }
+  POST /scrape/kuronime/latest    { "url": "https://kuronime.sbs/" }
   GET  /health
 """
 
 import os
 import sys
+import re
 import logging
 from flask import Flask, request, jsonify
 
@@ -23,6 +26,8 @@ if _BASE_DIR not in sys.path:
 from fetcher import fetch_html
 from parsers.samehadaku import parse_series as parse_samehadaku_series
 from parsers.samehadaku import parse_latest as parse_samehadaku_latest
+from parsers.kuronime import parse_series as parse_kuronime_series
+from parsers.kuronime import parse_latest as parse_kuronime_latest
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="[ScraperService] %(message)s")
@@ -33,6 +38,8 @@ log = logging.getLogger(__name__)
 def health():
     return jsonify({"status": "ok", "service": "wibuflix-scraper-py"}), 200
 
+
+# ── Samehadaku ────────────────────────────────────────────────────────────────
 
 @app.route("/scrape/samehadaku/series", methods=["POST"])
 def scrape_samehadaku_series():
@@ -69,6 +76,54 @@ def scrape_samehadaku_latest():
         return jsonify({"error": str(e)}), 502
     except Exception as e:
         log.error(f"Error scraping latest {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Kuronime ─────────────────────────────────────────────────────────────────
+
+@app.route("/scrape/kuronime/series", methods=["POST"])
+def scrape_kuronime_series():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Parameter 'url' wajib diisi"}), 400
+
+    target_url = url
+    if "/anime/" not in url:
+        match = re.search(r"/(?:nonton-)?([^/]+?)-episode-\d+", url, re.I)
+        if match and match.group(1):
+            base_match = re.match(r"^(https?://[^/]+)", url)
+            base_url = base_match.group(1) if base_match else "https://kuronime.sbs"
+            target_url = f"{base_url}/anime/{match.group(1)}/"
+            log.info(f"[Kuronime] Auto-redirect URL episode ke seri: {target_url}")
+
+    try:
+        html = fetch_html(target_url)
+        result = parse_kuronime_series(html, target_url)
+        if not result["daftar_episode"]:
+            log.warning(f"Tidak ada episode ditemukan untuk: {target_url}")
+        return jsonify(result), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping {target_url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/scrape/kuronime/latest", methods=["POST"])
+def scrape_kuronime_latest():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip() or "https://kuronime.sbs/"
+    try:
+        html = fetch_html(url)
+        updates = parse_kuronime_latest(html)
+        return jsonify(updates), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping kuronime latest {url}: {e}")
         return jsonify({"error": str(e)}), 500
 
 

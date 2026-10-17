@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import axios from 'axios';
 import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import { releaseToPool } from '../../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../../utils/kuronimeDecryptor.js';
@@ -7,6 +8,7 @@ import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../
 import Anime from '../../models/Anime.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 
+const SCRAPER_BASE = `http://localhost:${process.env.SCRAPER_PORT || 5001}`;
 const cache = getCache('kuronime', 3600);
 
 export const scraperMeta = {
@@ -28,6 +30,17 @@ export async function getKuronimeEpisodes(animeUrl) {
     if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Kuronime Cache Hit] ${cacheKey}`);
         return cachedData;
+    }
+
+    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/kuronime/series`, { url: animeUrl }, { timeout: 35000 });
+        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
+            cache.set(cacheKey, data);
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[Kuronime] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
     }
 
     console.log(`[Kuronime] Fetching episodes: ${animeUrl}`);
@@ -347,9 +360,17 @@ export async function handleGetServers(req, res) {
 
 export async function getKuronimeLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const url = `${PROVIDER_URLS.KURONIME.BASE_URL}/`;
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/kuronime/latest`, { url }, { timeout: 35000 });
+        if (Array.isArray(data) && data.length > 0) {
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[Kuronime] Python latest scraper gagal (${pyErr.message}), fallback ke fetchWithCF...`);
+    }
     const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
     const { releaseToPool } = await import('../../puppeteer/pool.js');
-    const url = `${PROVIDER_URLS.KURONIME.BASE_URL}/`;
     let fetchRes, slot;
     const updates = [];
     try {
