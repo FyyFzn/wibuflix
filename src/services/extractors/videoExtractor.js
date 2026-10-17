@@ -335,7 +335,17 @@ export async function resolveSingleServer(targetUrl, nume, req) {
             throw new Error("Target URL returned 404");
         }
 
-        let post = $('.east_player_option').first().attr('data-post') || '';
+        let post = $('.east_player_option').first().attr('data-post')
+            || $('[data-post]').first().attr('data-post')
+            || $('input[name="post_id"]').val()
+            || $('input#post_id').val()
+            || $('article[id^="post-"]').attr('id')?.replace('post-', '')
+            || '';
+
+        if (!post) {
+            const postMatch = html.match(/"post(?:_id)?":\s*"?(\d+)"?/i) || html.match(/data-post=["'](\d+)["']/i);
+            if (postMatch) post = postMatch[1];
+        }
 
         if (!post) throw new Error("Tidak menemukan ID Post (data-post) setelah fallback");
 
