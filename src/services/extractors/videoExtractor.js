@@ -385,7 +385,7 @@ export async function extractVideoUrl(embedUrl, req) {
         // FIX untuk YLnime: s3.animeverse.id membutuhkan referer khusus animeverse
         if (embedUrl.includes('animeverse.id')) {
             referer = 'https://animeverse.id/';
-            userAgent = globalUserAgent; // Wajib sama dengan Puppeteer agar Cookie CF Valid
+            userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
             
             cookieStr = getCfCookie('s3.animeverse.id') || getCfCookie('animeverse.id');
             if (!cookieStr) {
