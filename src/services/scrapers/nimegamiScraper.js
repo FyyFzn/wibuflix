@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { releaseToPool } from '../../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../../utils/cacheManager.js';
 import Anime from '../../models/Anime.js';
@@ -133,8 +132,6 @@ export async function getNimegamiServers(episodeUrl) {
             }
         } catch (err) {
             throw err;
-        } finally {
-            if (slot) releaseToPool(slot);
         }
     }
 

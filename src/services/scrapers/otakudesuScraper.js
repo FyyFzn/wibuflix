@@ -4,7 +4,6 @@ import pLimit from 'p-limit';
 import { OtakudesuInstance } from 'otakudesu-scraper';
 import Anime from '../../models/Anime.js';
 import { getCache } from '../../utils/cacheManager.js';
-import { releaseToPool } from '../../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
@@ -258,7 +257,6 @@ export async function getServersInternal(url) {
 
     console.log(`[Otakudesu] Fetching servers from: ${url}`);
 
-    let slot = null;
     let $;
     try {
         const response = await axios.get(url, {
@@ -306,8 +304,8 @@ export async function getServersInternal(url) {
         }
 
         return result;
-    } finally {
-        if (slot) releaseToPool(slot);
+    } catch (err) {
+        throw err;
     }
 }
 
@@ -332,8 +330,6 @@ export async function getOtakudesuLatestUpdates() {
         });
     } catch (e) {
         console.error(`[Otakudesu Scraper] Gagal memuat updates:`, e.message);
-    } finally {
-        if (slot) releaseToPool(slot);
     }
     return updates;
 }

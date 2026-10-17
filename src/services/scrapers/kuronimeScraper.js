@@ -1,6 +1,5 @@
 import * as cheerio from 'cheerio';
 import axios from 'axios';
-import { releaseToPool } from '../../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../../utils/kuronimeDecryptor.js';
 import { getCache } from '../../utils/cacheManager.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
@@ -245,8 +244,6 @@ export async function getKuronimeServers(episodeUrl) {
     } catch (err) {
         return { judul: "Error", servers: [], debug_info: err.message };
     } finally {
-        // Selalu release slot
-        if (slot) releaseToPool(slot);
     }
 }
 

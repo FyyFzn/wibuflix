@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { releaseToPool } from '../../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../../utils/cacheManager.js';
 import { formatEpisodeTitle } from '../../utils/stringUtils.js';
@@ -147,8 +146,6 @@ export async function getOploverzServers(episodeUrl) {
     } catch (err) {
         console.error(`[Oploverz Servers Error] ${episodeUrl}:`, err.message);
         return { judul: "Error", servers: [], nav_prev: null, nav_next: null, debug_info: err.message };
-    } finally {
-        if (slot) releaseToPool(slot);
     }
 }
 
