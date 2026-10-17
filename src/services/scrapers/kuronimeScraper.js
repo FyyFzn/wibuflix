@@ -32,74 +32,12 @@ export async function getKuronimeEpisodes(animeUrl) {
         return cachedData;
     }
 
-    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
-    try {
-        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/kuronime/series`, { url: animeUrl }, { timeout: 35000 });
-        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
-            cache.set(cacheKey, data);
-            return data;
-        }
-    } catch (pyErr) {
-        console.warn(`[Kuronime] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
+    const { data } = await axios.post(`${SCRAPER_BASE}/scrape/kuronime/series`, { url: animeUrl }, { timeout: 35000 });
+    if (!data || !data.daftar_episode || data.daftar_episode.length === 0) {
+        throw new Error(`Python scraper mengembalikan data kosong untuk ${animeUrl}`);
     }
-
-    console.log(`[Kuronime] Fetching episodes: ${animeUrl}`);
-
-    // BUG FIX: Deklarasikan slot di luar try agar selalu bisa di-release di finally
-    let $, slot;
-    try {
-        const fetchRes = await fetchWithCF(animeUrl, { timeout: 60000, fetchTimeout: 8000 });
-        $ = fetchRes.$;
-        slot = fetchRes.slot;
-
-        // AUTO-REDIRECT: Jika dipanggil menggunakan URL episode (dari latest_sync),
-        // cari URL detail anime dan scrape halaman tersebut alih-alih halaman episode.
-        if (!animeUrl.includes('/anime/')) {
-            const extractedAnimeUrl = $('a[href*="/anime/"]').first().attr('href');
-            if (extractedAnimeUrl && extractedAnimeUrl !== animeUrl) {
-                console.log(`[Kuronime] URL berupa halaman episode. Redirect scraping ke: ${extractedAnimeUrl}`);
-                if (slot) releaseToPool(slot);
-                slot = null;
-                return await getKuronimeEpisodes(extractedAnimeUrl);
-            }
-        }
-
-        const judul = cleanSeriesTitle(($('h1.entry-title').text() || $('h1[itemprop="name"]').text() || '').trim());
-        const cover = $('img[itemprop="image"]').attr('src') || $('.thumb img').attr('src') || '';
-
-        const daftar_episode = [];
-        const seenUrls = new Set();
-        // Selector daftar episode di halaman anime Kuronime (diperluas untuk berbagai tema WordPress/eplister)
-        $('div.bixbox.bxcl ul li, .eplister ul li, ul.eplister li, .lstepsiode ul li, #episode_list li, .episodelist ul li, .listeps ul li, .lastep li, div.bxcl ul li, div.epcurlast ul li, div.bixbox ul li, div.bxcl li, div[class*="eplister"] li, ul[class*="eplister"] li, div[class*="list"] ul li, ul[class*="list"] li').each((_, el) => {
-            const a = $(el).find('a').first();
-            const href = a.attr('href');
-            const epTitle = $(el).find('.lchx').text().trim() || $(el).find('.epl-num').text().trim() || a.text().trim();
-            // PENTING: Filter out URL anime detail (sidebar widget sering tertangkap oleh selector)
-            if (href && epTitle && !seenUrls.has(href) && !href.includes('/anime/')) {
-                seenUrls.add(href);
-                daftar_episode.push({
-                    judul: formatEpisodeTitle(epTitle),
-                    // BUG FIX: Kembalikan URL Kuronime mentah (bukan dibungkus /api/...)
-                    // agar episodes.js bisa memperlakukannya secara konsisten dalam merge
-                    url: href
-                });
-            }
-        });
-
-        // Kuronime menampilkan episode dari terbaru ke terlama, reverse agar ascending
-        daftar_episode.reverse();
-
-        const result = { judul_seri: judul, cover_scraper: cover, daftar_episode };
-        if (daftar_episode.length > 0) {
-            cache.set(cacheKey, result);
-        } else {
-            console.warn(`[Kuronime] Peringatan: 0 episode ditemukan untuk ${animeUrl}. Hasil tidak disimpan ke cache agar dapat dicoba ulang.`);
-        }
-        return result;
-    } finally {
-        // Selalu release slot, bahkan jika fetchWithCF throw
-        if (slot) releaseToPool(slot);
-    }
+    cache.set(cacheKey, data);
+    return data;
 }
 
 /**
