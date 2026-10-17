@@ -42,21 +42,7 @@ export async function findAnimeInDatabase({ targetUrl, providerUrls = {} }) {
     // 1. Cari berdasarkan skema baru sourceUrls
     dbAnime = await Anime.findOne({ sourceUrls: { $in: urlsArray } });
 
-    // 2. Backward Compatibility: Cari berdasarkan skema lama jika belum ketemu
-    // (Peringatan: Query ini sangat lambat karena tidak memiliki index dan melakukan full collection scan)
-    if (!dbAnime && process.env.LEGACY_DB_FALLBACK === 'true') {
-        const legacyOrQuery = urlsArray.map(url => ({ "url": url })); // fallback dasar
-        
-        for (const provider of Object.values(PROVIDER_URLS)) {
-            const pk = provider.NAME.toLowerCase().replace(/[^a-z]/g, '');
-            for (const url of urlsArray) {
-                legacyOrQuery.push({ [`sources.${pk}.url`]: url });
-                legacyOrQuery.push({ [`episodesList.urls.${pk}`]: url });
-            }
-        }
-        
-        dbAnime = await Anime.findOne({ $or: legacyOrQuery });
-    }
+    // Legacy schema fallback removed; use scripts/migrate_v1_to_v2.js to migrate old docs.
 
     // 3. AUTO-MIGRATE (In-Memory only): Jika data ditemukan tapi masih pakai format lama ('sources')
     // ponytail: auto-migrate write removed; run scripts/migrate_v1_to_v2.js to persist legacy docs
