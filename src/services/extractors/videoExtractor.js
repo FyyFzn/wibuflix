@@ -417,6 +417,13 @@ export async function extractVideoUrl(embedUrl, req) {
     // ── 2. Bypass Cepat untuk URL tanpa extractor yang dikenal ──
     // Link shortener (Racaty, Solidfiles, Zippyshare, dll) tidak memiliki extractor khusus.
     // Langsung tolak daripada membuang waktu 25 detik di Puppeteer generic.
+    const DEAD_HOSTS = ['zippyshare.com', 'solidfiles.com', 'racaty.net', 'lbx.to'];
+    const isDeadHost = (url) => DEAD_HOSTS.some(h => url.includes(h));
+    if (isDeadHost(embedUrl)) {
+        console.log(`[Dead Host] ${embedUrl} — Dilewati.`);
+        return null;
+    }
+
     const extractor = resolveExtractor(embedUrl);
     if (!extractor) {
         console.log(`[Unsupported] Tidak ada extractor untuk: ${embedUrl} — Dilewati.`);
