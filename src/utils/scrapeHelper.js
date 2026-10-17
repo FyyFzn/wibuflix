@@ -1,21 +1,7 @@
 import { acquireFromPool, releaseToPool, getCfCookie, getCfCookiesArray, globalUserAgent, refreshCfCookie, waitForCloudflare } from '../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import { circuitBreaker } from './circuitBreaker.js';
-
-export function getAxiosProxyConfig(url) {
-    if (process.env.PROXY_URL && url) {
-        const lowerUrl = url.toLowerCase();
-        if (lowerUrl.includes('ylnime') || lowerUrl.includes('animeku') || lowerUrl.includes('kuronime')) {
-            return {
-                httpsAgent: new HttpsProxyAgent(process.env.PROXY_URL),
-                proxy: false
-            };
-        }
-    }
-    return {};
-}
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const DEFAULT_HOSTNAME = new URL(PROVIDER_URLS.SAMEHADAKU.BASE_URL).hostname;
@@ -115,11 +101,6 @@ export async function fetchWithCF(url, options = {}) {
                 timeout: options.fetchTimeout || 8000
             };
             
-            if (process.env.PROXY_URL) {
-                const proxyConfig = getAxiosProxyConfig(url);
-                Object.assign(axiosConfig, proxyConfig);
-            }
-
             const response = await axios.get(url, axiosConfig);
             html = response.data;
             if (html && isCloudflareHtml(html)) {

@@ -4,7 +4,6 @@ import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../
 import Anime from '../../models/Anime.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS, getProviderSeriesUrl } from '../../config/providerUrls.js';
-import { getAxiosProxyConfig } from '../../utils/scrapeHelper.js';
 
 const cache = getCache('episodes', 3600);
 
@@ -41,7 +40,7 @@ export async function fetchNanimeInertia(url) {
     }
 
     try {
-        const axiosConfig = { headers, timeout: 20000, ...getAxiosProxyConfig(url) };
+        const axiosConfig = { headers, timeout: 20000 };
         const response = await axios.get(url, axiosConfig);
         if (response.data?.version) {
             globalInertiaVersion = response.data.version;
