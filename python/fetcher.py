@@ -26,6 +26,10 @@ _session = cf_requests.Session(impersonate=IMPERSONATE)
 _session_lock = threading.Lock()
 _SESSION_TTL = 2 * 60 * 60  # 2 hours
 
+# Proxy dari env (sama dengan PROXY_URL di Node scrapeHelper.js)
+_PROXY_URL = os.environ.get("PROXY_URL", "").strip() or None
+_proxies = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
+
 
 def _reset_session():
     global _session
@@ -41,16 +45,32 @@ _reset_thread.start()
 
 
 def fetch_html(url: str) -> str:
-    """Ambil HTML dari URL menggunakan curl_cffi dengan impersonasi Chrome dan session persisten."""
+    """Ambil HTML dari URL menggunakan curl_cffi dengan impersonasi Chrome dan session persisten.
+    Domain tertentu (samehadaku, ylnime, kuronime, animeku) langsung menggunakan proxy jika tersedia.
+    Domain lain: retry via proxy hanya jika gagal 403."""
     log.info(f"Fetching: {url}")
+    
+    # Domain yang langsung pakai proxy (sama seperti Node scrapeHelper.js)
+    url_lower = url.lower()
+    use_proxy = _proxies and any(domain in url_lower for domain in ['samehadaku', 'ylnime', 'kuronime', 'animeku'])
+    
     with _session_lock:
-        resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True)
+        resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True, 
+                           proxies=_proxies if use_proxy else None)
+
+    # Retry via proxy jika 403 dan proxy tersedia
+    if resp.status_code == 403 and _proxies:
+        log.warning(f"403 dari {url}, retry via proxy...")
+        with _session_lock:
+            resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True, proxies=_proxies)
+
     resp.raise_for_status()
     html = resp.text
     if is_cf_challenge(html):
         log.warning(f"CF challenge terdeteksi, retry sekali untuk {url}")
         with _session_lock:
-            resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True)
+            resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True,
+                                proxies=_proxies if _proxies else None)
         resp.raise_for_status()
         html = resp.text
     if is_cf_challenge(html):
