@@ -3,7 +3,7 @@ import { releaseToPool } from '../../puppeteer/pool.js';
 import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../../utils/cacheManager.js';
-import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
+import { formatEpisodeTitle } from '../../utils/stringUtils.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
@@ -28,111 +28,12 @@ export async function getOploverzEpisodes(targetUrl) {
         return cachedData;
     }
 
-    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
-    try {
-        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/oploverz/series`, { url: targetUrl }, { timeout: 35000 });
-        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
-            cache.set(cacheKey, data);
-            return data;
-        }
-    } catch (pyErr) {
-        console.warn(`[Oploverz] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
+    const { data } = await axios.post(`${SCRAPER_BASE}/scrape/oploverz/series`, { url: targetUrl }, { timeout: 35000 });
+    if (!data || !data.daftar_episode || data.daftar_episode.length === 0) {
+        throw new Error(`Python scraper mengembalikan data kosong untuk ${targetUrl}`);
     }
-
-    console.log(`\n[Oploverz Fast Fetch] ${targetUrl}`);
-    let slot;
-    try {
-        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 8000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-        const html = fetchRes.html;
-
-        if (html === '404_NOT_FOUND') {
-            throw new Error("Target URL returned 404");
-        }
-
-        let rawTitle = $('h1').first().text().trim() || $('title').text().replace(/Oploverz/i, '').replace(/subtitle indonesia/i, '').trim();
-        const judul = cleanSeriesTitle(rawTitle);
-        
-        const coverImg = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src') || '';
-
-        const daftar_episode = [];
-        const seenEpNums = new Set();
-        
-        $('a[href^="/series/"][href*="/episode/"]').each((_, el) => {
-            const epTitleRaw = $(el).text().trim() || $(el).attr('title') || 'Episode';
-            const epHref = $(el).attr('href');
-            
-            if (epHref && !epTitleRaw.toLowerCase().includes('batch')) {
-                const epUrl = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}${epHref}`;
-                
-                // Cek apakah episode merupakan rentang/gabungan ganda (cth: Episode 166-167 atau /episode/166-167/)
-                // Slash di akhir opsional: situs aktif memakai /episode/166-167 (tanpa trailing slash).
-                const rangeMatch = epHref.match(/\/episode\/(\d+)-(\d+)\/?/i) || epTitleRaw.match(/(?:episode|ep|eps)\s*(\d+)\s*[-–]\s*(\d+)/i);
-                if (rangeMatch) {
-                    const startNum = parseInt(rangeMatch[1], 10);
-                    const endNum = parseInt(rangeMatch[2], 10);
-                    if (!isNaN(startNum) && !isNaN(endNum) && startNum <= endNum && (endNum - startNum) <= 15) {
-                        for (let n = startNum; n <= endNum; n++) {
-                            if (!seenEpNums.has(n)) {
-                                seenEpNums.add(n);
-                                daftar_episode.push({
-                                    judul: `Episode ${n}`,
-                                    url: epUrl,
-                                    num: n
-                                });
-                            }
-                        }
-                        return;
-                    }
-                }
-
-                const epNumFromUrlMatch = epHref.match(/\/episode\/(\d+(\.\d+)?)/i);
-                const epNum = extractEpNumStrict(epTitleRaw) || (epNumFromUrlMatch ? parseFloat(epNumFromUrlMatch[1]) : null);
-                
-                if (epNum !== null && !seenEpNums.has(epNum)) {
-                    seenEpNums.add(epNum);
-                    
-                    let finalEpTitle = epTitleRaw;
-                    const lowerTitle = epTitleRaw.toLowerCase();
-                    const isGeneric = lowerTitle.includes('sekarang') || 
-                                      lowerTitle.includes('nonton') || 
-                                      lowerTitle.includes('tonton') || 
-                                      lowerTitle.includes('play') ||
-                                      !/\d/.test(epTitleRaw);
-                    
-                    if (isGeneric) {
-                        finalEpTitle = `Episode ${epNum}`;
-                    }
-
-                    daftar_episode.push({
-                        judul: formatEpisodeTitle(finalEpTitle !== 'Episode' ? finalEpTitle : `Episode ${epNum}`),
-                        url: epUrl,
-                        num: epNum
-                    });
-                }
-            }
-        });
-
-        // Urutkan episode dari yang terlama ke terbaru (Ascending)
-        daftar_episode.sort((a, b) => a.num - b.num);
-
-        const cleanEpisodes = daftar_episode.map(({ judul, url }) => ({ judul, url }));
-        const result = { judul_seri: judul, cover_scraper: coverImg, daftar_episode: cleanEpisodes };
-        
-        if (cleanEpisodes.length > 0) {
-            cache.set(cacheKey, result);
-        } else {
-            console.warn(`[Oploverz] Peringatan: 0 episode ditemukan di ${targetUrl}`);
-        }
-
-        return result;
-    } catch (err) {
-        console.error(`[Oploverz Episodes Error] ${targetUrl}:`, err.message);
-        return { judul_seri: "Error", cover_scraper: "", daftar_episode: [] };
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
+    cache.set(cacheKey, data);
+    return data;
 }
 
 export async function getOploverzServers(episodeUrl) {
