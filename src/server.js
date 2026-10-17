@@ -8,16 +8,11 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    // Abaikan error "Target closed" dari puppeteer-extra-plugin-stealth yang tidak berbahaya
-    if (reason && reason.name === 'TargetCloseError' && reason.message && reason.message.includes('Target closed')) {
-        return;
-    }
     console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 import express from 'express';
 import cors from 'cors';
-import { initPagePool, closeAllBrowsers } from './puppeteer/pool.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { backgroundQueue } from './utils/queueManager.js';
@@ -56,9 +51,6 @@ async function gracefulShutdown(signal) {
         await mongoose.connection.close(false);
         console.log('[System] Koneksi MongoDB ditutup.');
 
-        // 2. Bersihkan Browser Puppeteer jika ada instance yang jalan
-        await closeAllBrowsers();
-        console.log('[System] Browser Puppeteer ditutup.');
         
         process.exit(0);
     } catch (e) {
@@ -129,12 +121,6 @@ function startServer() {
         // Lanjutkan antrean download HLS yang mungkin terputus saat server restart
         backgroundQueue.resumeOrphanedTasks().catch(err => console.error("Error resuming orphaned tasks:", err));
 
-        log('⏳ [Puppeteer] Memulai inisialisasi pool browser (di latar belakang)...');
-        initPagePool().then(() => {
-            log('✅ [Puppeteer] Pool browser berhasil diinisialisasi dan siap digunakan!\n');
-        }).catch(err => {
-            log('❌ [Puppeteer] Gagal inisialisasi pool browser pada startup:', err.message);
-        });
 
         });
     }).catch(err => {
