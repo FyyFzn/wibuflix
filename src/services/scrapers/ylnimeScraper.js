@@ -233,45 +233,11 @@ export async function getYlnimeLatestUpdates() {
     const cached = cache.get(cacheKey);
     if (cached) return cached;
 
-    // Coba via Python scraper service terlebih dahulu
-    try {
-        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/ylnime/latest`, { url: `${BASE_URL}/index.php?terbaru=1` }, { timeout: 35000 });
-        if (Array.isArray(data) && data.length > 0) {
-            cache.set(cacheKey, data);
-            return data;
-        }
-    } catch (pyErr) {
-        console.warn(`[YLnime] Python latest scraper gagal (${pyErr.message}), fallback ke fetchWithCF...`);
+    const { data } = await axios.post(`${SCRAPER_BASE}/scrape/ylnime/latest`, { url: `${BASE_URL}/index.php?terbaru=1` }, { timeout: 35000 });
+    if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('[YLnime] Python latest scraper mengembalikan data kosong');
     }
-
-    try {
-        const fetchRes = await fetchWithCF(`${BASE_URL}/index.php?terbaru=1`, { fetchTimeout: 15000 });
-        const $ = fetchRes.$;
-        const updates = [];
-
-        // Selector untuk card anime terbaru
-        $('.card').each((_, el) => {
-            const a = $(el).find('a.stretched-link, a[href*="series="]').first();
-            const href = a.attr('href') || '';
-            if (!href || !href.includes('series=')) return;
-
-            const title = $(el).find('.card-title, h6').first().text().trim();
-            const img = $(el).find('img').first().attr('src') || '';
-            if (!title || !href) return;
-
-            const fullUrl = href.startsWith('http') ? href : `${BASE_URL}/${href.replace(/^\//, '')}`;
-            const slugMatch = href.match(/series=([^&]+)/);
-            const slug = slugMatch ? decodeURIComponent(slugMatch[1]) : '';
-
-            updates.push({ title: cleanSeriesTitle(title), url: fullUrl, slug, image: img });
-        });
-
-        if (updates.length > 0) cache.set(cacheKey, updates);
-        return updates;
-    } catch (err) {
-        console.error(`[YlnimeScraper] Error getYlnimeLatestUpdates:`, err.message);
-        return [];
-    }
+    return data;
 }
 
 function extractHostname(url) {
