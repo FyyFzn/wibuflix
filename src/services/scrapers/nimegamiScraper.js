@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { releaseToPool } from '../../puppeteer/pool.js';
 import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
@@ -7,6 +8,7 @@ import { cleanSeriesTitle } from '../../utils/stringUtils.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
+const SCRAPER_BASE = `http://localhost:${process.env.SCRAPER_PORT || 5001}`;
 const cache = getCache('nimegami', 3600);
 
 /**
@@ -50,6 +52,17 @@ export async function getNimegamiEpisodes(targetUrl) {
     if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Nimegami Episodes Cache Hit] ${cacheKey}`);
         return cachedData;
+    }
+
+    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/nimegami/series`, { url: cleanUrl }, { timeout: 35000 });
+        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
+            cache.set(cacheKey, data);
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[Nimegami] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
     }
 
     console.log(`\n[Nimegami Episodes] Fetching: ${cleanUrl}`);
@@ -363,14 +376,23 @@ export async function getServers(req, res) {
 
 export async function getNimegamiLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const url = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/`;
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/nimegami/latest`, { url }, { timeout: 35000 });
+        if (Array.isArray(data) && data.length > 0) {
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[Nimegami] Python latest scraper gagal (${pyErr.message}), fallback ke fetchWithCF...`);
+    }
     const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
     const { releaseToPool } = await import('../../puppeteer/pool.js');
     const { cleanSeriesTitle } = await import('../../utils/stringUtils.js');
-    const url = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/anime-terbaru-sub-indo/`;
+    const fallbackUrl = `${PROVIDER_URLS.NIMEGAMI.BASE_URL}/anime-terbaru-sub-indo/`;
     let fetchRes, slot;
     const updatesMap = new Map();
     try {
-        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
+        fetchRes = await fetchWithCF(fallbackUrl, { timeout: 60000, fetchTimeout: 10000 });
         slot = fetchRes?.slot;
         if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
         const $ = fetchRes.$;

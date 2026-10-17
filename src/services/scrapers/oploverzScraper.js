@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { releaseToPool } from '../../puppeteer/pool.js';
 import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
@@ -6,6 +7,7 @@ import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
+const SCRAPER_BASE = `http://localhost:${process.env.SCRAPER_PORT || 5001}`;
 const cache = getCache('episodes_oploverz', 3600);
 
 export const scraperMeta = {
@@ -24,6 +26,17 @@ export async function getOploverzEpisodes(targetUrl) {
     if (cachedData && cachedData.daftar_episode && cachedData.daftar_episode.length > 0) {
         console.log(`[Oploverz Cache Hit] ${cacheKey}`);
         return cachedData;
+    }
+
+    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/oploverz/series`, { url: targetUrl }, { timeout: 35000 });
+        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
+            cache.set(cacheKey, data);
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[Oploverz] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
     }
 
     console.log(`\n[Oploverz Fast Fetch] ${targetUrl}`);
@@ -264,10 +277,18 @@ export async function handleGetServers(req, res) {
 
 export async function getOploverzLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
+    const url = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/schedule`;
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/oploverz/latest`, { url }, { timeout: 35000 });
+        if (Array.isArray(data) && data.length > 0) {
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[Oploverz] Python latest scraper gagal (${pyErr.message}), fallback ke Puppeteer pool...`);
+    }
     const { acquireFromPool, releaseToPool } = await import('../../puppeteer/pool.js');
     const cheerio = await import('cheerio');
     // Jadwal rilis berada pada route /schedule, bukan halaman depan.
-    const url = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/schedule`;
     let slot;
     const updates = [];
     try {

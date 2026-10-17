@@ -28,6 +28,12 @@ from parsers.samehadaku import parse_series as parse_samehadaku_series
 from parsers.samehadaku import parse_latest as parse_samehadaku_latest
 from parsers.kuronime import parse_series as parse_kuronime_series
 from parsers.kuronime import parse_latest as parse_kuronime_latest
+from parsers.oploverz import parse_series as parse_oploverz_series
+from parsers.oploverz import parse_latest as parse_oploverz_latest
+from parsers.nimegami import parse_series as parse_nimegami_series
+from parsers.nimegami import parse_latest as parse_nimegami_latest
+from parsers.ylnime import parse_series as parse_ylnime_series
+from parsers.ylnime import parse_latest as parse_ylnime_latest
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="[ScraperService] %(message)s")
@@ -124,6 +130,120 @@ def scrape_kuronime_latest():
         return jsonify({"error": str(e)}), 502
     except Exception as e:
         log.error(f"Error scraping kuronime latest {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Oploverz ─────────────────────────────────────────────────────────────────
+
+@app.route("/scrape/oploverz/series", methods=["POST"])
+def scrape_oploverz_series():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Parameter 'url' wajib diisi"}), 400
+    try:
+        html = fetch_html(url)
+        result = parse_oploverz_series(html, url)
+        if not result["daftar_episode"]:
+            log.warning(f"Tidak ada episode ditemukan untuk: {url}")
+        return jsonify(result), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping oploverz {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/scrape/oploverz/latest", methods=["POST"])
+def scrape_oploverz_latest():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip() or "https://oploverz.site/schedule"
+    try:
+        html = fetch_html(url)
+        updates = parse_oploverz_latest(html)
+        return jsonify(updates), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping oploverz schedule {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Nimegami ─────────────────────────────────────────────────────────────────
+
+@app.route("/scrape/nimegami/series", methods=["POST"])
+def scrape_nimegami_series():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Parameter 'url' wajib diisi"}), 400
+    try:
+        html = fetch_html(url)
+        result = parse_nimegami_series(html, url)
+        if not result["daftar_episode"]:
+            log.warning(f"Tidak ada episode ditemukan untuk: {url}")
+        return jsonify(result), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping nimegami {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/scrape/nimegami/latest", methods=["POST"])
+def scrape_nimegami_latest():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip() or "https://nimegami.id/"
+    try:
+        html = fetch_html(url)
+        updates = parse_nimegami_latest(html)
+        return jsonify(updates), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping nimegami latest {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── YLnime ───────────────────────────────────────────────────────────────────
+
+@app.route("/scrape/ylnime/series", methods=["POST"])
+def scrape_ylnime_series():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Parameter 'url' wajib diisi"}), 400
+    try:
+        html = fetch_html(url)
+        result = parse_ylnime_series(html, url)
+        if not result["daftar_episode"]:
+            log.warning(f"Tidak ada episode ditemukan untuk: {url}")
+        return jsonify(result), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping ylnime {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/scrape/ylnime/latest", methods=["POST"])
+def scrape_ylnime_latest():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip() or "https://ylnime.com/index.php?terbaru=1"
+    try:
+        html = fetch_html(url)
+        updates = parse_ylnime_latest(html)
+        return jsonify(updates), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping ylnime latest {url}: {e}")
         return jsonify({"error": str(e)}), 500
 
 

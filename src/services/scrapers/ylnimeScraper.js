@@ -18,6 +18,7 @@ export const scrapeServers = getYlnimeServers;
 export const scrapeLatestUpdates = getYlnimeLatestUpdates;
 
 const BASE_URL = PROVIDER_URLS.YLNIME.BASE_URL;
+const SCRAPER_BASE = `http://localhost:${process.env.SCRAPER_PORT || 5001}`;
 
 const AX_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -34,6 +35,17 @@ export async function getYlnimeEpisodes(animeUrl) {
     const cacheKey = `ylnime_eps_${animeUrl}`;
     const cached = cache.get(cacheKey);
     if (cached) return cached;
+
+    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/ylnime/series`, { url: animeUrl }, { timeout: 35000 });
+        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
+            cache.set(cacheKey, data);
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[YLnime] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
+    }
 
     try {
         const fetchRes = await fetchWithCF(animeUrl, { fetchTimeout: 20000 });
@@ -316,6 +328,17 @@ export async function getYlnimeLatestUpdates() {
     const cacheKey = `ylnime_latest`;
     const cached = cache.get(cacheKey);
     if (cached) return cached;
+
+    // Coba via Python scraper service terlebih dahulu
+    try {
+        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/ylnime/latest`, { url: `${BASE_URL}/index.php?terbaru=1` }, { timeout: 35000 });
+        if (Array.isArray(data) && data.length > 0) {
+            cache.set(cacheKey, data);
+            return data;
+        }
+    } catch (pyErr) {
+        console.warn(`[YLnime] Python latest scraper gagal (${pyErr.message}), fallback ke fetchWithCF...`);
+    }
 
     try {
         const fetchRes = await fetchWithCF(`${BASE_URL}/index.php?terbaru=1`, { fetchTimeout: 15000 });
