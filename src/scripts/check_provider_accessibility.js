@@ -2,7 +2,6 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchNanimeInertia } from '../services/scrapers/nanimeScraper.js';
 import { PROVIDER_LIST } from '../config/providerUrls.js';
 
@@ -112,7 +111,6 @@ export async function checkAllProvidersAccessibility() {
                 } catch (errCf) {
                     result.details = `CF Fetch Error: ${errCf.message}`;
                 } finally {
-                    if (fetchRes?.slot) releaseToPool(fetchRes.slot);
                 }
 
                 if (fetchRes && fetchRes.html && fetchRes.html !== '404_NOT_FOUND') {
