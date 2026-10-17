@@ -58,9 +58,9 @@ export async function findAnimeInDatabase({ targetUrl, providerUrls = {} }) {
         dbAnime = await Anime.findOne({ $or: legacyOrQuery });
     }
 
-    // 3. AUTO-MIGRATE: Jika data ditemukan tapi masih pakai format lama (sources)
+    // 3. AUTO-MIGRATE (In-Memory only): Jika data ditemukan tapi masih pakai format lama ('sources')
+    // ponytail: auto-migrate write removed; run scripts/migrate_v1_to_v2.js to persist legacy docs
     if (dbAnime && (!dbAnime.sourceUrls || dbAnime.sourceUrls.length === 0)) {
-        console.log(`[DB Auto-Migrate] Memindahkan format lama 'sources' ke 'sourceUrls' untuk: ${dbAnime.title}`);
         const newUrls = new Set(dbAnime.sourceUrls || []);
         
         if (dbAnime.url) newUrls.add(dbAnime.url); // Legacy Samehadaku URL
@@ -78,12 +78,6 @@ export async function findAnimeInDatabase({ targetUrl, providerUrls = {} }) {
         }
         
         dbAnime.sourceUrls = Array.from(newUrls);
-        
-        try {
-            await dbAnime.save();
-        } catch (e) {
-            console.warn('[DB Auto-Migrate] Gagal menyimpan migrasi:', e.message);
-        }
     }
     
     return dbAnime;
