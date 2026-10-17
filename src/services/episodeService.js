@@ -1,5 +1,5 @@
 import Anime from '../models/Anime.js';
-import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle, isSafeToMerge } from '../utils/stringUtils.js';
+import { formatEpisodeTitle, extractEpNum, adjustTitleEpisodeNumber, extractOtakuSlug, cleanSeriesTitle, isSafeToMerge, isOvaOrSpecialTitle } from '../utils/stringUtils.js';
 import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
 import { ProviderRegistry } from './ProviderRegistry.js';
 
@@ -13,22 +13,10 @@ const activeScrapeLocks = new Map();
  * Memeriksa jika ada kartu episode normal (misal Episode 1) namun memiliki URL dari provider lain
  * yang mengarah ke OVA/Special, atau judul OVA yang keliru dilabeli sebagai nomor episode normal.
  */
-// OVA/Special detection regexes — compiled once at module load, reused across all functions
-const OVA_TITLE_RE = /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i;
-const OVA_WORD_RE  = /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i;
-const OVA_PAREN_RE = /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i;
-const OVA_URL_RE   = /(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i;
-
-function isOvaOrMovieTitle(title) {
-    return OVA_TITLE_RE.test(title) || OVA_WORD_RE.test(title) || OVA_PAREN_RE.test(title);
-}
 
 export function sanitizeContaminatedEpisodeCards(episodesList) {
     if (!episodesList || !Array.isArray(episodesList)) return [];
-    const ovaTitleRegex = OVA_TITLE_RE;
-    const ovaWordRegex = OVA_WORD_RE;
-    const ovaParenthesisRegex = OVA_PAREN_RE;
-    const ovaUrlRegex = OVA_URL_RE;
+    const OVA_URL_RE = /(?:-|\/)ova(?:-|\/|\b|_)|(?:-|\/)sp(?:-|\/|\b|_)|(?:-|\/)ex(?:-|\/|\b|_)|(?:-|\/)special(?:-|\/|\b|_)|(?:-|\/)bonus(?:-|\/|\b|_)/i;
 
     return episodesList.map(ep => {
         const epObj = ep && typeof ep === 'object' ? { ...ep } : {};
@@ -39,7 +27,7 @@ export function sanitizeContaminatedEpisodeCards(episodesList) {
         }
 
         const title = (epObj.judul || epObj.title || '').trim();
-        const isOvaTitle = ovaTitleRegex.test(title) || ovaWordRegex.test(title) || ovaParenthesisRegex.test(title);
+        const isOvaTitle = isOvaOrSpecialTitle(title);
 
         // 1. Jika judul kartu itu sendiri adalah OVA / Special, pastikan num adalah null agar tidak keliru sebagai episode reguler
         if (isOvaTitle) {
@@ -48,7 +36,7 @@ export function sanitizeContaminatedEpisodeCards(episodesList) {
             // 2. Jika kartu adalah episode reguler (misal num: 1), periksa seluruh URL provider di dalamnya.
             // Jika ada provider yang URL-nya secara jelas adalah OVA/Special, hapus URL tercemar tersebut dari kartu episode reguler ini!
             for (const [provKey, provUrl] of Object.entries(epObj.urls)) {
-                if (typeof provUrl === 'string' && ovaUrlRegex.test(provUrl)) {
+                if (typeof provUrl === 'string' && OVA_URL_RE.test(provUrl)) {
                     console.warn(`[Sanitizer] 🛡️ Menghapus URL tercemar OVA (${provKey}: ${provUrl}) dari kartu episode normal "${title}" (Ep ${epObj.num})`);
                     delete epObj.urls[provKey];
                 }
@@ -71,7 +59,7 @@ export function deduplicateEpisodes(episodes) {
         // ep.num is already set correctly by sanitizeContaminatedEpisodeCards — trust it directly
         const epNum = ep.num;
         
-        const isOvaCandidate = OVA_TITLE_RE.test(titleLower) || OVA_WORD_RE.test(titleLower) || OVA_PAREN_RE.test(titleLower);
+        const isOvaCandidate = isOvaOrSpecialTitle(titleLower);
         
         let foundKey = null;
         if (typeof epNum === 'number' && !isNaN(epNum)) {
@@ -94,7 +82,7 @@ export function deduplicateEpisodes(episodes) {
             dedupeMap.set(foundKey, { ...ep });
         } else {
             const existing = dedupeMap.get(foundKey);
-            const isExistingNormal = existing.num != null && !OVA_TITLE_RE.test(existing.judul || '') && !OVA_WORD_RE.test(existing.judul || '') && !OVA_PAREN_RE.test(existing.judul || '');
+            const isExistingNormal = existing.num != null && !isOvaOrSpecialTitle(existing.judul || '');
 
             if (isExistingNormal && isOvaCandidate) {
                 // Jangan merge URL OVA/Special ke dalam kartu episode normal
@@ -305,7 +293,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
                 continue;
             }
 
-            const isOvaTitle = OVA_TITLE_RE.test(titleLower) || OVA_WORD_RE.test(titleLower) || OVA_PAREN_RE.test(titleLower);
+            const isOvaTitle = isOvaOrSpecialTitle(titleLower);
             const actualNum = isOvaTitle ? null : ep.num;
 
             if (actualNum != null && typeof actualNum === 'number' && !isNaN(actualNum)) {
@@ -387,7 +375,7 @@ async function scrapeAndMergeMulti({ dbAnime, targetUrl, providerUrls = {} }) {
         //     one watchable entry. Any OVA/movie-titled entry is definitionally a duplicate label
         //     for the same content (e.g. "Episode Movie" from ylnime alongside "Episode 1" from nimegami).
         //     We do NOT apply this to multi-episode series (episodesCount > 1) to protect genuine OVAs.
-        if (isOvaOrMovieTitle(title) && expectedEpCount === 1 && numberedEpCount >= 1) {
+        if (isOvaOrSpecialTitle(title) && expectedEpCount === 1 && numberedEpCount >= 1) {
             console.info(`[EpisodeService] 🎬 Membuang entri duplikat OVA/Movie "${title}" — anime ini adalah movie satu episode (episodesCount: 1).`);
             // Inject the discarded URLs into the main numbered episode so they aren't lost!
             if (epUrls.length > 0 && mergedEps[0]) {
