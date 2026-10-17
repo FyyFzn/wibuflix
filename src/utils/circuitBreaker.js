@@ -12,7 +12,7 @@ const MAX_RESET_TIMEOUT_MS = 30 * 60 * 1000;  // 30 menit
 
 class CircuitBreaker {
     constructor(options = {}) {
-        this.failureThreshold = options.failureThreshold || 5; // Jumlah kegagalan beruntun sebelum sirkuit dibuka
+        this.failureThreshold = options.failureThreshold || 10; // Jumlah kegagalan beruntun sebelum sirkuit dibuka
         // states: domain -> { state: 'CLOSED'|'OPEN'|'HALF_OPEN', failures, nextAttempt, openCount }
         this.states = new Map();
     }
