@@ -179,61 +179,11 @@ export async function handleGetServers(req, res) {
 export async function getOploverzLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
     const url = `${PROVIDER_URLS.OPLOVERZ.BASE_URL}/schedule`;
-    try {
-        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/oploverz/latest`, { url }, { timeout: 35000 });
-        if (Array.isArray(data) && data.length > 0) {
-            return data;
-        }
-    } catch (pyErr) {
-        console.warn(`[Oploverz] Python latest scraper gagal (${pyErr.message}), fallback ke Puppeteer pool...`);
+    const { data } = await axios.post(`${SCRAPER_BASE}/scrape/oploverz/latest`, { url }, { timeout: 35000 });
+    if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('[Oploverz] Python latest scraper mengembalikan data kosong');
     }
-    const { acquireFromPool, releaseToPool } = await import('../../puppeteer/pool.js');
-    const cheerio = await import('cheerio');
-    // Jadwal rilis berada pada route /schedule, bukan halaman depan.
-    let slot;
-    const updates = [];
-    try {
-        slot = await acquireFromPool();
-        const page = slot.page;
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        const html = await page.content();
-        const $ = cheerio.load(html);
-
-        // Situs aktif (SvelteKit) tidak memakai .bgwhite/.post-item/.item lagi.
-        // Kartu jadwal kini adalah <a href="/series/<slug>"> di dalam grid Tailwind,
-        // dengan waktu rilis ("23:00 WIB") dan judul anime sebagai teks.
-        const seen = new Set();
-        $('a[href*="/series/"]').each((_, el) => {
-            const href = $(el).attr('href') || '';
-            if (!/^\/series\/[a-z0-9-]+\/?$/i.test(href)) return; // hanya kartu series, bukan tombol "Tonton"
-
-            const rawText = $(el).text().replace(/\s+/g, ' ').trim();
-            if (!rawText) return;
-
-            // Buang duplikat judul yang tampil lebih dari sekali per hari
-            const key = rawText.toLowerCase();
-            if (seen.has(key)) return;
-            seen.add(key);
-
-            // Pisahkan jam rilis dari judul: "23:00 WIB Tensei shitara Ken deshita S2"
-            const timeMatch = rawText.match(/^(\d{1,2}[:.]\d{2})\s*(?:WIB|WITA|WIT)?\s*(.*)$/i);
-            let time = '';
-            let title = rawText;
-            if (timeMatch) {
-                time = timeMatch[1];
-                title = timeMatch[2].trim();
-            }
-
-            if (title) {
-                updates.push({ title, status: time ? `Eps ${time}` : 'Eps' });
-            }
-        });
-    } catch (e) {
-        console.error(`[Oploverz Scraper] Gagal memuat updates:`, e.message);
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
-    return updates;
+    return data;
 }
 
 
