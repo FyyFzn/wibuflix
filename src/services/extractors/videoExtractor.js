@@ -1,4 +1,3 @@
-import { acquireFromPool, releaseToPool, getCfCookie, refreshCfCookie, globalUserAgent } from '../../puppeteer/pool.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer, recordIframeReferer, getExtractorReferer } from './providers/utils.js';
@@ -8,39 +7,44 @@ import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 export { extractIframeSrc, namaServer };
 
-async function resolveServerIframe(page, { post, nume, type, episodeUrl }, req) {
+async function resolveServerIframe({ post, nume, type, episodeUrl }, req) {
     console.log(`[DEBUG] resolveServerIframe called: post=${post} nume=${nume} type=${type} url=${episodeUrl}`);
     try {
-        const result = await page.evaluate(async ({ post, nume, type, episodeUrl }) => {
-            try {
-                const SAMA_BASE = '${PROVIDER_URLS.SAMEHADAKU.BASE_URL}';
-                const response = await fetch(`${SAMA_BASE}/wp-admin/admin-ajax.php`, {
-                    method: 'POST',
+        const SAMA_BASE = PROVIDER_URLS.SAMEHADAKU.BASE_URL;
+        let resultText = '';
+        let resultOk = false;
+        let resultStatus = 0;
+        try {
+            const response = await axios.post(
+                `${SAMA_BASE}/wp-admin/admin-ajax.php`,
+                new URLSearchParams({ action: 'player_ajax', post: String(post), nume: String(nume), type: String(type) }).toString(),
+                {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                         'X-Requested-With': 'XMLHttpRequest',
-                        'Accept': '*/*',
                         'Referer': episodeUrl,
-                        'Origin': SAMA_BASE
+                        'Origin': SAMA_BASE,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
                     },
-                    credentials: 'include',
-                    body: `action=player_ajax&post=${post}&nume=${nume}&type=${type}`
-                });
+                    timeout: 10000
+                }
+            );
+            resultOk = response.status >= 200 && response.status < 300;
+            resultStatus = response.status;
+            resultText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+        } catch (ajaxErr) {
+            resultOk = false;
+            resultStatus = ajaxErr.response ? ajaxErr.response.status : 0;
+            resultText = '';
+        }
 
-                const text = await response.text();
-                return { ok: response.ok, status: response.status, text };
-            } catch (e) {
-                return { ok: false, status: 0, text: '', error: e.message };
-            }
-        }, { post, nume, type, episodeUrl });
+        console.log(`    AJAX [post=${post} nume=${nume}] status=${resultStatus} len=${resultText.length}`);
 
-        console.log(`    AJAX [post=${post} nume=${nume}] status=${result.status} len=${result.text.length}`);
-
-        if (!result.ok || !result.text) return null;
+        if (!resultOk || !resultText) return null;
 
         try {
-            const json = JSON.parse(result.text);
-            const html = json.data || json.embed_url || json.embed || json.url || result.text;
+            const json = JSON.parse(resultText);
+            const html = json.data || json.embed_url || json.embed || json.url || resultText;
             const url = extractIframeSrc(String(html));
             if (url) return url;
             
@@ -51,17 +55,17 @@ async function resolveServerIframe(page, { post, nume, type, episodeUrl }, req) 
                 return html;
             }
         } catch {
-            const url = extractIframeSrc(result.text);
+            const url = extractIframeSrc(resultText);
             if (url) return url;
         }
 
-        const urlMatch = result.text.match(/(https?:\/\/[^\s"'<>]{1,2048})/) || result.text.match(/(\/\/[^\s"'<>]{1,2048})/);
+        const urlMatch = resultText.match(/(https?:\/\/[^\s"'<>]{1,2048})/) || resultText.match(/(\/\/[^\s"'<>]{1,2048})/);
         if (urlMatch) return urlMatch[1];
 
-        const vidlionMatch = result.text.match(/\[vidlion id=([^\]]+)\]/i);
+        const vidlionMatch = resultText.match(/\[vidlion id=([^\]]+)\]/i);
         if (vidlionMatch) return `https://vidhidepro.com/v/${vidlionMatch[1]}`;
 
-        console.log(`    [Resolve Failed] Raw text: ${result.text.substring(0, 100)}`);
+        console.log(`    [Resolve Failed] Raw text: ${resultText.substring(0, 100)}`);
         return null;
     } catch (err) {
         console.error(`    AJAX Error:`, err.message);
@@ -73,7 +77,6 @@ export async function scrapeVideoServers(targetUrl) {
     if (!targetUrl) throw new Error("Parameter 'url' wajib diisi!");
     console.log(`\n[Scrape Fast] ${targetUrl}`);
 
-    let slot;
     try {
         const response = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
@@ -314,16 +317,13 @@ export async function scrapeVideoServers(targetUrl) {
         return { judul, gambar, nav_prev, nav_next, servers, iframeAktif };
     } catch (err) {
         throw err;
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
+    } finally {}
 }
 
 export async function resolveSingleServer(targetUrl, nume, req) {
     if (!targetUrl || !nume) throw new Error("Parameter 'url' dan 'nume' wajib diisi!");
     console.log(`\n[Resolve Fast] ${targetUrl} [nume=${nume}]`);
 
-    let slot;
     try {
         const response = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
@@ -339,14 +339,8 @@ export async function resolveSingleServer(targetUrl, nume, req) {
         let post = $('.east_player_option').first().attr('data-post') || '';
 
         if (!post) throw new Error("Tidak menemukan ID Post (data-post) setelah fallback");
-        
-        // Ensure we have a page for resolveServerIframe which uses evaluate
-        if (!slot) {
-            slot = await acquireFromPool();
-        }
-        const page = slot.page;
 
-        const iframeUrl = await resolveServerIframe(page, {
+        const iframeUrl = await resolveServerIframe({
             post,
             nume,
             type: 'schtml',
@@ -362,9 +356,7 @@ export async function resolveSingleServer(targetUrl, nume, req) {
         return { iframeUrl, namaHost: namaServer(iframeUrl) };
     } catch (err) {
         throw err;
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
+    } finally {}
 }
 
 export async function extractVideoUrl(embedUrl, req) {

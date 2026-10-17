@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import axios from 'axios';
-import { getCfCookie, globalUserAgent } from '../puppeteer/pool.js';
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
@@ -51,20 +51,6 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
     const tokenMatch = html.match(/var\s+_0xa100d42aa\s*=\s*["']([^"']+)["']/i);
     if (tokenMatch && tokenMatch[1]) {
         token = tokenMatch[1];
-    } else if (page && !page.isClosed()) {
-        console.log('[KuronimeDecryptor] Token _0xa100d42aa belum ada di HTML statis, menunggu via Puppeteer page...');
-        try {
-            await page.waitForFunction(() => {
-                return typeof window._0xa100d42aa !== 'undefined' || document.documentElement.innerHTML.includes('_0xa100d42aa');
-            }, { timeout: 12000 });
-            token = await page.evaluate(() => {
-                if (typeof window._0xa100d42aa !== 'undefined') return window._0xa100d42aa;
-                const match = document.documentElement.innerHTML.match(/var\s+_0xa100d42aa\s*=\s*["']([^"']+)["']/i);
-                return match ? match[1] : null;
-            });
-        } catch (waitErr) {
-            console.warn('[KuronimeDecryptor] Timeout menunggu token _0xa100d42aa di Puppeteer page:', waitErr.message);
-        }
     }
 
     if (!token) {
@@ -83,8 +69,7 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
                     'Content-Type': 'application/json',
                     'Referer': `${PROVIDER_URLS.KURONIME.BASE_URL}/`,
                     'Origin': `${PROVIDER_URLS.KURONIME.BASE_URL}`,
-                    'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Cookie': getCfCookie('animeku.org') || ''
+                    'User-Agent': DEFAULT_USER_AGENT
                 },
                 timeout: 10000
             }
@@ -101,9 +86,6 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         }
 
         try {
-            // Gunakan cf_clearance yang sudah dihangatkan saat startup (dari browserPool warm-up).
-            // Ini adalah plain JSON POST API — tidak butuh browser context sama sekali.
-            const warmCookie = getCfCookie('animeku.org');
             const retryRes = await axios.post(
                 `${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`,
                 { id: token },
@@ -112,8 +94,7 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
                         'Content-Type': 'application/json',
                         'Referer': `${PROVIDER_URLS.KURONIME.BASE_URL}/`,
                         'Origin': `${PROVIDER_URLS.KURONIME.BASE_URL}`,
-                        'User-Agent': globalUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Cookie': warmCookie || '',
+                        'User-Agent': DEFAULT_USER_AGENT
                     },
                     timeout: 12000
                 }
