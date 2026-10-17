@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge } from '../utils/stringUtils.js';
-import { acquireFromPool, releaseToPool } from '../puppeteer/pool.js';
+import axios from 'axios';
 import { PROVIDER_URLS, getProviderSeriesUrl } from '../config/providerUrls.js';
 
 const log = (...args) => {
@@ -22,15 +22,13 @@ const OPLOVERZ_SERIES_URL = PROVIDER_URLS.OPLOVERZ.CATALOG_URL;
  */
 export async function syncOploverz() {
     log('[OploverzSync] Memulai sinkronisasi katalog Oploverz...');
-    let slot;
     try {
-        slot = await acquireFromPool();
-        const page = slot.page;
-
-        log(`[OploverzSync] Navigasi ke ${OPLOVERZ_SERIES_URL}...`);
-        await page.goto(OPLOVERZ_SERIES_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-
-        const html = await page.content();
+        log(`[OploverzSync] Fetching ${OPLOVERZ_SERIES_URL}...`);
+        const res = await axios.get(OPLOVERZ_SERIES_URL, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+            timeout: 20000
+        });
+        const html = res.data;
         const $ = cheerio.load(html);
 
         let svelteDataScript = '';
@@ -210,9 +208,7 @@ export async function syncOploverz() {
         }
     } catch (err) {
         log(`[OploverzSync] ❌ Error: ${err.message}`);
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
+    } finally {}
 }
 
 /**

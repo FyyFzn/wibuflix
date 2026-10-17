@@ -1,5 +1,4 @@
 import * as cheerio from 'cheerio';
-import { releaseToPool } from '../puppeteer/pool.js';
 import axios from 'axios';
 import Anime from '../models/Anime.js'; // Model MongoDB
 import { PROVIDER_URLS } from '../config/providerUrls.js';
@@ -139,7 +138,6 @@ export async function runSync(isInitial = false) {
                     break;
                 }
             } finally {
-                if (slot) releaseToPool(slot);
             }
 
             if (pageFailed) {

@@ -4,7 +4,6 @@ import fs from 'fs';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge, cleanSeriesTitle } from '../utils/stringUtils.js';
 import axios from 'axios';
-import { releaseToPool } from '../puppeteer/pool.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const log = (...args) => {
@@ -45,7 +44,6 @@ export async function syncNimegami() {
             }
 
             if (!fetchRes || !fetchRes.$ || fetchRes.html === '404_NOT_FOUND') {
-                if (currentSlot) releaseToPool(currentSlot);
                 break;
             }
 
@@ -82,7 +80,6 @@ export async function syncNimegami() {
                 }
             });
 
-            if (currentSlot) releaseToPool(currentSlot);
 
             if (addedCount === 0 || page >= 15) {
                 hasNextPage = false;
