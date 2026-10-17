@@ -299,3 +299,10 @@ export function cleanSeriesTitle(title) {
     t = t.replace(/\s*[-–|#]\s*$/i, '');
     return t.replace(/[-\s]+$/, '').replace(/\s+/g, ' ').trim();
 }
+
+export function isOvaOrSpecialTitle(title) {
+    const t = (title || '').toLowerCase();
+    return /\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)[\s-_]*\d+/i.test(t)
+        || /\b(?:ova|oad|batch|nced|ncop|movie|film)\b/i.test(t)
+        || /\((?:ova|oad|special|sp|ex|bonus|nced|ncop)\)|\b(?:ova|oad|special|sp|ex|bonus|nced|ncop)\b\s*$/i.test(t);
+}
