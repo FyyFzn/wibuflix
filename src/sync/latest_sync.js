@@ -9,20 +9,6 @@ const log = (...args) => {
     else console.log(...args);
 };
 
-export async function startBackgroundLatestSync() {
-    log("[Latest Sync] Memulai penjadwalan pengecekan update episode (setiap 30 menit)...");
-    
-    // Jalankan pertama kali (tunggu 20 detik agar pool puppeteer siap)
-    setTimeout(() => {
-        runLatestSync();
-    }, 20000);
-
-    // Jadwalkan setiap 30 menit (1.800.000 ms)
-    setInterval(() => {
-        runLatestSync();
-    }, 1800000);
-}
-
 export async function runLatestSync() {
     if (isLatestSyncing) return;
     isLatestSyncing = true;

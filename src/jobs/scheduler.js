@@ -1,7 +1,7 @@
 import { syncUnified } from '../sync/unified_sync.js';
 import { startBackgroundAnimeSync } from '../sync/anime_sync.js';
 import { startBackgroundOtakuSync } from '../sync/otaku_sync.js';
-import { startBackgroundLatestSync } from '../sync/latest_sync.js';
+import { runLatestSync } from '../sync/latest_sync.js';
 import { syncNeosatsu } from '../sync/neosatsu_sync.js';
 import { startBackgroundKuronimeSync } from '../sync/kuronime_sync.js';
 import { startBackgroundNanimeSync } from '../sync/nanime_sync.js';
@@ -18,7 +18,9 @@ export function initScheduler() {
     // 1. Memulai sync aktif (real-time listeners)
     startBackgroundAnimeSync();
     startBackgroundOtakuSync();
-    startBackgroundLatestSync();
+    // Latest sync: run once after 20s (pool warm-up), then every 30 minutes
+    setTimeout(() => runLatestSync(), 20000);
+    setInterval(() => runLatestSync(), 1800000);
     startBackgroundKuronimeSync();
     startBackgroundNanimeSync();
     startBackgroundNimegamiSync();
