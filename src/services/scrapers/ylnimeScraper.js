@@ -36,108 +36,12 @@ export async function getYlnimeEpisodes(animeUrl) {
     const cached = cache.get(cacheKey);
     if (cached) return cached;
 
-    // Coba via Python scraper service (curl_cffi Chrome TLS) terlebih dahulu
-    try {
-        const { data } = await axios.post(`${SCRAPER_BASE}/scrape/ylnime/series`, { url: animeUrl }, { timeout: 35000 });
-        if (data && data.daftar_episode && data.daftar_episode.length > 0) {
-            cache.set(cacheKey, data);
-            return data;
-        }
-    } catch (pyErr) {
-        console.warn(`[YLnime] Python scraper service gagal (${pyErr.message}), fallback ke fetchWithCF internal...`);
+    const { data } = await axios.post(`${SCRAPER_BASE}/scrape/ylnime/series`, { url: animeUrl }, { timeout: 35000 });
+    if (!data || !data.daftar_episode || data.daftar_episode.length === 0) {
+        throw new Error(`Python scraper mengembalikan data kosong untuk ${animeUrl}`);
     }
-
-    try {
-        const fetchRes = await fetchWithCF(animeUrl, { fetchTimeout: 20000 });
-        const $ = fetchRes.$;
-        const data = fetchRes.html;
-
-        if (!$) throw new Error("Gagal load cheerio");
-
-        // Judul seri dari title tag atau heading
-        let judulSeri = $('h1.anime-title, h2.series-title, .series-header h1, h1').first().text().trim();
-        if (!judulSeri) {
-            judulSeri = $('title').text().replace(/[-|].*$/, '').trim();
-        }
-        judulSeri = cleanSeriesTitle(judulSeri);
-
-        // Cover image dari og:image atau gambar pertama
-        const coverScraper = $('meta[property="og:image"]').attr('content') ||
-            $('.anime-cover img, .poster img, .series-poster img').first().attr('src') || '';
-
-        // Daftar episode — YLnime menggunakan list-group-item atau card per episode
-        const episodeList = [];
-        const seenNums = new Set();
-
-        // Selector 1: list-group-item (halaman seri yang sudah dirender)
-        $('a.list-group-item, .episode-list a, .daftar-eps a, a[href*="&ep="], a[href*="?ep="]').each((_, el) => {
-            const href = $(el).attr('href') || '';
-            if (!href) return;
-
-            let fullUrl = href.startsWith('http') ? href : `${BASE_URL}/${href.replace(/^\//, '')}`;
-            // Fix issue: YLnime requires index.php in episode URL, otherwise it redirects to homepage
-            if (fullUrl.includes('?series=') && !fullUrl.includes('index.php')) {
-                fullUrl = fullUrl.replace('?', 'index.php?');
-            }
-            
-            let title = $(el).text().trim() || `Episode`;
-            
-            // Hapus teks setelah baris baru (biasanya berisi tanggal rilis)
-            title = title.replace(/\n[\s\S]*/, '').trim();
-            const epNum = extractEpNum(title) ?? extractEpNum(href);
-
-            if (epNum != null && seenNums.has(epNum)) return;
-            if (epNum != null) seenNums.add(epNum);
-
-            episodeList.push({
-                judul: title,
-                title,
-                num: epNum,
-                url: fullUrl,
-            });
-        });
-
-        // Selector 2: pola URL ?series=SLUG&ep=N (generasi dari jumlah episode di halaman)
-        // Coba cari angka total episode dari teks seperti "Total: 12 Episode"
-        if (episodeList.length === 0) {
-            const bodyText = $('body').text();
-            const totalMatch = bodyText.match(/(\d+)\s*[Ee]pisode/);
-            const totalEps = totalMatch ? parseInt(totalMatch[1]) : 0;
-
-            // Ekstrak slug dari URL
-            const urlObj = new URL(animeUrl.startsWith('http') ? animeUrl : `https://ylnime.com/${animeUrl}`);
-            const slug = urlObj.searchParams.get('series') || urlObj.pathname.replace('/', '');
-
-            if (totalEps > 0 && slug) {
-                for (let i = 1; i <= totalEps; i++) {
-                    episodeList.push({
-                        judul: `Episode ${i}`,
-                        title: `Episode ${i}`,
-                        num: i,
-                        url: `${BASE_URL}/index.php?series=${slug}&ep=${i}`,
-                    });
-                }
-            }
-        }
-
-        // Urutkan dari terkecil ke terbesar
-        episodeList.sort((a, b) => (a.num ?? 0) - (b.num ?? 0));
-
-        const result = {
-            judul_seri: judulSeri,
-            cover_scraper: coverScraper,
-            daftar_episode: episodeList
-        };
-
-        if (episodeList.length > 0) {
-            cache.set(cacheKey, result);
-        }
-
-        return result;
-    } catch (err) {
-        console.error(`[YlnimeScraper] Error getYlnimeEpisodes(${animeUrl}):`, err.message);
-        throw err;
-    }
+    cache.set(cacheKey, data);
+    return data;
 }
 
 /**
