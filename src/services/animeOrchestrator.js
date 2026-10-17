@@ -1,60 +1,7 @@
 import { getEpisodeServiceData, sanitizeContaminatedEpisodeCards } from './episodeService.js';
 import Anime from '../models/Anime.js';
 import { cleanSeriesTitle, formatEpisodeTitle, extractEpNum, isOvaOrSpecialTitle } from '../utils/stringUtils.js';
-
-// ============================================================================
-// IN-MEMORY LRU CACHE (TTL: 1 Jam = 3600000 ms)
-// Mengurangi query berulang ke MongoDB dan membatasi beban scraping eksternal
-// ============================================================================
-class LRUMemoryCache {
-    constructor(max = 1500, ttl = 3600000) {
-        this.max = max;
-        this.ttl = ttl;
-        this.cache = new Map();
-
-        this.cleanupInterval = setInterval(() => {
-            const now = Date.now();
-            for (const [key, item] of this.cache.entries()) {
-                if (now - item.timestamp > this.ttl) {
-                    this.cache.delete(key);
-                }
-            }
-        }, Math.min(ttl, 300000));
-        if (this.cleanupInterval.unref) this.cleanupInterval.unref();
-    }
-
-    get(key) {
-        const item = this.cache.get(key);
-        if (!item) return undefined;
-        if (Date.now() - item.timestamp > this.ttl) {
-            this.cache.delete(key);
-            return undefined;
-        }
-        this.cache.delete(key);
-        this.cache.set(key, item);
-        return item.data;
-    }
-
-    set(key, data) {
-        if (this.cache.has(key)) {
-            this.cache.delete(key);
-        } else if (this.cache.size >= this.max) {
-            const oldestKey = this.cache.keys().next().value;
-            if (oldestKey !== undefined) this.cache.delete(oldestKey);
-        }
-        this.cache.set(key, { timestamp: Date.now(), data });
-    }
-
-    invalidate(key) {
-        this.cache.delete(key);
-    }
-
-    clear() {
-        this.cache.clear();
-    }
-}
-
-export const orchestratorCache = new LRUMemoryCache(1500, 3600000);
+import { getOrchestratorCache } from '../utils/cacheManager.js';
 
 /**
  * Service utama untuk arsitektur Thin Client (Server-Driven).
@@ -62,6 +9,7 @@ export const orchestratorCache = new LRUMemoryCache(1500, 3600000);
  * dan mengembalikan struktur data bersih siap render.
  */
 export async function getUnifiedAnimeEpisodes({ targetUrl, slug, id, forceRefresh = false, providerUrls = {} }) {
+    const orchestratorCache = getOrchestratorCache();
     let queryUrl = targetUrl;
     if (typeof queryUrl === 'string' && queryUrl.includes('___neosatsu_ep___')) {
         queryUrl = queryUrl.split('___neosatsu_ep___')[0];
