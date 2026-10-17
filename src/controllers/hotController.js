@@ -1,5 +1,4 @@
-import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
+import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCache } from '../utils/cacheManager.js';
 import { cleanSeriesTitle } from '../utils/stringUtils.js';
@@ -20,12 +19,13 @@ export async function getHotAnime() {
 
     console.log(`\n[HotAnime Fetch] ${url}`);
 
-    let slot;
     try {
-        const fetchRes = await fetchWithCF(url, { fetchTimeout: 6000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-        const html = fetchRes.html;
+        const response = await axios.get(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+            timeout: 8000
+        });
+        const html = response.data;
+        const $ = cheerio.load(html);
 
         if (html === '404_NOT_FOUND') {
             return { list: [] };
@@ -67,7 +67,5 @@ export async function getHotAnime() {
 
     } catch (err) {
         throw err;
-    } finally {
-        if (slot) releaseToPool(slot);
-    }
+    } finally {}
 }

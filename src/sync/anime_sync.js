@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 import { releaseToPool } from '../puppeteer/pool.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
+import axios from 'axios';
 import Anime from '../models/Anime.js'; // Model MongoDB
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
@@ -60,8 +60,11 @@ export async function runSync(isInitial = false) {
             let itemCount = 0;
 
             try {
-                fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
-                slot = fetchRes?.slot;
+                const res = await axios.get(url, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+                    timeout: 15000
+                });
+                fetchRes = { html: res.data, $: cheerio.load(res.data), slot: null };
 
                 if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) {
                     if (fetchRes && fetchRes.html === '404_NOT_FOUND') {

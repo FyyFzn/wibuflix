@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { releaseToPool } from '../../puppeteer/pool.js';
-import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../../utils/cacheManager.js';
 import Anime from '../../models/Anime.js';
@@ -97,11 +96,14 @@ export async function getNimegamiServers(episodeUrl) {
 
     // 2. Jika tidak ada di cache, fetch ulang halaman
     if (!streamData) {
-        let slot;
         try {
-            const fetchRes = await fetchWithCF(baseUrl, { fetchTimeout: 10000 });
-            slot = fetchRes.slot;
-            const $ = fetchRes.$;
+            const response = await axios.get(baseUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                },
+                timeout: 10000
+            });
+            const $ = cheerio.load(response.data);
 
             if (targetEpNum) {
                 // Cari li dengan id yang tepat

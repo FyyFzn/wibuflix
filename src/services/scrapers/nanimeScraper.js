@@ -51,18 +51,7 @@ export async function fetchNanimeInertia(url) {
         if (err.response?.status === 409 || err.response?.status === 403 || err.response?.status >= 500 || !globalInertiaVersion) {
             console.log(`[Inertia Fallback] Terjadi error ${err.response?.status || 'Unknown'} pada ${url}. Mengambil HTML via Puppeteer...`);
             let html = '';
-            try {
-                const { fetchWithCF } = await import('../../utils/scrapeHelper.js');
-                const fetchRes = await fetchWithCF(url, { forcePuppeteer: true, timeout: 30000 });
-                html = fetchRes.html;
-                if (fetchRes.slot) {
-                    const { releaseToPool } = await import('../../puppeteer/pool.js');
-                    releaseToPool(fetchRes.slot);
-                }
-            } catch (fallbackErr) {
-                console.error(`[Inertia Fallback Error] Gagal mengambil HTML via Puppeteer: ${fallbackErr.message}`);
-                throw err;
-            }
+            throw err;
 
             const match = html.match(/data-page="([^"]+)"/) || html.match(/data-page='([^']+)'/);
             if (match && match[1]) {

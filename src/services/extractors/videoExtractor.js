@@ -1,5 +1,4 @@
 import { acquireFromPool, releaseToPool, getCfCookie, refreshCfCookie, globalUserAgent } from '../../puppeteer/pool.js';
-import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { extractIframeSrc, namaServer, recordIframeReferer, getExtractorReferer } from './providers/utils.js';
@@ -76,10 +75,12 @@ export async function scrapeVideoServers(targetUrl) {
 
     let slot;
     try {
-        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 8000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-        const html = fetchRes.html;
+        const response = await axios.get(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+            timeout: 8000
+        });
+        const html = response.data;
+        const $ = cheerio.load(html);
 
         if (html === '404_NOT_FOUND') {
             throw new Error("Target URL returned 404");
@@ -324,10 +325,12 @@ export async function resolveSingleServer(targetUrl, nume, req) {
 
     let slot;
     try {
-        const fetchRes = await fetchWithCF(targetUrl, { fetchTimeout: 8000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-        const html = fetchRes.html;
+        const response = await axios.get(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+            timeout: 8000
+        });
+        const html = response.data;
+        const $ = cheerio.load(html);
 
         if (html === '404_NOT_FOUND') {
             throw new Error("Target URL returned 404");

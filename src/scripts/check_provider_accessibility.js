@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { fetchNanimeInertia } from '../services/scrapers/nanimeScraper.js';
 import { PROVIDER_LIST } from '../config/providerUrls.js';
@@ -101,10 +102,13 @@ export async function checkAllProvidersAccessibility() {
                 }
 
             } else {
-                // html-cf: Menggunakan fetchWithCF / Cloudflare bypass
-                let fetchRes = null;
+                                let fetchRes = null;
                 try {
-                    fetchRes = await fetchWithCF(provider.baseUrl, { timeout: 30000, fetchTimeout: 10000 });
+                    const res = await axios.get(provider.baseUrl, {
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+                        timeout: 15000
+                    });
+                    fetchRes = { html: res.data, $: cheerio.load(res.data) };
                 } catch (errCf) {
                     result.details = `CF Fetch Error: ${errCf.message}`;
                 } finally {

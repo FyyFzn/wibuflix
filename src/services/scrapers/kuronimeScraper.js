@@ -1,6 +1,5 @@
 import * as cheerio from 'cheerio';
 import axios from 'axios';
-import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import { releaseToPool } from '../../puppeteer/pool.js';
 import { fetchKuronimeSourcesFromHtml, mirrorToServers } from '../../utils/kuronimeDecryptor.js';
 import { getCache } from '../../utils/cacheManager.js';
@@ -59,26 +58,15 @@ export async function getKuronimeServers(episodeUrl) {
     let $, html, slot;
     let debugInfo = "OK";
     try {
-        // FAST ATTEMPT: Coba HTTP GET cepat lebih dulu menggunakan CF cookie dari pool tanpa membuka browser baru
-        try {
-            const fastRes = await fetchWithCF(episodeUrl, { timeout: 15000, fetchTimeout: 6000, forcePuppeteer: false });
-            if (fastRes?.html && !fastRes.html.includes('Just a moment') && !fastRes.html.includes('cf-browser-verification') && fastRes.html.includes('_0xa100d42aa')) {
-                console.log(`[Kuronime] ✓ Fast HTTP berhasil mendapatkan token dekripsi tanpa Puppeteer.`);
-                $ = fastRes.$;
-                html = fastRes.html;
-                slot = fastRes.slot;
-            }
-        } catch (fastErr) {
-            console.log(`[Kuronime] Fast HTTP membutuhkan Puppeteer fallback: ${fastErr.message}`);
-        }
-
-        // FALLBACK: Jika Fast HTTP gagal/blocked/missing token, gunakan Puppeteer page penuh
-        if (!html) {
-            const fetchRes = await fetchWithCF(episodeUrl, { timeout: 60000, fetchTimeout: 8000, forcePuppeteer: true });
-            $ = fetchRes.$;
-            html = fetchRes.html;
-            slot = fetchRes.slot;
-        }
+        const response = await axios.get(episodeUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            },
+            timeout: 15000
+        });
+        html = response.data;
+        $ = cheerio.load(html);
 
         if (!html) debugInfo = "HTML is entirely empty.";
         else if (html.includes('Just a moment') || html.includes('cf-browser-verification')) debugInfo = "Blocked by Cloudflare Captcha Page";

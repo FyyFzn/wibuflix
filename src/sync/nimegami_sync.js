@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import Anime from '../models/Anime.js';
 import { normalizeTitleForMatch, isSafeToMerge, cleanSeriesTitle } from '../utils/stringUtils.js';
-import { fetchWithCF } from '../utils/scrapeHelper.js';
+import axios from 'axios';
 import { releaseToPool } from '../puppeteer/pool.js';
 import { PROVIDER_URLS } from '../config/providerUrls.js';
 
@@ -33,7 +33,11 @@ export async function syncNimegami() {
 
             let fetchRes, currentSlot;
             try {
-                fetchRes = await fetchWithCF(url, { fetchTimeout: 30000 });
+                const res = await axios.get(url, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+                    timeout: 20000
+                });
+                fetchRes = { html: res.data, $: cheerio.load(res.data), slot: null };
                 currentSlot = fetchRes?.slot;
             } catch (err) {
                 log(`[NimegamiSync] Gagal memuat halaman ${page}:`, err.message);

@@ -2,7 +2,6 @@ import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { getCache } from '../../utils/cacheManager.js';
 import { cleanSeriesTitle, extractEpNum } from '../../utils/stringUtils.js';
-import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import { PROVIDER_URLS } from '../../config/providerUrls.js';
 
 const cache = getCache('episodes', 3600);
@@ -54,9 +53,14 @@ export async function getYlnimeServers(episodeUrl) {
     if (cached) return cached;
 
     try {
-        const fetchRes = await fetchWithCF(episodeUrl, { fetchTimeout: 20000 });
-        const data = fetchRes.html;
-        const $ = fetchRes.$;
+        const response = await axios.get(episodeUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 15000
+        });
+        const data = response.data;
+        const $ = cheerio.load(data);
         const servers = [];
 
         // Ambil judul episode dari title atau heading
@@ -131,7 +135,7 @@ export async function getYlnimeServers(episodeUrl) {
         });
 
         if (resoLinks.length > 0) {
-            const promises = resoLinks.map(link => fetchWithCF(link, { fetchTimeout: 15000 }).catch(() => null));
+            const promises = resoLinks.map(link => axios.get(link, { timeout: 15000 }).then(r => ({ html: r.data, $: cheerio.load(r.data) })).catch(() => null));
             const results = await Promise.all(promises);
             for (const res of results) {
                 if (res && res.html) {

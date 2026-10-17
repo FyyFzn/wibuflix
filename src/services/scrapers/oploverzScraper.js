@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { releaseToPool } from '../../puppeteer/pool.js';
-import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import * as cheerio from 'cheerio';
 import { getCache } from '../../utils/cacheManager.js';
 import { formatEpisodeTitle } from '../../utils/stringUtils.js';
@@ -48,14 +47,15 @@ export async function getOploverzServers(episodeUrl) {
     console.log(`[Oploverz Fast Fetch] Servers: ${episodeUrl}`);
     let slot;
     try {
-        const fetchRes = await fetchWithCF(episodeUrl, { fetchTimeout: 8000 });
-        slot = fetchRes.slot;
-        const $ = fetchRes.$;
-        const html = fetchRes.html;
-
-        if (html === '404_NOT_FOUND') {
-            throw new Error("Target URL returned 404");
-        }
+        const response = await axios.get(episodeUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            },
+            timeout: 10000
+        });
+        const html = response.data;
+        const $ = cheerio.load(html);
 
         let judul = $('h1').first().text().trim() || $('title').text().replace(/Oploverz/i, '').replace(/subtitle indonesia/i, '').trim();
         judul = formatEpisodeTitle(judul);

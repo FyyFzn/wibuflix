@@ -4,7 +4,6 @@ import pLimit from 'p-limit';
 import { OtakudesuInstance } from 'otakudesu-scraper';
 import Anime from '../../models/Anime.js';
 import { getCache } from '../../utils/cacheManager.js';
-import { fetchWithCF } from '../../utils/scrapeHelper.js';
 import { releaseToPool } from '../../puppeteer/pool.js';
 import { formatEpisodeTitle, extractEpNumStrict, cleanSeriesTitle } from '../../utils/stringUtils.js';
 import { assertAndRespondContract } from '../../utils/contractValidator.js';
@@ -262,9 +261,13 @@ export async function getServersInternal(url) {
     let slot = null;
     let $;
     try {
-        const fetchRes = await fetchWithCF(url, { fetchTimeout: 10000 });
-        slot = fetchRes.slot;
-        $ = fetchRes.$;
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 10000
+        });
+        $ = cheerio.load(response.data);
 
         const uniqueServers = await resolveOtakuServers($);
 
@@ -311,13 +314,15 @@ export async function getServersInternal(url) {
 export async function getOtakudesuLatestUpdates() {
     const { PROVIDER_URLS } = await import('../../config/providerUrls.js');
     const url = `${PROVIDER_URLS.OTAKUDESU.BASE_URL}/`;
-    let fetchRes, slot;
     const updates = [];
     try {
-        fetchRes = await fetchWithCF(url, { timeout: 60000, fetchTimeout: 10000 });
-        slot = fetchRes?.slot;
-        if (!fetchRes || fetchRes.html === '404_NOT_FOUND' || !fetchRes.html) return [];
-        const $ = fetchRes.$;
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            },
+            timeout: 15000
+        });
+        const $ = cheerio.load(response.data);
         $('.venz ul li').each((_, el) => {
             const title = $(el).find('.jdlflm').text().trim();
             const ep = $(el).find('.epz').text().trim();
