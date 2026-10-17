@@ -1,4 +1,5 @@
-import { getEpisodeServiceData, sanitizeContaminatedEpisodeCards } from './episodeService.js';
+import { getEpisodeServiceData } from './episodeService.js';
+import { sanitizeContaminatedEpisodeCards } from './episodeMerger.js';
 import Anime from '../models/Anime.js';
 import { cleanSeriesTitle, formatEpisodeTitle, extractEpNum, isOvaOrSpecialTitle } from '../utils/stringUtils.js';
 import { getOrchestratorCache } from '../utils/cacheManager.js';
