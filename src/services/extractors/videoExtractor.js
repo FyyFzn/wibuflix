@@ -8,7 +8,6 @@ import { PROVIDER_URLS } from '../../config/providerUrls.js';
 export { extractIframeSrc, namaServer };
 
 async function resolveServerIframe({ post, nume, type, episodeUrl }, req) {
-    console.log(`[DEBUG] resolveServerIframe called: post=${post} nume=${nume} type=${type} url=${episodeUrl}`);
     try {
         const SAMA_BASE = PROVIDER_URLS.SAMEHADAKU.BASE_URL;
         let resultText = '';
