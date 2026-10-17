@@ -28,18 +28,27 @@ export async function sendTelegramAlert(text) {
         return { success: false, reason: 'credentials_missing' };
     }
 
+    const payload = {
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true
+    };
+
     try {
         const url = `https://api.telegram.org/bot${token}/sendMessage`;
-        await axios.post(url, {
-            chat_id: chatId,
-            text,
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true
-        }, { timeout: 10000 });
-
+        await axios.post(url, payload, { timeout: 10000 });
         return { success: true };
     } catch (err) {
         const detail = err.response?.data?.description || err.message;
+        if (detail && detail.includes("can't parse entities")) {
+            try {
+                const url = `https://api.telegram.org/bot${token}/sendMessage`;
+                delete payload.parse_mode;
+                await axios.post(url, payload, { timeout: 10000 });
+                return { success: true };
+            } catch (fallbackErr) {}
+        }
         console.error(`[AIMonitor] Gagal mengirim pesan ke Telegram: ${detail}`);
         return { success: false, reason: detail };
     }
