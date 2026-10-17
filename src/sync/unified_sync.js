@@ -25,6 +25,7 @@ export async function syncUnified() {
 
         log(`[UnifiedSync] Ditemukan ${unenrichedAnimes.length} anime baru. Memproses pencarian TMDB...`);
 
+        const bulkOps = [];
         let enrichedCount = 0;
         for (const anime of unenrichedAnimes) {
             try {
@@ -98,50 +99,67 @@ export async function syncUnified() {
                     }
                     // =========================================================================
 
+                    const updateFields = {
+                        tmdbEnriched: true
+                    };
+
                     // Jangan timpa gambar jika gambar asli sudah bagus (kecuali placeholder)
                     if (!anime.image || anime.image.includes('placehold')) {
-                        anime.image = tmdbData.image;
+                        if (tmdbData.image) updateFields.image = tmdbData.image;
                     }
 
-                    anime.score = tmdbData.score && tmdbData.score !== '-' ? tmdbData.score : anime.score;
+                    if (tmdbData.score && tmdbData.score !== '-') {
+                        updateFields.score = tmdbData.score;
+                    }
 
                     // PENTING: Jangan timpa tipe jika itu adalah Tokusatsu
                     if (!anime.isToku && anime.type !== 'Toku') {
-                        anime.type = tmdbData.type || anime.type;
-                        anime.malId = tmdbData.malId || anime.malId;
+                        if (tmdbData.type) updateFields.type = tmdbData.type;
+                        if (tmdbData.malId) updateFields.malId = tmdbData.malId;
                     } else {
-                        anime.malId = null; // Pastikan Tokusatsu tidak memiliki malId
+                        updateFields.malId = null; // Pastikan Tokusatsu tidak memiliki malId
                     }
 
-                    anime.status = tmdbData.status && anime.status === '-' ? tmdbData.status : anime.status;
+                    if (tmdbData.status && anime.status === '-') {
+                        updateFields.status = tmdbData.status;
+                    }
 
                     // Simpan metadata lanjutan
                     if (tmdbData.synopsis && tmdbData.synopsis !== 'Sinopsis tidak tersedia di TMDB.' && tmdbData.synopsis !== 'Sinopsis tidak tersedia di Jikan.') {
-                        anime.synopsis = tmdbData.synopsis;
+                        updateFields.synopsis = tmdbData.synopsis;
                     }
                     if (tmdbData.genres && tmdbData.genres.length > 0) {
-                        anime.genres = tmdbData.genres;
+                        updateFields.genres = tmdbData.genres;
                     }
-                    anime.episodesCount = tmdbData.episodesCount || anime.episodesCount;
-                    anime.year = tmdbData.year || anime.year;
-                    if (!anime.isToku && anime.type !== 'Toku') {
-                        anime.malId = tmdbData.malId || anime.malId;
-                    } else {
-                        anime.malId = null;
+                    if (tmdbData.episodesCount) {
+                        updateFields.episodesCount = tmdbData.episodesCount;
                     }
-                    anime.malScore = tmdbData.score !== '-' ? tmdbData.score : anime.malScore;
+                    if (tmdbData.year) {
+                        updateFields.year = tmdbData.year;
+                    }
+                    if (tmdbData.score !== '-') {
+                        updateFields.malScore = tmdbData.score;
+                    }
 
                     // Gabungkan array alias untuk pencarian teks yang lebih tangguh
                     const mergedAliases = new Set([...anime.aliases, ...(tmdbData.aliases || [])]);
-                    anime.aliases = Array.from(mergedAliases).filter(Boolean);
+                    updateFields.aliases = Array.from(mergedAliases).filter(Boolean);
 
-                    anime.tmdbEnriched = true;
-                    await anime.save();
+                    bulkOps.push({
+                        updateOne: {
+                            filter: { _id: anime._id },
+                            update: { $set: updateFields }
+                        }
+                    });
                     enrichedCount++;
                 } else {
                     // Jika tidak ketemu di TMDB, tandai 'true' agar tidak dicek berulang-ulang pada siklus berikutnya
-                    anime.tmdbEnriched = true;
-                    await anime.save();
+                    bulkOps.push({
+                        updateOne: {
+                            filter: { _id: anime._id },
+                            update: { $set: { tmdbEnriched: true } }
+                        }
+                    });
                 }
             } catch (itemErr) {
                 if (itemErr.name === 'DocumentNotFoundError') {
@@ -154,6 +172,10 @@ export async function syncUnified() {
                     console.error(`[UnifiedSync] Error pada item "${anime.title}":`, itemErr.message);
                 }
             }
+        }
+
+        if (bulkOps.length > 0) {
+            await Anime.bulkWrite(bulkOps);
         }
 
         log(`[UnifiedSync] ✅ Berhasil memperbarui metadata ${enrichedCount} anime dari TMDB.`);
