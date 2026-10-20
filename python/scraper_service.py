@@ -138,8 +138,12 @@ def scrape_kuronime_latest():
 def scrape_kuronime_decrypt():
     body = request.get_json(silent=True) or {}
     token = body.get("token", "").strip()
+    request_id = body.get("requestId", "unknown")
+    
     if not token:
         return jsonify({"error": "Parameter 'token' wajib diisi"}), 400
+
+    log.info(f"[Kuronime] [{request_id}] Decrypt request received, token={token[:20]}...")
 
     try:
         with _session_lock:
@@ -154,9 +158,11 @@ def scrape_kuronime_decrypt():
                 timeout=15,
             )
         
+        log.info(f"[Kuronime] [{request_id}] First attempt: animeku.org returned {resp.status_code}")
+        
         # Retry dengan session baru jika 403 (cold session setelah restart)
         if resp.status_code == 403:
-            log.warning(f"[Kuronime] 403 dari animeku.org, reset session dan retry setelah 2s...")
+            log.warning(f"[Kuronime] [{request_id}] 403 dari animeku.org, reset session dan retry setelah 2s...")
             _force_reset_session()
             time.sleep(2)
             with _session_lock:
@@ -170,17 +176,19 @@ def scrape_kuronime_decrypt():
                     },
                     timeout=15,
                 )
+            log.info(f"[Kuronime] [{request_id}] Retry attempt: animeku.org returned {resp.status_code}")
         
         if resp.status_code != 200:
-            log.error(f"[Kuronime] Animeku returned status {resp.status_code}: {resp.text[:200]}")
+            log.error(f"[Kuronime] [{request_id}] Animeku returned status {resp.status_code}: {resp.text[:200]}")
             try:
                 return jsonify(resp.json()), resp.status_code
             except Exception:
                 return jsonify({"error": f"Animeku returned status {resp.status_code}"}), 502
 
+        log.info(f"[Kuronime] [{request_id}] Success: returning decrypted sources")
         return jsonify(resp.json()), 200
     except Exception as e:
-        log.error(f"[Kuronime] Gagal menghubungi animeku.org: {e}")
+        log.error(f"[Kuronime] [{request_id}] Gagal menghubungi animeku.org: {e}")
         return jsonify({"error": str(e)}), 502
 
 

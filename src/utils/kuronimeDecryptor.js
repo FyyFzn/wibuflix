@@ -55,19 +55,22 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
         console.log('[KuronimeDecryptor] Token _0xa100d42aa tidak ditemukan di halaman.');
         return null;
     }
-    console.log(`[KuronimeDecryptor] Token ditemukan: ${token.substring(0, 20)}...`);
+    
+    const requestId = `kr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`[KuronimeDecryptor] [${requestId}] Token ditemukan: ${token.substring(0, 20)}...`);
 
     let apiResp;
     try {
         const SCRAPER_BASE = `http://localhost:${process.env.SCRAPER_PORT || 5001}`;
         const res = await axios.post(
             `${SCRAPER_BASE}/scrape/kuronime/decrypt`,
-            { token },
+            { token, requestId },
             { timeout: 20000 }
         );
         apiResp = res.data;
+        console.log(`[KuronimeDecryptor] [${requestId}] Python response received (status ${res.status})`);
     } catch (err) {
-        console.error(`[KuronimeDecryptor] Python curl_cffi proxy gagal: ${err.message}`);
+        console.error(`[KuronimeDecryptor] [${requestId}] Python curl_cffi proxy gagal: ${err.message}`);
         return null;
     }
 
