@@ -37,7 +37,7 @@ cloudscraper_session = cloudscraper.create_scraper(
 )
 
 # Domain whitelist that requires cloudscraper instead of curl_cffi
-CLOUDSCRAPER_DOMAINS = ['samehadaku', 'animeku']
+CLOUDSCRAPER_DOMAINS = ['samehadaku', 'animeku', 'ylnime']
 
 
 def _reset_session():
