@@ -129,7 +129,7 @@ export class ProviderRegistry {
         };
     }
 
-    static async fetchEpisodes(url, timeoutMs = 20000) {
+    static async fetchEpisodes(url, timeoutMs = 40000) {
         await ensurePluginsLoaded();
         const plugin = findPluginForUrl(url);
         if (plugin?.scrapeEpisodes) {
