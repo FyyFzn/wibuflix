@@ -41,6 +41,11 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="[ScraperService] %(message)s")
 log = logging.getLogger(__name__)
 
+# Cloudscraper instance for animeku.org API (bypasses Cloudflare)
+_animeku_scraper = cloudscraper.create_scraper(
+    browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+)
+
 
 @app.route("/health", methods=["GET"])
 def health():
