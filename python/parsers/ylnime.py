@@ -3,6 +3,7 @@ parsers/ylnime.py
 Tanggung jawab tunggal: Mem-parsing halaman HTML YLnime (series dan latest updates) menjadi struktur data dictionary.
 """
 
+import json
 import re
 from bs4 import BeautifulSoup
 
@@ -115,3 +116,114 @@ def parse_latest(html: str) -> list:
         updates.append({"judul": title, "status": status, "url": full_url})
 
     return updates
+
+
+def parse_episode(html: str, episode_url: str) -> dict:
+    """
+    Parsing halaman episode YLnime.
+    Mengekstrak data streams dari JavaScript (const streams = [...]).
+    Mengembalikan: { judul, servers: [{nama, url, type, namaHost, provider}] }
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Ambil judul episode dari heading atau title
+    raw_title = soup.select_one("h1, h2")
+    if raw_title:
+        judul = raw_title.get_text(strip=True)
+    elif soup.title:
+        judul = re.sub(r"[-|].*$", "", soup.title.get_text(strip=True)).strip()
+    else:
+        judul = "Episode"
+
+    servers = []
+    seen_urls = set()
+
+    for script in soup.find_all("script"):
+        code = script.string or script.get_text() or ""
+        if "const streams =" in code:
+            m = re.search(r"const\s+streams\s*=\s*(\[.*?\]);", code, re.DOTALL)
+            if m:
+                try:
+                    streams_json = json.loads(m.group(1))
+                    for s in streams_json:
+                        link = s.get("link", "")
+                        if not link or link in seen_urls:
+                            continue
+                        seen_urls.add(link)
+
+                        reso = s.get("reso", "")
+                        if ".mp4" in link:
+                            stream_type = "mp4"
+                        elif ".m3u8" in link:
+                            stream_type = "hls"
+                        else:
+                            stream_type = "iframe"
+
+                        nama = f"YLnime {reso}".strip()
+                        nama_host = "YLnime Stream"
+
+                        if "pixeldrain" in link or "pxl" in link:
+                            nama = f"Pixeldrain {reso}".strip()
+                            nama_host = "Pixeldrain"
+                            stream_type = "iframe"
+
+                        servers.append({
+                            "nama": nama,
+                            "url": link,
+                            "type": stream_type,
+                            "namaHost": nama_host,
+                            "provider": "ylnime"
+                        })
+                except Exception:
+                    pass
+
+    # Fallback jika tidak ada const streams: cek iframe dan video
+    if not servers:
+        for iframe in soup.find_all("iframe"):
+            src = iframe.get("src") or iframe.get("data-src") or ""
+            if src and src not in seen_urls:
+                seen_urls.add(src)
+                full_src = src if src.startswith("http") else f"https:{src}"
+                servers.append({
+                    "nama": f"Server {len(servers) + 1}",
+                    "url": full_src,
+                    "type": "iframe",
+                    "namaHost": "YLnime Embed",
+                    "provider": "ylnime"
+                })
+
+        for video in soup.find_all("video"):
+            src = video.get("src") or ""
+            if src and src not in seen_urls:
+                seen_urls.add(src)
+                servers.append({
+                    "nama": f"Direct {len(servers) + 1}",
+                    "url": src,
+                    "type": "direct",
+                    "namaHost": "Direct",
+                    "provider": "ylnime"
+                })
+
+    return {
+        "judul": judul,
+        "servers": servers
+    }
+
+
+def find_episode_link(html: str, target_num: int) -> str | None:
+    """
+    Mencari URL episode asli (&episode=al-XXXXX-N) dari HTML halaman seri
+    berdasarkan target nomor episode.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a"):
+        href = a.get("href", "")
+        m_link = re.search(r"episode=[^&]+-(\d+)", href)
+        if m_link and int(m_link.group(1)) == target_num:
+            if href.startswith("?"):
+                return f"https://ylnime.com/index.php{href}"
+            elif href.startswith("http"):
+                return href
+            else:
+                return f"https://ylnime.com/{href.lstrip('/')}"
+    return None
