@@ -397,17 +397,7 @@ export async function extractVideoUrl(embedUrl, req) {
             referer = 'https://animeverse.id/';
             userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
             
-            cookieStr = getCfCookie('s3.animeverse.id') || getCfCookie('animeverse.id');
-            if (!cookieStr) {
-                console.log(`[VideoExtractor] Mengambil cookie CF (Puppeteer) untuk animeverse.id (YLnime)...`);
-                try {
-                    const originUrl = new URL(embedUrl).origin + '/';
-                    await refreshCfCookie(originUrl);
-                    cookieStr = getCfCookie('s3.animeverse.id') || getCfCookie('animeverse.id');
-                } catch (e) {
-                    console.error('[VideoExtractor] Gagal memancing cookie CF untuk YLnime:', e.message);
-                }
-            }
+            // Note: animeverse.id S3 bucket URLs work with referer + UA only; no CF cookies needed
         } else if (embedUrl.includes('animeku.org')) {
             referer = 'https://animeku.org/';
         }
