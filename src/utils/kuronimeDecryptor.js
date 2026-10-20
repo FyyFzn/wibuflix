@@ -1,7 +1,5 @@
 import crypto from 'crypto';
 import axios from 'axios';
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-import { PROVIDER_URLS } from '../config/providerUrls.js';
 
 const KURONIME_PASSPHRASE = '3&!Z0M,VIZ;dZW==';
 
@@ -61,51 +59,16 @@ export async function fetchKuronimeSourcesFromHtml(html, page = null) {
 
     let apiResp;
     try {
+        const SCRAPER_BASE = `http://localhost:${process.env.SCRAPER_PORT || 5001}`;
         const res = await axios.post(
-            `${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`,
-            { id: token },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Referer': `${PROVIDER_URLS.KURONIME.BASE_URL}/`,
-                    'Origin': `${PROVIDER_URLS.KURONIME.BASE_URL}`,
-                    'User-Agent': DEFAULT_USER_AGENT
-                },
-                timeout: 10000
-            }
+            `${SCRAPER_BASE}/scrape/kuronime/decrypt`,
+            { token },
+            { timeout: 20000 }
         );
         apiResp = res.data;
     } catch (err) {
-        console.warn('[KuronimeDecryptor] Axios di-blokir oleh CDN (403), mencoba ulang dengan CF cookie dari store...');
-
-        // Fast-fail: jika animeku.org sedang dalam Circuit Breaker cooldown, lewati langsung.
-        const { circuitBreaker } = await import('./circuitBreaker.js');
-        if (!circuitBreaker.canExecute(PROVIDER_URLS.ANIMEKU.BASE_URL).allowed) {
-            console.warn('[KuronimeDecryptor] animeku.org circuit OPEN — skip retry, langsung fallback ke mirror server.');
-            return null;
-        }
-
-        try {
-            const retryRes = await axios.post(
-                `${PROVIDER_URLS.ANIMEKU.BASE_URL}/api/v9/sources`,
-                { id: token },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Referer': `${PROVIDER_URLS.KURONIME.BASE_URL}/`,
-                        'Origin': `${PROVIDER_URLS.KURONIME.BASE_URL}`,
-                        'User-Agent': DEFAULT_USER_AGENT
-                    },
-                    timeout: 12000
-                }
-            );
-            circuitBreaker.recordSuccess(PROVIDER_URLS.ANIMEKU.BASE_URL);
-            apiResp = retryRes.data;
-        } catch (retryErr) {
-            circuitBreaker.recordFailure(PROVIDER_URLS.ANIMEKU.BASE_URL, retryErr);
-            console.error('[KuronimeDecryptor] Retry dengan CF cookie juga gagal:', retryErr.message);
-            return null;
-        }
+        console.error(`[KuronimeDecryptor] Python curl_cffi proxy gagal: ${err.message}`);
+        return null;
     }
 
     try {
