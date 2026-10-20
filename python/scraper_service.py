@@ -152,8 +152,23 @@ def scrape_kuronime_decrypt():
     log.info(f"[Kuronime] [{request_id}] Decrypt request received, token={token[:20]}...")
 
     try:
-        with _session_lock:
-            resp = _session.post(
+        resp = _animeku_scraper.post(
+            "https://animeku.org/api/v9/sources",
+            json={"id": token},
+            headers={
+                "Content-Type": "application/json",
+                "Referer": "https://kuronime.sbs/",
+                "Origin": "https://kuronime.sbs",
+            },
+            timeout=15,
+        )
+        
+        log.info(f"[Kuronime] [{request_id}] First attempt: animeku.org returned {resp.status_code}")
+        
+        # Retry jika 403
+        if resp.status_code == 403:
+            log.warning(f"[Kuronime] [{request_id}] 403 dari animeku.org, retry...")
+            resp = _animeku_scraper.post(
                 "https://animeku.org/api/v9/sources",
                 json={"id": token},
                 headers={
@@ -163,25 +178,6 @@ def scrape_kuronime_decrypt():
                 },
                 timeout=15,
             )
-        
-        log.info(f"[Kuronime] [{request_id}] First attempt: animeku.org returned {resp.status_code}")
-        
-        # Retry dengan session baru jika 403 (cold session setelah restart)
-        if resp.status_code == 403:
-            log.warning(f"[Kuronime] [{request_id}] 403 dari animeku.org, reset session dan retry setelah 2s...")
-            _force_reset_session()
-            time.sleep(2)
-            with _session_lock:
-                resp = _session.post(
-                    "https://animeku.org/api/v9/sources",
-                    json={"id": token},
-                    headers={
-                        "Content-Type": "application/json",
-                        "Referer": "https://kuronime.sbs/",
-                        "Origin": "https://kuronime.sbs",
-                    },
-                    timeout=15,
-                )
             log.info(f"[Kuronime] [{request_id}] Retry attempt: animeku.org returned {resp.status_code}")
         
         if resp.status_code != 200:
