@@ -25,7 +25,7 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BASE_DIR not in sys.path:
     sys.path.insert(0, _BASE_DIR)
 
-from fetcher import fetch_html, _session, _session_lock, _force_reset_session
+from fetcher import fetch_html, cloudscraper_session
 from parsers.samehadaku import parse_series as parse_samehadaku_series
 from parsers.samehadaku import parse_latest as parse_samehadaku_latest
 from parsers.kuronime import parse_series as parse_kuronime_series
@@ -40,11 +40,6 @@ from parsers.ylnime import parse_latest as parse_ylnime_latest
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="[ScraperService] %(message)s")
 log = logging.getLogger(__name__)
-
-# Cloudscraper instance for animeku.org API (bypasses Cloudflare)
-_animeku_scraper = cloudscraper.create_scraper(
-    browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
-)
 
 
 @app.route("/health", methods=["GET"])
@@ -152,7 +147,7 @@ def scrape_kuronime_decrypt():
     log.info(f"[Kuronime] [{request_id}] Decrypt request received, token={token[:20]}...")
 
     try:
-        resp = _animeku_scraper.post(
+        resp = cloudscraper_session.post(
             "https://animeku.org/api/v9/sources",
             json={"id": token},
             headers={

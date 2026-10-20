@@ -10,6 +10,7 @@ import logging
 import threading
 import time
 from curl_cffi import requests as cf_requests
+import cloudscraper
 
 # Pastikan folder python ada di sys.path
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,6 +30,14 @@ _SESSION_TTL = 2 * 60 * 60  # 2 hours
 # Proxy dari env (sama dengan PROXY_URL di Node scrapeHelper.js)
 _PROXY_URL = os.environ.get("PROXY_URL", "").strip() or None
 _proxies = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
+
+# Cloudscraper instance (bypasses Cloudflare better than curl_cffi for certain sites)
+cloudscraper_session = cloudscraper.create_scraper(
+    browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+)
+
+# Domain whitelist that requires cloudscraper instead of curl_cffi
+CLOUDSCRAPER_DOMAINS = ['samehadaku', 'animeku']
 
 
 def _reset_session():
@@ -53,15 +62,24 @@ def _force_reset_session():
 
 
 def fetch_html(url: str) -> str:
-    """Ambil HTML dari URL menggunakan curl_cffi dengan impersonasi Chrome dan session persisten.
-    Domain tertentu (samehadaku, ylnime, kuronime, animeku) langsung menggunakan proxy jika tersedia.
-    Domain lain: retry via proxy hanya jika gagal 403.
-    Jika 403 tanpa proxy, retry dengan session baru setelah delay singkat."""
+    """Ambil HTML dari URL. Gunakan cloudscraper untuk domain yang di-whitelist (Cloudflare agresif),
+    gunakan curl_cffi untuk domain lainnya (lebih cepat).
+    Domain tertentu (ylnime, kuronime) langsung menggunakan proxy jika tersedia."""
     log.info(f"Fetching: {url}")
     
-    # Domain yang langsung pakai proxy (sama seperti Node scrapeHelper.js)
     url_lower = url.lower()
-    use_proxy = _proxies and any(domain in url_lower for domain in ['samehadaku', 'ylnime', 'kuronime', 'animeku'])
+    
+    # Check if domain requires cloudscraper (aggressive Cloudflare)
+    use_cloudscraper = any(domain in url_lower for domain in CLOUDSCRAPER_DOMAINS)
+    
+    if use_cloudscraper:
+        log.info(f"Using cloudscraper for {url}")
+        resp = cloudscraper_session.get(url, timeout=TIMEOUT, allow_redirects=True)
+        resp.raise_for_status()
+        return resp.text
+    
+    # Default: curl_cffi with proxy logic
+    use_proxy = _proxies and any(domain in url_lower for domain in ['ylnime', 'kuronime'])
     
     with _session_lock:
         resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True, 
@@ -73,8 +91,7 @@ def fetch_html(url: str) -> str:
         with _session_lock:
             resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True, proxies=_proxies)
 
-    # Retry dengan session baru jika 403 tanpa proxy —
-    # cold session setelah restart sering kena CF, session baru + delay biasanya lolos
+    # Retry dengan session baru jika 403 tanpa proxy
     if resp.status_code == 403 and not _proxies:
         log.warning(f"403 dari {url}, reset session dan retry setelah 2s...")
         _force_reset_session()
