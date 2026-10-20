@@ -18,6 +18,7 @@ import re
 import logging
 import time
 from flask import Flask, request, jsonify
+import cloudscraper
 
 # Pastikan folder python ada di sys.path
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
