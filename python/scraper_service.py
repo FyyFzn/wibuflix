@@ -36,6 +36,7 @@ from parsers.nimegami import parse_series as parse_nimegami_series
 from parsers.nimegami import parse_latest as parse_nimegami_latest
 from parsers.ylnime import parse_series as parse_ylnime_series
 from parsers.ylnime import parse_latest as parse_ylnime_latest
+from parsers.ylnime import parse_episode as parse_ylnime_episode, find_episode_link as find_ylnime_episode_link
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="[ScraperService] %(message)s")
@@ -285,6 +286,37 @@ def scrape_ylnime_latest():
         return jsonify({"error": str(e)}), 502
     except Exception as e:
         log.error(f"Error scraping ylnime latest {url}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/scrape/ylnime/episode", methods=["POST"])
+def scrape_ylnime_episode():
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Parameter 'url' wajib diisi"}), 400
+    try:
+        html = fetch_html(url)
+        result = parse_ylnime_episode(html, url)
+        if not result["servers"]:
+            m_ep = re.search(r"[?&]ep=(\d+)", url)
+            if m_ep:
+                target_num = int(m_ep.group(1))
+                real_url = find_ylnime_episode_link(html, target_num)
+                if real_url:
+                    try:
+                        ep_html = fetch_html(real_url)
+                        result = parse_ylnime_episode(ep_html, real_url)
+                    except Exception as e_res:
+                        log.warning(f"Gagal fetch resolved YLnime URL {real_url}: {e_res}")
+        if not result["servers"]:
+            log.warning(f"Tidak ada server ditemukan untuk: {url}")
+        return jsonify(result), 200
+    except RuntimeError as e:
+        log.error(str(e))
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        log.error(f"Error scraping ylnime episode {url}: {e}")
         return jsonify({"error": str(e)}), 500
 
 
