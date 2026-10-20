@@ -23,7 +23,7 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BASE_DIR not in sys.path:
     sys.path.insert(0, _BASE_DIR)
 
-from fetcher import fetch_html
+from fetcher import fetch_html, _session, _session_lock
 from parsers.samehadaku import parse_series as parse_samehadaku_series
 from parsers.samehadaku import parse_latest as parse_samehadaku_latest
 from parsers.kuronime import parse_series as parse_kuronime_series
@@ -131,6 +131,38 @@ def scrape_kuronime_latest():
     except Exception as e:
         log.error(f"Error scraping kuronime latest {url}: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/scrape/kuronime/decrypt", methods=["POST"])
+def scrape_kuronime_decrypt():
+    body = request.get_json(silent=True) or {}
+    token = body.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "Parameter 'token' wajib diisi"}), 400
+
+    try:
+        with _session_lock:
+            resp = _session.post(
+                "https://animeku.org/api/v9/sources",
+                json={"id": token},
+                headers={
+                    "Content-Type": "application/json",
+                    "Referer": "https://kuronime.sbs/",
+                    "Origin": "https://kuronime.sbs",
+                },
+                timeout=15,
+            )
+        if resp.status_code != 200:
+            log.error(f"[Kuronime] Animeku returned status {resp.status_code}: {resp.text[:200]}")
+            try:
+                return jsonify(resp.json()), resp.status_code
+            except Exception:
+                return jsonify({"error": f"Animeku returned status {resp.status_code}"}), 502
+
+        return jsonify(resp.json()), 200
+    except Exception as e:
+        log.error(f"[Kuronime] Gagal menghubungi animeku.org: {e}")
+        return jsonify({"error": str(e)}), 502
 
 
 # ── Oploverz ─────────────────────────────────────────────────────────────────
