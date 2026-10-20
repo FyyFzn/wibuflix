@@ -44,10 +44,19 @@ _reset_thread = threading.Thread(target=_reset_session, daemon=True)
 _reset_thread.start()
 
 
+def _force_reset_session():
+    """Reset session di tempat — membuat TLS fingerprint dan cookie jar baru."""
+    global _session
+    with _session_lock:
+        _session = cf_requests.Session(impersonate=IMPERSONATE)
+    log.info("curl_cffi session di-reset paksa (retry setelah 403/CF).")
+
+
 def fetch_html(url: str) -> str:
     """Ambil HTML dari URL menggunakan curl_cffi dengan impersonasi Chrome dan session persisten.
     Domain tertentu (samehadaku, ylnime, kuronime, animeku) langsung menggunakan proxy jika tersedia.
-    Domain lain: retry via proxy hanya jika gagal 403."""
+    Domain lain: retry via proxy hanya jika gagal 403.
+    Jika 403 tanpa proxy, retry dengan session baru setelah delay singkat."""
     log.info(f"Fetching: {url}")
     
     # Domain yang langsung pakai proxy (sama seperti Node scrapeHelper.js)
@@ -64,10 +73,21 @@ def fetch_html(url: str) -> str:
         with _session_lock:
             resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True, proxies=_proxies)
 
+    # Retry dengan session baru jika 403 tanpa proxy —
+    # cold session setelah restart sering kena CF, session baru + delay biasanya lolos
+    if resp.status_code == 403 and not _proxies:
+        log.warning(f"403 dari {url}, reset session dan retry setelah 2s...")
+        _force_reset_session()
+        time.sleep(2)
+        with _session_lock:
+            resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True)
+
     resp.raise_for_status()
     html = resp.text
     if is_cf_challenge(html):
-        log.warning(f"CF challenge terdeteksi, retry sekali untuk {url}")
+        log.warning(f"CF challenge terdeteksi, reset session dan retry untuk {url}")
+        _force_reset_session()
+        time.sleep(2)
         with _session_lock:
             resp = _session.get(url, timeout=TIMEOUT, allow_redirects=True,
                                 proxies=_proxies if _proxies else None)
