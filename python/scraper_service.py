@@ -16,6 +16,7 @@ import os
 import sys
 import re
 import logging
+import time
 from flask import Flask, request, jsonify
 
 # Pastikan folder python ada di sys.path
@@ -23,7 +24,7 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BASE_DIR not in sys.path:
     sys.path.insert(0, _BASE_DIR)
 
-from fetcher import fetch_html, _session, _session_lock
+from fetcher import fetch_html, _session, _session_lock, _force_reset_session
 from parsers.samehadaku import parse_series as parse_samehadaku_series
 from parsers.samehadaku import parse_latest as parse_samehadaku_latest
 from parsers.kuronime import parse_series as parse_kuronime_series
@@ -152,6 +153,24 @@ def scrape_kuronime_decrypt():
                 },
                 timeout=15,
             )
+        
+        # Retry dengan session baru jika 403 (cold session setelah restart)
+        if resp.status_code == 403:
+            log.warning(f"[Kuronime] 403 dari animeku.org, reset session dan retry setelah 2s...")
+            _force_reset_session()
+            time.sleep(2)
+            with _session_lock:
+                resp = _session.post(
+                    "https://animeku.org/api/v9/sources",
+                    json={"id": token},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Referer": "https://kuronime.sbs/",
+                        "Origin": "https://kuronime.sbs",
+                    },
+                    timeout=15,
+                )
+        
         if resp.status_code != 200:
             log.error(f"[Kuronime] Animeku returned status {resp.status_code}: {resp.text[:200]}")
             try:
