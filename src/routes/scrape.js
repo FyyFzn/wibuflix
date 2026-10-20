@@ -1,6 +1,5 @@
 import express from 'express';
 import { scrapeVideoServers, resolveSingleServer } from '../services/extractors/videoExtractor.js';
-import * as otakudesu from '../services/scrapers/otakudesuScraper.js';
 import { assertAndRespondContract } from '../utils/contractValidator.js';
 import { ProviderRegistry } from '../services/ProviderRegistry.js';
 
@@ -66,8 +65,9 @@ router.get('/api/scrape', async (req, res) => {
         // Coba cari alternatif di Otakudesu (Fuzzy Search Fallback)
         if (seriesTitle && episodeTitle && (!data.servers || data.servers.length === 0)) {
             try {
-                if (typeof otakudesu.getAlternativeServers === 'function') {
-                    const otakuServers = await otakudesu.getAlternativeServers(seriesTitle, episodeTitle);
+                const otaku = await ProviderRegistry.getProviderById('otakudesu');
+                if (otaku && typeof otaku.getAlternativeServers === 'function') {
+                    const otakuServers = await otaku.getAlternativeServers(seriesTitle, episodeTitle);
                     if (otakuServers && otakuServers.length > 0) {
                         const labeledOtaku = otakuServers.map(s => ({ ...s, source: 'Otakudesu' }));
                         data.servers = [...(data.servers || []), ...labeledOtaku];

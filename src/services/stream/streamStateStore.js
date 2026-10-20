@@ -1,4 +1,5 @@
 import { getCache } from '../../utils/cacheManager.js';
+import { cleanTempFilesAsync } from '../../utils/tempFileCleanupWorker.js';
 
 class BoundedLRUMap extends Map {
     constructor(maxSize = 200, defaultTTLMs = 7200000, onEvict = null) {
@@ -96,7 +97,7 @@ export const activeUploadControllers = new BoundedLRUMap(100, 7200000, (key, val
             try { ctrl.abort(); } catch(e) {}
         }
         if (val.tempFilePath || val.hlsOutputDir) {
-            import('./uploadProgressService.js').then(m => m.cleanTempFilesAsync(val.tempFilePath, val.hlsOutputDir)).catch(() => {});
+            cleanTempFilesAsync(val.tempFilePath, val.hlsOutputDir).catch(() => {});
         }
     }
 }); // max 100 items, 2 jam TTL, auto abort & cleanup saat evict

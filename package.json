@@ -11,7 +11,9 @@
     "check:deep": "node src/scripts/check_provider_deep_extraction.js",
     "test": "node --test src/tests/*.test.js",
     "test:webs": "node --test src/tests/provider_accessibility_contract.test.js",
-    "test:nimegami": "node scratch/test-nimegami-ep.js"
+    "test:nimegami": "node scratch/test-nimegami-ep.js",
+    "lint:arch": "depcruise src --config .dependency-cruiser.cjs",
+    "lint:security": "semgrep scan --config p/javascript src/ --metrics=off"
   },
   "keywords": [],
   "author": "",
@@ -32,5 +34,8 @@
     "otakudesu-scraper": "^1.2.0",
     "p-limit": "^7.3.0",
     "string-similarity": "^4.0.4"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "^18.7.0"
   }
 }
