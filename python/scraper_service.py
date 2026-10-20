@@ -163,22 +163,7 @@ def scrape_kuronime_decrypt():
             timeout=15,
         )
         
-        log.info(f"[Kuronime] [{request_id}] First attempt: animeku.org returned {resp.status_code}")
-        
-        # Retry jika 403
-        if resp.status_code == 403:
-            log.warning(f"[Kuronime] [{request_id}] 403 dari animeku.org, retry...")
-            resp = _animeku_scraper.post(
-                "https://animeku.org/api/v9/sources",
-                json={"id": token},
-                headers={
-                    "Content-Type": "application/json",
-                    "Referer": "https://kuronime.sbs/",
-                    "Origin": "https://kuronime.sbs",
-                },
-                timeout=15,
-            )
-            log.info(f"[Kuronime] [{request_id}] Retry attempt: animeku.org returned {resp.status_code}")
+        log.info(f"[Kuronime] [{request_id}] animeku.org returned {resp.status_code}")
         
         if resp.status_code != 200:
             log.error(f"[Kuronime] [{request_id}] Animeku returned status {resp.status_code}: {resp.text[:200]}")
