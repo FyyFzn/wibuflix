@@ -53,181 +53,45 @@ export async function getYlnimeServers(episodeUrl) {
     if (cached) return cached;
 
     try {
-        const response = await axios.get(episodeUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-            },
-            timeout: 15000
-        });
-        const data = response.data;
-        const $ = cheerio.load(data);
-        const servers = [];
+        const { data } = await axios.post(
+            `${SCRAPER_BASE}/scrape/ylnime/episode`,
+            { url: episodeUrl },
+            { timeout: 35000 }
+        );
+        
+        if (!data || !data.servers || data.servers.length === 0) {
+            console.warn(`[YLnime] Tidak ada server ditemukan untuk ${episodeUrl}`);
+            return { judul: data?.judul || 'Episode', servers: [], nav_prev: null, nav_next: null };
+        }
 
-        // Ambil judul episode dari title atau heading
-        let judulEpisode = $('h1, h2').first().text().trim() ||
-            $('title').text().replace(/[-|].*$/, '').trim() ||
-            'Episode';
+        // Normalize server structure to match expected format
+        const servers = data.servers.map((s, idx) => ({
+            ...s,
+            nume: s.nume || `${idx + 1}`,
+            id: s.id || `${idx + 1}`,
+            post: s.post || '',
+            tipe: s.type,
+            aktif: true,
+            iframeUrl: s.url,
+            source: 'ylnime',
+            provider: 'ylnime'
+        }));
 
-        // Ekstrak data streams dari JavaScript (YLnime V2)
-        const parseStreams = (htmlText) => {
-            const result = [];
-            const $html = cheerio.load(htmlText);
-            $html('script').each((i, el) => {
-                const code = $html(el).html();
-                if (code && code.includes('const streams =')) {
-                    const match = code.match(/const\s+streams\s*=\s*(\[.*?\]);/s);
-                    if (match && match[1]) {
-                        try {
-                            const streamsJson = JSON.parse(match[1]);
-                            streamsJson.forEach((s) => {
-                                if (!s.link) return;
-                                let type = s.link.includes('.mp4') ? 'mp4' : (s.link.includes('.m3u8') ? 'hls' : 'iframe');
-                                let nama = `YLnime ${s.reso || ''}`.trim();
-                                let namaHost = 'YLnime Stream';
-                                if (s.link.includes('pixeldrain') || s.link.includes('pxl')) {
-                                    // Pertahankan resolusi dalam nama (mis. "Pixeldrain 720p") agar ranking service
-                                    // dapat menempatkannya dalam bucket resolusi yang benar.
-                                    nama = `Pixeldrain ${s.reso || ''}`.trim();
-                                    namaHost = 'Pixeldrain';
-                                    type = 'iframe';
-                                }
-                                result.push({
-                                    nama: nama,
-                                    post: '',
-                                    type: type,
-                                    tipe: type,
-                                    iframeUrl: s.link,
-                                    url: s.link,
-                                    namaHost: namaHost,
-                                    provider: 'ylnime',
-                                    source: 'ylnime'
-                                });
-                            });
-                        } catch (err) {}
-                    }
-                }
-            });
-            return result;
+        const result = {
+            judul: data.judul || 'Episode',
+            servers,
+            nav_prev: null,
+            nav_next: null
         };
 
-        const seenUrls = new Set();
-        
-        // Ekstrak dari halaman utama (biasanya default 720p)
-        const defaultStreams = parseStreams(data);
-        defaultStreams.forEach(s => {
-            if (!seenUrls.has(s.url)) {
-                seenUrls.add(s.url);
-                servers.push({ ...s, nume: `${servers.length + 1}`, id: `${servers.length + 1}` });
-            }
-        });
-
-        // Cari tombol resolusi lain dan ambil secara paralel (untuk mendapatkan 1080p, dll)
-        const resoLinks = [];
-        $('a').each((i, el) => {
-            let href = $(el).attr('href');
-            if (href && href.includes('reso=')) {
-                if (href.startsWith('?')) {
-                    href = `index.php${href}`;
-                }
-                const resoUrl = href.startsWith('http') ? href : `https://ylnime.com/${href.replace(/^\/?/, '')}`;
-                resoLinks.push(resoUrl);
-            }
-        });
-
-        if (resoLinks.length > 0) {
-            const promises = resoLinks.map(link => axios.get(link, { timeout: 15000 }).then(r => ({ html: r.data, $: cheerio.load(r.data) })).catch(() => null));
-            const results = await Promise.all(promises);
-            for (const res of results) {
-                if (res && res.html) {
-                    const extraStreams = parseStreams(res.html);
-                    extraStreams.forEach(s => {
-                        if (!seenUrls.has(s.url)) {
-                            seenUrls.add(s.url);
-                            servers.push({ ...s, nume: `${servers.length + 1}`, id: `${servers.length + 1}` });
-                        }
-                    });
-                }
-            }
-        }
-
-        // Cari iframe embed (fallback)
-        $('iframe').each((idx, el) => {
-            const src = $(el).attr('src') || $(el).attr('data-src') || '';
-            if (!src) return;
-            
-            // Cek duplikat dengan hasil streams
-            if (servers.some(s => s.url === src)) return;
-
-            servers.push({
-                nama: `Server ${servers.length + 1}`,
-                post: '',
-                nume: `${servers.length + 1}`,
-                id: `${servers.length + 1}`,
-                type: 'iframe',
-                tipe: 'iframe',
-                aktif: true,
-                iframeUrl: src.startsWith('http') ? src : `https:${src}`,
-                url: src.startsWith('http') ? src : `https:${src}`,
-                namaHost: extractHostname(src),
-                provider: 'ylnime',
-                source: 'ylnime',
-            });
-        });
-
-        // Cari video tag langsung
-        $('video source, video').each((idx, el) => {
-            const src = $(el).attr('src') || '';
-            if (!src) return;
-
-            servers.push({
-                nama: `Direct ${idx + 1}`,
-                post: '',
-                nume: `d${idx + 1}`,
-                id: `d${idx + 1}`,
-                type: 'direct',
-                tipe: 'direct',
-                aktif: true,
-                iframeUrl: src,
-                url: src,
-                namaHost: 'Direct',
-                provider: 'ylnime',
-                source: 'ylnime',
-            });
-        });
-
-        // Cari link download yang bisa diputar (mp4 / m3u8)
-        $('a[href*=".m3u8"], a[href*=".mp4"]').each((idx, el) => {
-            const href = $(el).attr('href') || '';
-            if (!href) return;
-
-            servers.push({
-                nama: `Direct MP4 ${idx + 1}`,
-                post: '',
-                nume: `mp4_${idx + 1}`,
-                id: `mp4_${idx + 1}`,
-                type: 'direct',
-                tipe: 'direct',
-                aktif: true,
-                iframeUrl: href,
-                url: href,
-                namaHost: 'Direct MP4',
-                provider: 'ylnime',
-                source: 'ylnime',
-            });
-        });
-
-        const result = { judul: judulEpisode, servers, nav_prev: null, nav_next: null };
-
-        if (servers.length > 0) {
-            cache.set(cacheKey, result);
-        }
-
+        cache.set(cacheKey, result);
         return result;
     } catch (err) {
-        console.error(`[YlnimeScraper] Error getYlnimeServers(${episodeUrl}):`, err.message);
-        return { judul: '', servers: [], nav_prev: null, nav_next: null };
+        console.error(`[YLnime] Error fetching servers for ${episodeUrl}:`, err.message);
+        return { judul: 'Episode', servers: [], nav_prev: null, nav_next: null };
     }
 }
+
 
 /**
  * Mengambil daftar anime terbaru dari halaman beranda YLnime.
