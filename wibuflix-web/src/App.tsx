@@ -3,36 +3,15 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import SyncTokenModal from './components/SyncTokenModal';
+import HomePage from './pages/HomePage';
+import KatalogPage from './pages/KatalogPage';
+import QueuePage from './pages/QueuePage';
 
-// Temporary page placeholders for Phase 2; will be replaced in Phases 3 & 4
-function HomePlaceholder() {
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold">Beranda</h1>
-    </div>
-  );
-}
-
-function KatalogPlaceholder() {
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold">Katalog</h1>
-    </div>
-  );
-}
-
+// Temporary page placeholders for Phase 3; will be replaced in Steps 5 & 6
 function HistoryPlaceholder() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold">Riwayat</h1>
-    </div>
-  );
-}
-
-function QueuePlaceholder() {
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold">Antrean</h1>
     </div>
   );
 }
@@ -63,13 +42,13 @@ export default function App() {
 
         <main className="flex-1">
           <Routes>
-            <Route path="/" element={<HomePlaceholder />} />
-            <Route path="/katalog" element={<KatalogPlaceholder />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/katalog" element={<KatalogPage />} />
             <Route path="/history" element={<HistoryPlaceholder />} />
-            <Route path="/queue" element={<QueuePlaceholder />} />
+            <Route path="/queue" element={<QueuePage />} />
             <Route path="/detail/:id" element={<DetailPlaceholder />} />
             <Route path="/player" element={<PlayerPlaceholder />} />
-            <Route path="*" element={<HomePlaceholder />} />
+            <Route path="*" element={<HomePage />} />
           </Routes>
         </main>
 
