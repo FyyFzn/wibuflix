@@ -33,6 +33,7 @@ import extractRouter from './routes/extract.js';
 import proxyRouter from './routes/proxy.js';
 import adminRouter from './routes/admin.js';
 import v2Router from './routes/v2.js';
+import historyRouter from './routes/history.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,6 +83,7 @@ app.use(scrapeRouter);
 app.use(extractRouter);
 app.use(proxyRouter);
 app.use(adminRouter);
+app.use(historyRouter);
 
 
 // Sajikan file statis (HTML, CSS, JS) — dipasang SETELAH router agar setiap request API
