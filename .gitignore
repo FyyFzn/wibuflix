@@ -2,6 +2,7 @@ node_modules/
 FYYStreamApp/
 wibuflix/
 wibuflix-app/
+wibuflix-web/
 .env
 .env.*
 *.env
