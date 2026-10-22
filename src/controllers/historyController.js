@@ -62,7 +62,7 @@ export async function upsertHistory(req, res) {
 
         const item = await WatchHistory.findOneAndUpdate(filter, updateDoc, {
             upsert: true,
-            new: true,
+            returnDocument: 'after',
             setDefaultsOnInsert: true
         });
 
