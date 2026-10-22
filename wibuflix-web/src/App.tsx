@@ -8,15 +8,7 @@ import KatalogPage from './pages/KatalogPage';
 import QueuePage from './pages/QueuePage';
 import DetailPage from './pages/DetailPage';
 import PlayerPage from './pages/PlayerPage';
-
-// Temporary page placeholder for Phase 4; will be replaced in Step 6
-function HistoryPlaceholder() {
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold">Riwayat</h1>
-    </div>
-  );
-}
+import HistoryPage from './pages/HistoryPage';
 
 export default function App() {
   const [syncModalOpen, setSyncModalOpen] = useState(false);
@@ -30,7 +22,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/katalog" element={<KatalogPage />} />
-            <Route path="/history" element={<HistoryPlaceholder />} />
+            <Route path="/history" element={<HistoryPage />} />
             <Route path="/queue" element={<QueuePage />} />
             <Route path="/detail/:id" element={<DetailPage />} />
             <Route path="/player" element={<PlayerPage />} />
