@@ -9,6 +9,7 @@ import { startBackgroundNimegamiSync } from '../sync/nimegami_sync.js';
 import { startBackgroundOploverzSync } from '../sync/oploverz_sync.js';
 import { startBackgroundYlnimeSync } from '../sync/ylnime_sync.js';
 import { scheduledCleanup } from '../utils/tempFileCleanupWorker.js';
+import { scheduledBlobCleanup } from '../utils/blobCleanupWorker.js';
 import { startBackgroundLogMonitor } from '../services/aiLogMonitorService.js';
 
 export function initScheduler() {
@@ -52,6 +53,9 @@ export function initScheduler() {
 
     // 3. Pembersihan file sampah temporer (Garbage Collection) setiap 12 jam
     scheduledCleanup();
+
+    // 3b. Pembersihan blob Azure kadaluarsa (lebih dari 7 hari) setiap 24 jam
+    scheduledBlobCleanup();
 
     // 4. Background AI Log Monitor (evaluasi error spike setiap 15 menit)
     startBackgroundLogMonitor(15 * 60 * 1000);
