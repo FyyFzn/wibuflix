@@ -13,6 +13,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 import express from 'express';
 import cors from 'cors';
+import session from 'express-session';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { backgroundQueue } from './utils/queueManager.js';
@@ -71,6 +72,19 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set('json spaces', 2);
+
+// Session Middleware untuk Admin Command Center
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'wibuflix-session-secret-dev-random-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000 // Berlaku 24 jam
+    }
+}));
 
 // SSRF Protection Middleware
 app.use(ssrfMiddleware);
