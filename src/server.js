@@ -86,6 +86,9 @@ app.use(adminRouter);
 app.use(historyRouter);
 
 
+// Health check endpoint untuk Azure App Service
+app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+
 // Sajikan file statis (HTML, CSS, JS) — dipasang SETELAH router agar setiap request API
 // tidak perlu melewati file-system lookup terlebih dahulu
 app.use(express.static(path.join(__dirname, '../')));
