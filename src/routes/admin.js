@@ -25,11 +25,14 @@ function renderLoginPage(error = '') {
 }
 
 // Rate limiter untuk proteksi brute-force login admin (maksimal 10 percobaan per 15 menit per IP)
+// validate.trustProxy: false — Express sudah handle proxy Azure via app.set('trust proxy', true),
+// sehingga validasi duplikat dari express-rate-limit dinonaktifkan agar tidak error ERR_ERL_PERMISSIVE_TRUST_PROXY
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { trustProxy: false },
     message: 'Terlalu banyak percobaan login yang gagal. Silakan coba lagi setelah 15 menit.',
     handler: (req, res, next, options) => {
         res.status(429).send(renderLoginPage(options.message));
